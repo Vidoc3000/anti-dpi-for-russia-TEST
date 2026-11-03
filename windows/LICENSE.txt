@@ -1,0 +1,10 @@
+Igareck AntiDPI Strategies + Bol-Van Zapret2 — CLI Windows Version 1.0
+Copyright Igor Krauch (github.com/igareck).
+
+Готовые AntiDPI стратегии и программная оболочка для теста и запуска стратегий: 
+https://github.com/igareck/anti-dpi-for-russia
+Проект Zapret2 для Windows: https://github.com/bol-van/zapret-win-bundle
+
+Официальные исходники Bol-Van скачиваются при каждой установке.
+Их лицензия копируется в engine/LICENSE_Bol-Van.txt при установке.
+Авторство и лицензии стороннего проекта сохраняются за их авторами.

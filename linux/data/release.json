@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "date": "2026-10-27",
+  "recipes": 484,
+  "golden": 45,
+  "silver": 439,
+  "families": 23,
+  "distribution": "tar.gz"
+}

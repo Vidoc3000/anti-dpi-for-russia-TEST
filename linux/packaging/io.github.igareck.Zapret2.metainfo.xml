@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.igareck.Zapret2</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Igareck AntiDPI</name>
+  <summary>Public TLS strategies and terminal shell for Bol-Van Zapret2</summary>
+  <summary xml:lang="ru">Публичные TLS-стратегии и терминальная оболочка для Zapret2</summary>
+  <description>
+    <p>Terminal application with 484 public Golden and Silver strategies for local IPv4 TCP traffic on Ubuntu and Debian.</p>
+    <p>The official Bol-Van engine is downloaded and built during installation. Root privileges are required for NFQUEUE processing.</p>
+  </description>
+  <launchable type="desktop-id">igareck-zapret2.desktop</launchable>
+  <icon type="stock">igareck-zapret2</icon>
+  <url type="homepage">https://github.com/igareck/anti-dpi-for-russia</url>
+  <provides><binary>igareck-antidpi</binary></provides>
+  <categories><category>Network</category></categories>
+  <developer id="io.github.igareck"><name>Igor Krauch (github.com/igareck)</name></developer>
+  <content_rating type="oars-1.1"/>
+  <releases><release version="1.0" date="2026-10-27"/></releases>
+</component>

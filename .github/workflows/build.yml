@@ -1,0 +1,92 @@
+name: Build release files
+run-name: Build Igareck AntiDPI CLI ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (must match the version in the application sources)'
+        required: true
+        default: '1.0'
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_DATE_EPOCH: '0'
+  IGARECK_VERSION: ${{ inputs.version }}
+
+jobs:
+  windows:
+    name: Windows x64 ZIP and EXE
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out selected source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Windows release files
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\packaging\windows\build.ps1 -Version $env:IGARECK_VERSION
+
+      - name: Verify SHA-256
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sums = Join-Path 'dist' ('SHA256SUMS_Windows_v' + $env:IGARECK_VERSION + '.txt')
+          foreach ($line in Get-Content -LiteralPath $sums) {
+              if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Invalid checksum line.' }
+              $expected = $Matches[1]
+              $path = Join-Path 'dist' $Matches[2]
+              if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $expected) {
+                  throw ('SHA-256 mismatch: ' + $path)
+              }
+          }
+
+      - name: Upload Windows build files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Igareck-Windows-x64-v${{ inputs.version }}
+          path: |
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Windows_x64.zip
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Windows_x64.exe
+            dist/SHA256SUMS_Windows_v${{ inputs.version }}.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  linux:
+    name: Linux x64 tar.gz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out selected source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build Linux release files
+        shell: bash
+        run: bash packaging/linux/build.sh --version "$IGARECK_VERSION"
+
+      - name: Verify SHA-256
+        shell: bash
+        run: |
+          cd dist
+          sha256sum -c "SHA256SUMS_Linux_v${IGARECK_VERSION}.txt"
+
+      - name: Upload Linux build files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Igareck-Linux-x64-v${{ inputs.version }}
+          path: |
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Linux_x64.tar.gz
+            dist/SHA256SUMS_Linux_v${{ inputs.version }}.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

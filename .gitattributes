@@ -1,0 +1,30 @@
+# Preserve the existing bytes, mixed line endings and UTF-8 BOMs in release
+# inputs, including windows/, linux/, packaging/, LICENSE and licenses/.
+# -text disables line-ending conversion; text diffs remain available.
+* -text
+
+# Normalize only repository documentation/configuration that is not packaged.
+/README.md text eol=lf
+/CHANGELOG.md text eol=lf
+/.gitignore text eol=lf
+/.gitattributes text eol=lf
+/.github/workflows/*.yml text eol=lf
+/.github/workflows/*.yaml text eol=lf
+/packaging/BUILDING.md text eol=lf
+
+# Binary assets must never receive text conversions or text merges.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.sys binary
+*.pdf binary
