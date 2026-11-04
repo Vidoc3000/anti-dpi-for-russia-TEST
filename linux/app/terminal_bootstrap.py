@@ -172,7 +172,8 @@ def launch(role, arguments):
             (role == 'run' and arguments and arguments[0] in ('list','show','check-engine'))):
         os.execv(sys.executable, program_command(role, arguments))
     user = graphical_user()
-    graphical = user is not None and sys.stdin.isatty() and sys.stdout.isatty()
+    client_path, server_path = find_terminal()
+    graphical = user is not None and sys.stdin.isatty() and sys.stdout.isatty() and client_path and server_path
     if graphical:
         env = dict(os.environ, HOME=user['home'], USER=user['username'], LOGNAME=user['username'])
         env.pop('PYTHONPATH', None)
