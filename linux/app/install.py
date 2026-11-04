@@ -177,8 +177,8 @@ def choose_prefix(value):
 def install(args):
     if sys.version_info < (3, 9):
         raise RuntimeError('Нужен Python 3.9 или новее.')
-    if not Path('/etc/debian_version').exists() or not shutil.which('apt-get'):
-        raise RuntimeError('Автоустановка этой версии поддерживает Ubuntu/Debian и производные с apt.')
+    if (not Path('/etc/debian_version').exists() or not shutil.which('apt-get')) and not args.skip_deps:
+        raise RuntimeError('Автоустановка этой версии поддерживает Ubuntu/Debian и производные с apt. Для установки в других дистрибутивах используйте --skip-deps.')
     from cli_ui import show_intro, color
     from desktop_integration import graphical_user, create_shortcuts, remove_shortcuts
     from source_download import select_source
