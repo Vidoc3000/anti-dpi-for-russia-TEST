@@ -1,8 +1,8 @@
 # `IGARECK ANTI-DPI`
 ## `ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ НА БАЗЕ ZAPRET2 BOL-VAN`
-## `В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN + TOR + YOUTUBE`
+## `В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN + TOR`
 
-### Разработана специально для восстановления работоспособности VPN-конфигураций Черных Списков, Tor-мостов и YouTube в России. Адаптирована под массового пользователя.
+### Разработана специально для восстановления работоспособности VPN-конфигураций Черных Списков и Tor-мостов (+ YouTube) в России. Адаптирована под массового пользователя.
 ### Для обхода фильтров ТСПУ Роскомнадзора.
 
 <div align="center">
@@ -31,7 +31,7 @@
 
 ### **`Программа восстанавливает работоспособность VPN Черных списков и даже Tor мостов в России?`**
 
-Может буквально оживлять подписки. 
+**Может буквально оживлять подписки.**
 
 **Если у вас не пингуется вообще ничего или всего 1-2 конфигурации из большого списка - попробуйте данное ПО.** 
 
@@ -42,7 +42,11 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 ### **`Как понять, что Igareck AntiDPI работает?`**
 
-Пингуйте подписки ЧС **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** с выключенной программой **Igareck AntiDPI**, а затем включите одну из стратегий **Igareck AntiDPI**, начиная с **Golden** из таблицы, и снова пингуйте и подключайте, сравните прирост числа живых конфигураций. Профит!
+1. Сначала пингуйте подписки ЧС **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** без **Igareck AntiDPI** из открытой сети.
+2. Затем включите **Igareck AntiDPI** и одну из стратегий, начиная с **Golden**.
+3. Включите проверку задержки в VPN-клиенте еще раз.
+4. Сравните прирост числа живых конфигураций.
+5. **Профит!**
 
 ### **`С какими VPN/Tor-клиентами совместим Igareck AntiDPI?`**
 

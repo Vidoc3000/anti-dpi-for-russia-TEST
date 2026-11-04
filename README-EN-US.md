@@ -1,8 +1,8 @@
 # `IGARECK ANTI-DPI`
 ## `PROGRAM WITH READY-TO-USE ANTI-DPI STRATEGIES BASED ON BOL-VAN'S ZAPRET2`
-## `A SIMPLE CLI FOR BLACKLIST VPN SUBSCRIPTIONS + TOR + YOUTUBE`
+## `A SIMPLE CLI TOOL FOR BLACKLIST VPN SUBSCRIPTIONS + TOR`
 
-### Built to restore Blacklist VPN connectivity and get Tor Bridges and YouTube working again in Russia. Made for everyday users.
+### Built to restore Blacklist VPN connectivity and get Tor Bridges (+ YouTube) working again in Russia. Made for everyday users.
 ### Designed to bypass Roskomnadzor's TSPU traffic filters.
 
 <div align="center">
@@ -31,7 +31,7 @@
 
 ### **`Can this program get VPN subscriptions and even Tor bridges working again in Russia?`**
 
-It can bring unusable subscriptions back to life.
+**It can bring unusable subscriptions back to life.**
 
 **If none of your configurations work, or only one or two out of a long list do - give it a try!**
 
@@ -42,7 +42,11 @@ For example, Tor bridges can connect faster with **Igareck AntiDPI** running, an
 
 ### **`How can I check whether Igareck AntiDPI is working?`**
 
-With **Igareck AntiDPI** turned off, run latency checks in your client for **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** or **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**. Then enable any strategy in **Igareck AntiDPI**, starting with **Golden** in the table, and repeat the checks. Compare how many configurations work before and after.
+1. First, run a latency test on the blacklist (BL) subscriptions **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)**, **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)**, or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** over an unrestricted network with **Igareck AntiDPI** disabled.
+2. Then enable **Igareck AntiDPI** and select a strategy, starting with **Golden**.
+3. Run the latency test in your VPN client again.
+4. Compare the results to see how many more configurations are working.
+5. **Profit!**
 
 ### **`Which VPN/Tor clients are compatible with Igareck AntiDPI?`**
 
