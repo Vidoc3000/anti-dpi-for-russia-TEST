@@ -1,11 +1,25 @@
 name: Build release files
-run-name: Build Igareck AntiDPI CLI ${{ inputs.version }}
+run-name: Build Igareck AntiDPI CLI (${{ inputs.platform }})
 
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Package version (must match the version in the application sources)'
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'linux'
+        type: choice
+        options:
+          - linux
+          - windows
+          - all
+      linux_version:
+        description: 'Linux version (must match linux/data/release.json)'
+        required: true
+        default: '1.1'
+        type: string
+      windows_version:
+        description: 'Windows version (must match the Windows application sources)'
         required: true
         default: '1.0'
         type: string
@@ -15,11 +29,13 @@ permissions:
 
 env:
   SOURCE_DATE_EPOCH: '0'
-  IGARECK_VERSION: ${{ inputs.version }}
 
 jobs:
   windows:
     name: Windows x64 ZIP and EXE
+    if: inputs.platform == 'windows' || inputs.platform == 'all'
+    env:
+      IGARECK_VERSION: ${{ inputs.windows_version }}
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -32,6 +48,9 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $source = Get-Content -LiteralPath '.\windows\Igareck_Manager.ps1' -Raw
+          if ($source -notmatch "DisplayVersion='CLI Version ([0-9.]+)'") { throw 'Windows source version not found.' }
+          if ($Matches[1] -ne $env:IGARECK_VERSION) { throw 'Windows package version does not match the sources.' }
           & .\packaging\windows\build.ps1 -Version $env:IGARECK_VERSION
 
       - name: Verify SHA-256
@@ -51,17 +70,20 @@ jobs:
       - name: Upload Windows build files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Igareck-Windows-x64-v${{ inputs.version }}
+          name: Igareck-Windows-x64-v${{ inputs.windows_version }}
           path: |
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Windows_x64.zip
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Windows_x64.exe
-            dist/SHA256SUMS_Windows_v${{ inputs.version }}.txt
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.zip
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.exe
+            dist/SHA256SUMS_Windows_v${{ inputs.windows_version }}.txt
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
   linux:
     name: Linux x64 tar.gz
+    if: inputs.platform == 'linux' || inputs.platform == 'all'
+    env:
+      IGARECK_VERSION: ${{ inputs.linux_version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -69,6 +91,17 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Run Linux regression checks
+        run: python3 -m unittest discover -s tests/linux -v
+
+      - name: Install native validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libnetfilter-queue-dev libnfnetlink-dev libmnl-dev zlib1g-dev libcap-dev libluajit-5.1-dev
+
+      - name: Build pinned engine and validate all 484 strategies
+        run: python3 tests/linux/check_compatible_engine.py
 
       - name: Build Linux release files
         shell: bash
@@ -83,10 +116,10 @@ jobs:
       - name: Upload Linux build files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Igareck-Linux-x64-v${{ inputs.version }}
+          name: Igareck-Linux-x64-v${{ inputs.linux_version }}
           path: |
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.version }}_Linux_x64.tar.gz
-            dist/SHA256SUMS_Linux_v${{ inputs.version }}.txt
+            dist/Igareck_AntiDPI_CLI_v${{ inputs.linux_version }}_Linux_x64.tar.gz
+            dist/SHA256SUMS_Linux_v${{ inputs.linux_version }}.txt
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

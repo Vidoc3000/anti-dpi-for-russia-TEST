@@ -271,13 +271,13 @@ Stops the current *winws2.exe* process and exits the program.
 
 ### **1. Run the installer.**
 
-**[INSTALL FROM THE TAR.GZ ARCHIVE](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Linux_x64.tar.gz)**
+**[INSTALL FROM THE TAR.GZ ARCHIVE](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.1/Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz)**
 
 Open a terminal in the folder containing the downloaded archive and run:
 
 ```bash
-tar -xzf Igareck_AntiDPI_CLI_v1.0_Linux_x64.tar.gz
-cd Igareck_AntiDPI_CLI_v1.0_Linux_x64
+tar -xzf Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
+cd Igareck_AntiDPI_CLI_v1.1_Linux_x64
 bash INSTALL.sh
 ```
 

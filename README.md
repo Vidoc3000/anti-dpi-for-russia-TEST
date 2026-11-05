@@ -271,13 +271,13 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 
 ### **1. Запуск инсталлятора.**
 
-**[УСТАНОВКА ЧЕРЕЗ АРХИВ TAR.GZ](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Linux_x64.tar.gz)**
+**[УСТАНОВКА ЧЕРЕЗ АРХИВ TAR.GZ](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.1/Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz)**
 
 Откройте терминал в папке со скачанным архивом и выполните:
 
 ```bash
-tar -xzf Igareck_AntiDPI_CLI_v1.0_Linux_x64.tar.gz
-cd Igareck_AntiDPI_CLI_v1.0_Linux_x64
+tar -xzf Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
+cd Igareck_AntiDPI_CLI_v1.1_Linux_x64
 bash INSTALL.sh
 ```
 

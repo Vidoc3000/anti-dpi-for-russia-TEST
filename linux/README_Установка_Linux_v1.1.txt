@@ -1,6 +1,6 @@
 ===========================================================================
 Igareck AntiDPI Strategies + Bol-Van Zapret2
-CLI Version 1.0 | Linux Ubuntu/Debian x64 | ИНСТРУКЦИЯ ПО УСТАНОВКЕ
+CLI Version 1.1 | Linux Ubuntu/Debian x64 | ИНСТРУКЦИЯ ПО УСТАНОВКЕ
 ===========================================================================
 ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ IGARECK НА БАЗЕ ZAPRET2 (BOL-VAN)
 В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE
@@ -12,14 +12,14 @@ Telegram: https://t.me/igareq
 
 484 публичные стратегии: 45 Golden + 439 Silver; 23 семейства.
 Golden: 1–45. Silver: 46–484.
-Подробный пошаговый справочник: README_Стратегии_Linux_v1.0.txt.
+Подробный пошаговый справочник: README_Стратегии_Linux_v1.1.txt.
 
 УСТАНОВКА ЧЕРЕЗ АРХИВ
 Перед установкой остановите работающую стратегию через Ctrl+C.
 Откройте терминал в папке со скачанным архивом и выполните:
 
-tar -xzf Igareck_AntiDPI_CLI_v1.0_Linux_x64.tar.gz
-cd Igareck_AntiDPI_CLI_v1.0_Linux_x64
+tar -xzf Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
+cd Igareck_AntiDPI_CLI_v1.1_Linux_x64
 bash INSTALL.sh --no-launch
 
 Последовательно предлагаются:
@@ -43,8 +43,9 @@ bash INSTALL.sh --no-launch
   bash INSTALL.sh
 
 УСТАНОВКА
-Для графического режима нужен GNOME Terminal (в Ubuntu GNOME обычно уже
-установлен). Если его нет: sudo apt install gnome-terminal
+Программа работает в обычном терминале, текстовой консоли и через SSH.
+GNOME Terminal используется для окна с исходным ASCII логотипом.
+Для запуска через ярлыки нужен установленный эмулятор терминала.
 Новые Python-модули не требуются: используется стандартная библиотека.
 
 Официальный Zapret2 скачивается архивом исходного репозитория Bol-Van:
@@ -74,8 +75,8 @@ https://cdn.gh-proxy.org/https://github.com/bol-van/zapret2/archive/refs/heads/m
 В ней находятся:
   START_Igareck_AntiDPI — запуск программы двойным кликом;
   DELETE_Igareck_AntiDPI — стандартное удаление с подтверждением;
-  README_Установка_Linux_v1.0.txt — эта инструкция;
-  README_Стратегии_Linux_v1.0.txt — справочник всех 484 стратегий.
+  README_Установка_Linux_v1.1.txt — эта инструкция;
+  README_Стратегии_Linux_v1.1.txt — справочник всех 484 стратегий.
 В Главном Меню программ появляется отдельный ярлык:
   Igareck AntiDPI
 Ярлыки открывают терминал; при необходимости sudo запросит пароль.
@@ -97,13 +98,21 @@ https://cdn.gh-proxy.org/https://github.com/bol-van/zapret2/archive/refs/heads/m
 
 НЕОБХОДИМОЕ ОКРУЖЕНИЕ
 Ubuntu/Debian.
-Зависимости устанавливаются автоматически через apt-get:
+Готовое окружение определяется автоматически. Если зависимостей не хватает,
+в Ubuntu/Debian они устанавливаются через apt-get. В других дистрибутивах
+используйте их пакетный менеджер; затем повторите INSTALL.sh.
+--skip-deps пропускает установку пакетов, но сохраняет проверку зависимостей.
+Зависимости:
 ca-certificates, curl, iproute2, nftables, kmod, fontconfig, build-essential,
 pkg-config, libnetfilter-queue-dev, libnfnetlink-dev, libmnl-dev,
 zlib1g-dev, libcap-dev, libluajit-5.1-dev.
-Для меню/ярлыков нужна графическая сессия пользователя.
+Для ярлыков на Рабочем Столе и в меню приложений Linux нужна
+графическая сессия. Консольное меню программы работает и без неё.
 Готовый nfqws2 и исходники Bol-Van в архив НЕ включены: исходники
 скачиваются при установке, движок компилируется под текущие Linux/CPU.
+
+При установке в контейнер LXC/Proxmox нужны соответствующие сетевые
+разрешения контейнера. При их нехватке установщик покажет причину.
 
 ВНИМАНИЕ
 Если используется антивирус, добавьте папку программы, файл nfqws2 и его

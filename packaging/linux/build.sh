@@ -8,6 +8,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -23,12 +24,12 @@ def main():
     parser = argparse.ArgumentParser(description='Сборка исходного Linux tar.gz Igareck AntiDPI.')
     parser.add_argument('--repo-root', type=Path, default=Path(sys.argv[1]))
     parser.add_argument('--output-dir', type=Path)
-    parser.add_argument('--version', default='1.0')
+    parser.add_argument('--version', default='1.1')
     parser.add_argument('--source-date-epoch', type=int)
     parser.add_argument('--force', action='store_true', help='Разрешить замену ранее собранных файлов.')
     args = parser.parse_args(sys.argv[2:])
     if not re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+){0,2}', args.version):
-        parser.error('--version: используйте числовую версию, например 1.0.')
+        parser.error('--version: используйте числовую версию, например 1.1.')
     if any(int(part) > 65534 for part in args.version.split('.')):
         parser.error('Компоненты версии должны быть не больше 65534.')
     epoch = args.source_date_epoch
@@ -55,6 +56,9 @@ def main():
     for relative in ('INSTALL.sh', 'START.sh', 'DELETE.sh', 'app/igareck.py', 'app/install.py', 'data/catalogue.json'):
         if not (source / relative).is_file():
             raise RuntimeError('Не найден обязательный файл Linux: ' + relative)
+    source_version = json.loads((source / 'data/release.json').read_text(encoding='utf-8'))['version']
+    if args.version != source_version:
+        raise RuntimeError('Версия пакета '+args.version+' не совпадает с linux/data/release.json: '+source_version)
     output = (args.output_dir or repo / 'dist').resolve()
     if output == repo or output == Path(output.anchor):
         raise RuntimeError('Укажите отдельную папку результатов, например dist/.')

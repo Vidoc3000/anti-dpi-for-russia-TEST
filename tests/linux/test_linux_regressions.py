@@ -1,0 +1,226 @@
+"""Offline checks for Linux launch, dependency and container regressions."""
+from contextlib import redirect_stderr
+from io import StringIO
+import json
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch, Mock
+
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO/'linux/app'))
+import app_paths
+import dependencies
+import desktop_integration as desktop
+import diagnostics
+import engine_environment as environment
+import igareck
+import terminal_bootstrap as terminal
+import remove_installation
+
+
+def state(mapping='0 0 4294967295', groups='allow', caps='ffffffffffffffff'):
+    return dict(uid_map=mapping, gid_map=mapping, setgroups=groups, cap_effective=caps)
+
+
+class ContainerTests(unittest.TestCase):
+    def test_host_preserves_upstream_identity(self):
+        self.assertEqual(environment.engine_identity(state()), (2147483647, 2147483647))
+
+    def test_lxc_uses_mapped_identity(self):
+        self.assertEqual(environment.engine_identity(state('0 100000 65536')), (65534, 65534))
+
+    def test_uid_and_gid_maps_can_differ(self):
+        s = state('0 100000 65536')
+        s['gid_map'] = '0 100000 1000'
+        self.assertEqual(environment.engine_identity(s), (65534, 999))
+
+    def test_root_only_mapping_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, 'ненулевого'):
+            environment.engine_identity(state('0 0 1'))
+
+    def test_setgroups_deny_is_not_bypassed(self):
+        with self.assertRaisesRegex(RuntimeError, 'запрещает setgroups'):
+            environment.engine_identity(state(groups='deny'))
+
+    def test_missing_capabilities_stop_before_nft(self):
+        with patch.object(environment, 'snapshot', return_value=state(caps='0')), \
+             patch.object(environment.subprocess, 'run') as nft:
+            with self.assertRaisesRegex(RuntimeError, 'CAP_NET_ADMIN'):
+                environment.check_environment()
+            nft.assert_not_called()
+
+    def test_nft_probe_only_checks_without_applying(self):
+        with patch.object(environment, 'snapshot', return_value=state()), \
+             patch.object(environment.subprocess, 'run', return_value=Mock(returncode=0)) as nft:
+            environment.check_environment()
+            self.assertEqual(nft.call_args.args[0], ['nft', '--check', '-f', '-'])
+            self.assertIn('queue num', nft.call_args.kwargs['input'])
+
+    def test_failed_preflight_keeps_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(environment, 'snapshot', return_value=state(caps='0')):
+            with self.assertRaises(RuntimeError):
+                environment.check_environment(Path(temporary))
+            self.assertEqual(json.loads((Path(temporary)/'engine-environment.json').read_text())['cap_effective'], '0')
+
+    def test_permission_error_is_not_called_strategy_incompatibility(self):
+        text = environment.failure_message(1, 1, 'setgroups: Invalid argument')
+        self.assertIn('прав/окружения', text)
+        self.assertNotIn('несовместима', text)
+
+    def test_engine_identity_is_consistent_for_all_recipes(self):
+        with patch.object(igareck.os, 'geteuid', return_value=0), \
+             patch.object(environment, 'snapshot', return_value=state('0 100000 65536')):
+            for row in igareck.load_catalogue()['ProfileRows']:
+                args = igareck.engine_arguments(Path('/opt/igareck-antidpi'), row)
+                self.assertEqual(args.count('--uid=65534:65534'), 1)
+                self.assertEqual(args[-len(row['Args']):], row['Args'])
+
+
+class TerminalTests(unittest.TestCase):
+    def launch(self, graphical, paths, result=0):
+        user = dict(home='/home/example', username='example', uid=1000, gid=1000) if graphical else None
+        with patch.object(desktop, 'graphical_user', return_value=user), \
+             patch.object(terminal, 'find_terminal', return_value=paths), \
+             patch.object(terminal.sys.stdin, 'isatty', return_value=True), \
+             patch.object(terminal.sys.stdout, 'isatty', return_value=True), \
+             patch.object(terminal.os, 'geteuid', return_value=1000), \
+             patch.object(terminal, 'current_terminal') as current, \
+             patch.object(terminal.subprocess, 'Popen', return_value=Mock(wait=Mock(return_value=result))) as graphical_process:
+            terminal.launch('run', ['--strategy', '25'])
+            return current.call_count, graphical_process.call_count
+
+    def test_kde_without_gnome_uses_existing_terminal(self):
+        self.assertEqual(self.launch(True, (None, None)), (1, 0))
+
+    def test_ssh_and_headless_do_not_open_windows(self):
+        self.assertEqual(self.launch(False, ('gnome', 'server')), (1, 0))
+        self.assertIsNone(desktop.graphical_user({'SSH_CONNECTION': 'fixture'}))
+
+    def test_gnome_still_uses_artwork_window(self):
+        self.assertEqual(self.launch(True, ('gnome', 'server')), (0, 1))
+
+    def test_precommand_window_failure_falls_back_once(self):
+        self.assertEqual(self.launch(True, ('gnome', 'server'), terminal.TERMINAL_UNAVAILABLE), (1, 1))
+
+    def test_application_failure_is_never_retried(self):
+        self.assertEqual(self.launch(True, ('gnome', 'server'), 1), (0, 1))
+
+    def test_desktop_without_gnome_opens_terminal_before_sudo(self):
+        with patch.object(terminal.sys.stdin, 'isatty', return_value=False), \
+             patch.object(terminal.os, 'geteuid', return_value=1000), \
+             patch.object(terminal, 'find_terminal', return_value=(None, None)), \
+             patch.object(terminal, 'text_terminals', return_value=iter([['/usr/bin/konsole', '--nofork', '-e']])), \
+             patch.object(terminal.subprocess, 'Popen', return_value=Mock(wait=Mock(return_value=0))) as process:
+            terminal.launch_desktop('uninstall', [])
+            argv = process.call_args.args[0]
+            self.assertEqual(argv[:4], ['/usr/bin/konsole', '--nofork', '-e', 'sudo'])
+            self.assertIn('--inside-plain', argv)
+            self.assertEqual(argv[-1], 'uninstall')
+
+    def test_desktop_application_error_does_not_launch_another_terminal(self):
+        with patch.object(terminal.sys.stdin, 'isatty', return_value=False), \
+             patch.object(terminal.os, 'geteuid', return_value=1000), \
+             patch.object(terminal, 'find_terminal', return_value=('gnome', 'server')), \
+             patch.object(terminal, 'session', return_value=1), \
+             patch.object(terminal, 'text_terminals') as fallback:
+            self.assertEqual(terminal.launch_desktop('run', []), 1)
+            fallback.assert_not_called()
+
+    def test_actual_desktop_entry_uses_new_launcher_for_both_actions(self):
+        for action, role in (('start', 'run'), ('delete', 'uninstall')):
+            with patch.object(sys, 'argv', ['desktop_integration.py', '--launch', action]), \
+                 patch.object(terminal, 'launch_desktop', return_value=0) as launch:
+                with self.assertRaises(SystemExit) as stopped:
+                    runpy.run_path(str(REPO/'linux/app/desktop_integration.py'), run_name='__main__')
+                self.assertEqual(stopped.exception.code, 0)
+                launch.assert_called_once_with(role, [])
+
+    def test_plain_window_removes_artwork_marker(self):
+        with patch.object(terminal.sys, 'argv', ['bootstrap', '--inside-plain', 'run']), \
+             patch.object(terminal.os, 'geteuid', return_value=0), \
+             patch.dict(terminal.os.environ, {terminal.READY: terminal.RENDERER}), \
+             patch.object(terminal.os, 'execve', side_effect=SystemExit(0)) as execute:
+            with self.assertRaises(SystemExit):
+                terminal.main()
+            env = execute.call_args.args[2]
+            self.assertNotIn(terminal.READY, env)
+            self.assertEqual(env['IGARECK_TERMINAL_WINDOW'], '1')
+
+    def test_font_setup_failure_happens_before_starting_application(self):
+        with patch.object(terminal, 'find_terminal', return_value=('gnome', 'server')), \
+             patch.object(terminal, 'fontconfig_file', side_effect=RuntimeError('font fixture')), \
+             patch.object(terminal.subprocess, 'Popen') as process:
+            with self.assertRaises(terminal.TerminalUnavailable):
+                terminal.artwork_session('install', [])
+            process.assert_not_called()
+
+    def test_dbus_failure_happens_before_starting_application(self):
+        server = Mock(poll=Mock(return_value=None))
+        with patch.object(terminal, 'find_terminal', return_value=('gnome', 'server')), \
+             patch.object(terminal, 'fontconfig_file', return_value=Path('/fixture/fonts.conf')), \
+             patch.object(terminal, 'verify_font'), \
+             patch.object(terminal, 'bus_name_owned', side_effect=OSError('D-Bus fixture')), \
+             patch.object(terminal.subprocess, 'Popen', return_value=server) as process:
+            with self.assertRaises(terminal.TerminalUnavailable):
+                terminal.artwork_session('install', [])
+            self.assertEqual(process.call_count, 1)  # Only the server; never the client/application.
+            server.terminate.assert_called_once()
+
+
+class DependencyTests(unittest.TestCase):
+    def test_ready_dependencies_need_neither_apt_nor_manual_flag(self):
+        with patch.object(dependencies, 'missing_dependencies', return_value=[]), \
+             patch.object(dependencies.subprocess, 'run') as apt:
+            dependencies.ensure_dependencies(['fixture'])
+            apt.assert_not_called()
+
+    def test_skip_deps_still_checks_missing_dependencies(self):
+        with patch.object(dependencies, 'missing_dependencies', return_value=['nft']), \
+             patch.object(dependencies.subprocess, 'run') as apt:
+            with self.assertRaisesRegex(RuntimeError, 'nft'):
+                dependencies.ensure_dependencies(['fixture'], skip=True)
+            apt.assert_not_called()
+
+    def test_non_debian_missing_dependencies_does_not_invoke_apt(self):
+        with patch.object(dependencies, 'missing_dependencies', return_value=['nft']), \
+             patch.object(dependencies.Path, 'is_file', return_value=False), \
+             patch.object(dependencies.subprocess, 'run') as apt:
+            with self.assertRaisesRegex(RuntimeError, 'дистрибутива'):
+                dependencies.ensure_dependencies(['fixture'])
+            apt.assert_not_called()
+
+
+class ResourceTests(unittest.TestCase):
+    def test_standard_uninstall_retains_error_reporter_for_later_purge(self):
+        self.assertIn('diagnostics.py', remove_installation.RETAIN)
+
+    def test_every_installed_resource_exists(self):
+        for name in app_paths.FILE_LAYOUT:
+            self.assertTrue(app_paths.resource_path(REPO/'linux/app', name).is_file(), name)
+
+    def test_help_and_catalogue_work_without_display(self):
+        env = dict(os.environ, DISPLAY='', WAYLAND_DISPLAY='', PYTHONDONTWRITEBYTECODE='1')
+        for arguments in (['--help'], ['show', '--strategy', '25']):
+            result = subprocess.run(['bash', str(REPO/'linux/START.sh')]+arguments,
+                                    env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_traceback_is_visible_and_private_log_is_created(self):
+        with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:
+            try:
+                raise RuntimeError('fixture failure')
+            except RuntimeError as error:
+                path = diagnostics.report_exception(Path(temporary), error, 'unit test')
+            self.assertIn('Traceback', output.getvalue())
+            self.assertIn('fixture failure', path.read_text())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+
+if __name__ == '__main__':
+    unittest.main()

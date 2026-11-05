@@ -1,4 +1,4 @@
-"""Fresh GNOME Terminal with an application-local artwork font configuration.
+"""CLI/desktop startup, with an optional GNOME artwork window.
 
 The graphical terminal runs as the original user. Only the installer/engine
 command requests sudo. No terminal profile, default font or zoom is changed.
@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parent
 FONT = 'IgareckArtLinux16.ttf'
 READY = 'IGARECK_ARTWORK_RENDERER'
 RENDERER = 'fresh-gnome-fontconfig-v1'
+TERMINAL_UNAVAILABLE = 77  # Used only before the application command starts.
+
+
+class TerminalUnavailable(RuntimeError):
+    pass
 
 
 def program_command(role, arguments):
@@ -129,9 +134,13 @@ def verify_font(environ):
 def session(role, arguments):
     if os.geteuid() == 0:
         raise RuntimeError('Графический терминал должен запускаться от имени обычного пользователя.')
+    return artwork_session(role, arguments)
+
+
+def artwork_session(role, arguments):
     client_path, server_path = find_terminal()
     if not client_path or not server_path:
-        raise RuntimeError('Для окна с исходным логотипом нужен GNOME Terminal. Установите пакет gnome-terminal.')
+        raise TerminalUnavailable('GNOME Terminal недоступен.')
     account = pwd.getpwuid(os.geteuid())
     env = dict(os.environ, HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name)
     env.setdefault('XDG_RUNTIME_DIR', '/run/user/'+str(account.pw_uid))
@@ -140,8 +149,11 @@ def session(role, arguments):
     server = client = None
     with tempfile.TemporaryDirectory(prefix='igareck-artwork-') as temporary:
         folder = Path(temporary)
-        env['FONTCONFIG_FILE'] = str(fontconfig_file(folder, env))
-        verify_font(env)
+        try:
+            env['FONTCONFIG_FILE'] = str(fontconfig_file(folder, env))
+            verify_font(env)
+        except Exception as error:
+            raise TerminalUnavailable(str(error)) from error
         with (folder/'terminal-errors.log').open('wb') as errors:
             try:
                 server = subprocess.Popen([server_path, '--app-id='+app_id],
@@ -159,10 +171,75 @@ def session(role, arguments):
                            '--', 'sudo', '--', sys.executable,
                            str(ROOT/'terminal_bootstrap.py'), '--inside', role]+arguments
                 client = subprocess.Popen(command, env=env)
-                return client.wait()
+                result = client.wait()
+                # A child command failure must never trigger a second install/run.
+                return 1 if result == TERMINAL_UNAVAILABLE else result
+            except Exception as error:
+                if client is None:
+                    raise TerminalUnavailable(str(error)) from error
+                raise
             finally:
                 stop_owned(client)
                 stop_owned(server)
+
+
+def current_terminal(role, arguments):
+    os.environ.pop(READY, None)
+    command = program_command(role, arguments)
+    if os.geteuid() != 0:
+        command = ['sudo', '--']+command
+    os.execvp(command[0], command)
+
+
+def text_terminals():
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+    names = ['konsole'] if 'kde' in desktop else []
+    names += ['x-terminal-emulator', 'konsole', 'xfce4-terminal', 'mate-terminal', 'xterm']
+    seen = set()
+    for name in names:
+        path = shutil.which(name)
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        real_name = Path(path).resolve().name
+        # An alternative pointing to the GNOME client would repeat its failure.
+        if real_name.startswith('gnome-terminal'):
+            continue
+        kind = next((item for item in ('konsole', 'xfce4-terminal', 'mate-terminal')
+                     if item in real_name), name)
+        options = {'konsole': ['--separate', '--nofork', '-e'],
+                   'xfce4-terminal': ['--disable-server', '-x'],
+                   'mate-terminal': ['--disable-factory', '-x']}.get(kind, ['-e'])
+        yield [path]+options
+
+
+def launch_desktop(role, arguments):
+    """ELF shortcuts have no terminal; open one before asking sudo for a password."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return launch(role, arguments)
+    if os.geteuid() == 0:
+        raise RuntimeError('Запускайте графический ярлык от обычного пользователя. '
+                           'Из root-консоли используйте bash START.sh / DELETE.sh.')
+    client, server = find_terminal()
+    if client and server:
+        try:
+            return session(role, arguments)
+        except TerminalUnavailable as error:
+            print('GNOME Terminal: '+str(error)+' Открываю другой терминал.', file=sys.stderr)
+    env = dict(os.environ)
+    env.pop(READY, None)
+    env.pop('PYTHONPATH', None)
+    command = ['sudo', '--', sys.executable, str(ROOT/'terminal_bootstrap.py'),
+               '--inside-plain', role]+arguments
+    for terminal in text_terminals():
+        try:
+            process = subprocess.Popen(terminal+command, env=env, cwd=str(ROOT))
+        except OSError:
+            continue  # No terminal process, so no application command has started.
+        return process.wait()
+    raise RuntimeError('Не найден терминал для ярлыка. Установите Konsole, XTerm '
+                       'или другой поддерживаемый терминал; либо откройте терминал '
+                       'самостоятельно и выполните bash '+str(ROOT/'START.sh' if role == 'run' else ROOT/'DELETE.sh')+'.')
 
 
 def launch(role, arguments):
@@ -195,31 +272,38 @@ def launch(role, arguments):
             '--session', role]+arguments, env=env, cwd='/',
             preexec_fn=lower_privileges if os.geteuid()==0 else None)
         try:
-            return process.wait()
+            result = process.wait()
+            if result != TERMINAL_UNAVAILABLE:
+                return result
+            print('Не удалось подготовить графическое окно. Продолжаю в текущем терминале.', flush=True)
         except KeyboardInterrupt:
             stop_owned(process)
             return 130
-    command = program_command(role, arguments)
-    if os.geteuid() != 0:
-        command = ['sudo','--']+command
-    os.execvp(command[0], command)
+    return current_terminal(role, arguments)
 
 
 def main():
     arguments = sys.argv[1:]
     if not arguments:
         raise RuntimeError('Не указан режим запуска.')
-    if arguments[0] == '--inside':
+    if arguments[0] in ('--inside', '--inside-plain'):
         role, rest = arguments[1], arguments[2:]
         env = dict(os.environ)
-        env[READY] = RENDERER
+        if arguments[0] == '--inside':
+            env[READY] = RENDERER
+        else:
+            env.pop(READY, None)
         env['IGARECK_TERMINAL_WINDOW'] = '1'
         command = program_command(role, rest)
         if os.geteuid() != 0:
             raise RuntimeError('Команда программы должна запускаться через sudo.')
         os.execve(sys.executable, command, env)
     if arguments[0] == '--session':
-        return session(arguments[1], arguments[2:])
+        try:
+            return session(arguments[1], arguments[2:])
+        except TerminalUnavailable as error:
+            print('Графическое окно недоступно: '+str(error), file=sys.stderr)
+            return TERMINAL_UNAVAILABLE
     return launch(arguments[0], arguments[1:])
 
 
@@ -233,6 +317,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         raise SystemExit(130)
     except Exception as error:
-        print('ОШИБКА: '+str(error), file=sys.stderr)
+        from diagnostics import report_exception
+        report_exception(ROOT, error, 'terminal bootstrap')
         raise SystemExit(1)
 

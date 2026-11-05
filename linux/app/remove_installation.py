@@ -23,7 +23,7 @@ CONTROL = frozenset(('DELETE.sh', 'remove_installation.py', 'installation.json')
 # Keep the same artwork renderer available for a later full removal.
 RETAIN = CONTROL | frozenset(('terminal_bootstrap.py', 'desktop_integration.py',
     'cli_ui.py', 'app_paths.py', 'artwork.json', 'IgareckArtLinux16.ttf',
-    'IgareckArt_OFL.txt', 'LICENSE.txt'))
+    'IgareckArt_OFL.txt', 'LICENSE.txt', 'diagnostics.py'))
 
 
 def digest(path):
@@ -150,7 +150,7 @@ def uninstall(root, purge=False, yes=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Удаление Igareck CLI Linux 1.0')
+    parser = argparse.ArgumentParser(description='Удаление Igareck CLI Linux 1.1')
     parser.add_argument('--purge', action='store_true', help='Удалить всю папку этой установки вместе с логами и изменёнными файлами')
     parser.add_argument('--yes', action='store_true', help='Без интерактивного подтверждения удаления')
     parser.add_argument('--prefix', help='Только с --purge: папка архивной установки с собственным installation.json')
@@ -168,7 +168,8 @@ def main():
         print('\nУдаление прервано.')
         code = 130
     except Exception as error:
-        print('ОШИБКА: '+str(error), file=sys.stderr)
+        from diagnostics import report_exception
+        report_exception(Path(__file__).resolve().parent, error, 'uninstaller')
         code = 1
     if os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
         try:

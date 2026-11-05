@@ -12,7 +12,7 @@ import unicodedata
 import time
 from app_paths import resource_path
 
-VERSION = 'CLI Version 1.0'
+VERSION = 'CLI Version 1.1'
 SEPARATOR = '----------------------'
 ARTWORK_BASE = 0x104000
 ARTWORK_FAMILY = 'Igareck Artwork 16'

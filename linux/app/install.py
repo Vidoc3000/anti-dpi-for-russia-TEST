@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ubuntu/Debian CLI 1.0 installer. Copyright Igor Krauch (github.com/igareck)."""
+"""Ubuntu/Debian CLI 1.1 installer. Copyright Igor Krauch (github.com/igareck)."""
 from __future__ import annotations
 import argparse
 from contextlib import ExitStack
@@ -177,8 +177,8 @@ def choose_prefix(value):
 def install(args):
     if sys.version_info < (3, 9):
         raise RuntimeError('Нужен Python 3.9 или новее.')
-    if (not Path('/etc/debian_version').exists() or not shutil.which('apt-get')) and not args.skip_deps:
-        raise RuntimeError('Автоустановка этой версии поддерживает Ubuntu/Debian и производные с apt. Для установки в других дистрибутивах используйте --skip-deps.')
+    # PR #2 enabled --skip-deps outside Debian; ready dependencies now also
+    # permit the same installation automatically, without a manual flag.
     from cli_ui import show_intro, color
     from desktop_integration import graphical_user, create_shortcuts, remove_shortcuts
     from source_download import select_source
@@ -194,11 +194,8 @@ def install(args):
         command_plan = prepare(args.global_command)
         print('----------------------')
         print('\nУстановка: '+str(prefix)+'\n484 стратегии: 45 Golden + 439 Silver. IPv4 TCP/TLS.')
-        if not args.skip_deps:
-            subprocess.run(['apt-get','update'], check=True)
-            subprocess.run(['apt-get','install','-y','--no-install-recommends']+PACKAGES, check=True)
-        for name in ('cc','make','pkg-config','nft','ip','curl'):
-            if not shutil.which(name): raise RuntimeError('Не установлена зависимость: '+name)
+        from dependencies import ensure_dependencies
+        ensure_dependencies(PACKAGES, args.skip_deps)
         meta = select_source(json.loads(resource_path(SOURCE, 'upstream.json').read_text()), selection)
         prefix.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix='.ig-', dir=prefix.parent))
@@ -210,6 +207,9 @@ def install(args):
                 target = stage/name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(resource_path(SOURCE, name), target)
+            from engine_environment import check_environment
+            uid, gid = check_environment(stage)
+            print(f'Окружение NFQUEUE проверено. UID/GID движка: {uid}:{gid}.', flush=True)
             archive = get_archive(meta, stage)
             unpacked = stage/'s'; unpacked.mkdir(mode=0o700)
             extract_source(archive, unpacked, meta['archive_root'])
@@ -242,16 +242,18 @@ def install(args):
                     if checked.returncode:
                         log.flush()
                         print((stage/'parameters-check.log').read_text()[-8000:])
-                        hint = ' Повторите установку с вариантом 1 (совместимая версия).' if selection == 'latest' else ''
-                        raise RuntimeError(f'Стратегия {row["Number"]} несовместима с движком.'+hint)
+                        from engine_environment import failure_message
+                        details = (stage/'parameters-check.log').read_text(errors='replace')[-8000:]
+                        hint = ' Для проверки с закреплённым движком выберите вариант 1.' if selection == 'latest' else ''
+                        raise RuntimeError(failure_message(row['Number'], checked.returncode, details)+hint)
             shutil.rmtree(unpacked)
             archive.unlink()  # The source is fetched again on the next installation.
             for path in stage.rglob('*'):
                 if path.is_file(): path.chmod(0o755 if path.suffix=='.sh' or path.name=='nfqws2' else 0o644)
             (stage/'_state').mkdir(mode=0o700); (stage/'logs').mkdir(mode=0o700)
-            for name in ('build.log','parameters-check.log','source-download.log'):
+            for name in ('build.log','parameters-check.log','source-download.log','engine-environment.json'):
                 shutil.move(stage/name, stage/'logs'/name)
-            identity = {'schema':'igareck.zapret2.linux.install.v1','version':'1.0','prefix':str(prefix),
+            identity = {'schema':'igareck.zapret2.linux.install.v1','version':'1.1','prefix':str(prefix),
                         'id':install_id,'upstream_commit':meta['commit'],'upstream_selection':selection,'shortcuts':None,'global_command':None,
                         'files':{p.relative_to(stage).as_posix():digest(p) for p in stage.rglob('*') if p.is_file() and p.relative_to(stage).parts[0] not in ('logs','_state','__pycache__')}}
             (stage/'installation.json').write_text(json.dumps(identity,ensure_ascii=False,indent=2)+'\n')
@@ -290,7 +292,7 @@ def install(args):
                 saved = Path('/var/log/igareck-zapret2')/('install_failed_'+time.strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:8])
                 try:
                     saved.mkdir(parents=True)
-                    for name in ('build.log','parameters-check.log','source-download.log'):
+                    for name in ('build.log','parameters-check.log','source-download.log','engine-environment.json'):
                         if (stage/name).exists(): shutil.copy2(stage/name, saved/name)
                     print('Логи неудачной установки: '+str(saved))
                 finally:
@@ -313,13 +315,13 @@ if __name__ == '__main__':
         raise KeyboardInterrupt
     signal.signal(signal.SIGHUP, terminate)
     signal.signal(signal.SIGTERM, terminate)
-    parser=argparse.ArgumentParser(description='Установка/удаление Igareck CLI Linux 1.0')
+    parser=argparse.ArgumentParser(description='Установка/удаление Igareck CLI Linux 1.1')
     parser.add_argument('action', nargs='?', choices=('install','uninstall'),default='install')
     parser.add_argument('--prefix')
     parser.add_argument('--engine', choices=('compatible','latest'), help='Версия официального Zapret2; без аргумента предлагается выбор')
     parser.add_argument('--shortcuts', choices=('yes','no'), help='Ярлыки для пользователя графической сессии; в терминальной среде пропускаются')
     parser.add_argument('--global-command', choices=('yes','no'), help='Создать глобальную команду запуска; при конфликте без аргумента предлагается выбор')
-    parser.add_argument('--skip-deps', action='store_true',help='Зависимости уже установлены через apt')
+    parser.add_argument('--skip-deps', action='store_true',help='Не устанавливать пакеты; проверить уже установленные зависимости')
     parser.add_argument('--no-launch',action='store_true')
     parser.add_argument('--yes',action='store_true')
     parser.add_argument('--purge',action='store_true',help='При удалении полностью удалить папку этой установки, включая логи и изменённые файлы')
@@ -331,7 +333,8 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print('\nУстановка остановлена.'); exit_code = 130
     except Exception as error:
-        print('ОШИБКА: '+str(error),file=sys.stderr); exit_code = 1
+        from diagnostics import report_exception
+        report_exception(SOURCE, error, 'installer'); exit_code = 1
     if (os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty() and
             (args.no_launch or exit_code not in (0,130)) and exit_code != 130):
         try:input('\nНажмите Enter, чтобы закрыть окно.\n')

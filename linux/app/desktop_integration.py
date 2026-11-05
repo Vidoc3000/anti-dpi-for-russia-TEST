@@ -12,8 +12,8 @@ import sys
 import tempfile
 
 FOLDER_NAME = 'Igareck_AntiDPI'
-INSTALL_README = 'README_Установка_Linux_v1.0.txt'
-STRATEGIES_README = 'README_Стратегии_Linux_v1.0.txt'
+INSTALL_README = 'README_Установка_Linux_v1.1.txt'
+STRATEGIES_README = 'README_Стратегии_Linux_v1.1.txt'
 
 
 def graphical_user(environ=None):
@@ -240,8 +240,8 @@ def remove_shortcuts(record):
 if __name__ == '__main__':
     try:
         if len(sys.argv) == 3 and sys.argv[1] == '--launch' and sys.argv[2] in ('start', 'delete'):
-            from terminal_bootstrap import session
-            raise SystemExit(session('run' if sys.argv[2] == 'start' else 'uninstall', []))
+            from terminal_bootstrap import launch_desktop
+            raise SystemExit(launch_desktop('run' if sys.argv[2] == 'start' else 'uninstall', []))
         payload = json.load(sys.stdin)
         if os.geteuid() != int(payload['user']['uid']):
             raise RuntimeError('Создание ярлыков должно выполняться от имени пользователя.')
@@ -253,5 +253,6 @@ if __name__ == '__main__':
             raise RuntimeError('Неизвестное действие с ярлыками.')
         print(json.dumps(result, ensure_ascii=False))
     except Exception as error:
-        print(str(error), file=sys.stderr)
+        from diagnostics import report_exception
+        report_exception(Path(__file__).resolve().parent, error, 'desktop integration')
         raise SystemExit(1)

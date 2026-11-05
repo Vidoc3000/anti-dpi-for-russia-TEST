@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Igareck Strategies + Bol-Van Zapret2, CLI Linux Version 1.0.
+"""Igareck Strategies + Bol-Van Zapret2, CLI Linux Version 1.1.
 Copyright Igor Krauch (github.com/igareck).
 """
 from __future__ import annotations
@@ -119,6 +119,9 @@ def engine_arguments(root, row, queue=20000, scope='all'):
     args = [str(engine / 'nfqws2'), '--qnum=' + str(queue), '--fwmark=' + MARK, '--bind-fix4',
             '--lua-init=@' + str(engine / 'lua/zapret-lib.lua'),
             '--lua-init=@' + str(engine / 'lua/zapret-antidpi.lua')]
+    if os.geteuid() == 0:
+        from engine_environment import privilege_arguments
+        args[1:1] = privilege_arguments()
     if any(a.startswith('--lua-desync=fake:') and 'blob=reasm_data' in a and ':tls_mod=' in a for a in row['Args']):
         args.append('--lua-init=@' + str(root / 'actual_tls_guard.lua'))
     if row['Init']:
@@ -287,6 +290,8 @@ class Session:
         self.active_table = True
 
     def start(self, row, ports=None):
+        from engine_environment import check_environment, failure_message
+        check_environment()
         self.settings(row['NeedsTimestamps'])
         used = queue_numbers() | {e['queue'] for e in self.entries}
         queue = next((n for n in range(24000, 25000) if n not in used), None)
@@ -297,7 +302,8 @@ class Session:
         checked = run(argv + ['--dry-run'])
         if checked.returncode:
             log_path.write_text(checked.stdout + checked.stderr)
-            raise RuntimeError(f'Параметры стратегии {row["Number"]} не приняты. Лог: {log_path}')
+            raise RuntimeError(failure_message(row['Number'], checked.returncode,
+                                              checked.stdout+checked.stderr)+' Лог: '+str(log_path))
         stream = log_path.open('w')
         stream.write(shlex.join(argv) + '\n'); stream.flush()
         process = subprocess.Popen([sys.executable, str(self.root / 'engine_guard.py'), str(os.getpid())] + argv,
@@ -647,7 +653,7 @@ def ask_parallel():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Igareck + Zapret2 CLI 1.0 — Linux Ubuntu/Debian')
+    parser = argparse.ArgumentParser(description='Igareck + Zapret2 CLI 1.1 — Linux Ubuntu/Debian')
     parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','list','show','check-engine','recover'))
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--strategy', type=int)
@@ -717,5 +723,11 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, EOFError):
         print('\nZapret2 остановлен.')
     except Exception as error:
-        print('\nОШИБКА: '+str(error), file=sys.stderr)
+        from diagnostics import report_exception
+        report_exception(ROOT, error, 'runtime')
+        if os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
+            try:
+                input('\nНажмите Enter, чтобы закрыть окно.\n')
+            except (EOFError, KeyboardInterrupt):
+                pass
         raise SystemExit(1)
