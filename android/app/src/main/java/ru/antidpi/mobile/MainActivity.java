@@ -74,6 +74,7 @@ public final class MainActivity extends Activity {
     private TextView vpnStatusText;
     private TextView testResultText;
     private TextView testProfileText;
+    private TextView tunnelStatsText;
     private CheckBox blockQuicCheckBox;
     private TextView appRoutingSummary;
     private Button vpnButton;
@@ -284,8 +285,18 @@ public final class MainActivity extends Activity {
         vpnCard.addView(testProfileText, margins(matchWrap(), 0, dp(5), 0, 0));
         page.addView(vpnCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
+        LinearLayout diagnosticsCard = card();
+        diagnosticsCard.addView(text("Счётчики реального TUN", 14, CYAN, true), matchWrap());
+        tunnelStatsText = text("Счётчики появятся при активном VPN.", 12, TEXT, false);
+        tunnelStatsText.setLineSpacing(dp(2), 1.0f);
+        diagnosticsCard.addView(tunnelStatsText, margins(matchWrap(), 0, dp(5), 0, 0));
+        TextView diagnosticsHelp = text("Откройте YouTube или сайт на несколько секунд, затем вернитесь сюда. TCP attempts=0 означает, что соединения не дошли до VPN; failed растёт при ошибках выхода через SOCKS. UDP/443 dropped показывает блокируемый QUIC.", 11, MUTED, false);
+        diagnosticsHelp.setLineSpacing(dp(2), 1.0f);
+        diagnosticsCard.addView(diagnosticsHelp, margins(matchWrap(), 0, dp(5), 0, 0));
+        page.addView(diagnosticsCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
         TextView explanation = text(
-                "Проверка выполняет HTTPS-запросы к YouTube и Google. При включённом VPN приложение отправляет их через локальный native ByeDPI SOCKS-прокси с выбранным профилем; при выключенном — напрямую. Успех проверки не гарантирует доступность всех сайтов.",
+                "HTTPS 204 проверяет локальный SOCKS-прокси напрямую и не проходит через TUN как трафик браузера или YouTube. Для диагностики маршрута откройте сайт в другом приложении, вернитесь сюда и посмотрите счётчики TUN ниже. Успех 204 не гарантирует загрузку видео или обход блокировки.",
                 13, MUTED, false);
         explanation.setLineSpacing(dp(2), 1.0f);
         page.addView(explanation, margins(matchWrap(), 0, 0, 0, dp(10)));
@@ -670,11 +681,13 @@ public final class MainActivity extends Activity {
     }
 
     private void updateTestSummary() {
-        if (testProfileText == null) return;
-        boolean running = AntiDpiVpnService.isRunning(this);
-        testProfileText.setText((running ? "VPN активен" : "VPN выключен") + "\n" +
-                (selected == null ? "Профиль не выбран" : "Профиль #" + selected.number + " · " +
-                        AndroidPacketEngine.describeNativeProfile(selected.argsJson)));
+        if (testProfileText != null) {
+            boolean running = AntiDpiVpnService.isRunning(this);
+            testProfileText.setText((running ? "VPN активен" : "VPN выключен") + "\n" +
+                    (selected == null ? "Профиль не выбран" : "Профиль #" + selected.number + " · " +
+                            AndroidPacketEngine.describeNativeProfile(selected.argsJson)));
+        }
+        if (tunnelStatsText != null) tunnelStatsText.setText(AntiDpiVpnService.trafficStats(this));
     }
 
     private void onVpnStateChanged() {

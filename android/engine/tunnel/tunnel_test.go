@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,22 @@ func commonProtocols() stack.Options {
 // TestTunnelTCPFlow drives a real TCP flow from a client gVisor stack, through
 // our tunnel stack's forwarder and desync dialer, to a real echo server, and
 // checks the bytes round-trip intact (i.e. the desync is server-safe end to end).
+func TestTunnelStatsReportsRoutingCounters(t *testing.T) {
+	tun := &Tunnel{}
+	tun.tcpAttempts.Store(3)
+	tun.tcpConnected.Store(2)
+	tun.tcpFailed.Store(1)
+	tun.quicDropped.Store(7)
+	tun.setLastEvent("198.51.100.1:443 connect error: timeout")
+
+	stats := tun.Stats()
+	for _, expected := range []string{"TCP attempts=3", "connected=2", "failed=1", "UDP/443 dropped=7", "timeout"} {
+		if !strings.Contains(stats, expected) {
+			t.Fatalf("Stats() = %q; missing %q", stats, expected)
+		}
+	}
+}
+
 func TestTunnelTCPFlow(t *testing.T) {
 	// Real echo server on loopback.
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
@@ -149,5 +166,8 @@ func TestTunnelTCPFlow(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("echo mismatch: got %q want %q", got, payload)
+	}
+	if tun.tcpAttempts.Load() == 0 || tun.tcpConnected.Load() == 0 || tun.tcpFailed.Load() != 0 {
+		t.Fatalf("unexpected forwarding stats: %s", tun.Stats())
 	}
 }
