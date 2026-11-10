@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([ValidateSet('Install','Launch','Uninstall')][string]$Action='Install',[switch]$SkipHeader)
+param([ValidateSet('Install','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $payload=if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'payload')){Join-Path $PSScriptRoot 'payload'}else{$PSScriptRoot}
 $AntiDPILibraryOnly=$true
@@ -508,7 +508,7 @@ function Install-AntiDPI {
                     Copy-Item -LiteralPath $file.FullName -Destination $ready -Recurse -Force
                 }
                 $installed=Join-Path $ready 'AntiDPI';[IO.Directory]::CreateDirectory($installed)|Out-Null
-                foreach($name in @('AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Artwork_CLI.json','AntiDPI_Console_Artwork.cs','ascii-art-new-1147-25102026.txt','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico','AntiDPIArtCLI.ttf','AntiDPIArtCLI_OFL.txt')){
+                foreach($name in @('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Artwork_CLI.json','AntiDPI_Console_Artwork.cs','ascii-art-new-1147-25102026.txt','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico','AntiDPIArtCLI.ttf','AntiDPIArtCLI_OFL.txt')){
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
                 foreach($name in @('README_Установка_Windows_v1.0.txt','README_Стратегии_Windows_v1.0.txt','LICENSE.txt')){
@@ -524,7 +524,7 @@ function Install-AntiDPI {
                     Copy-Item -LiteralPath (Join-Path (Join-Path $payload 'lists') $name) -Destination $lists
                 }
                 Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $installed 'AntiDPI_Manager.ps1')
-                New-UserCommand (Join-Path $ready 'ЗАПУСК_AntiDPI_Zapret2.cmd') 'Launch'
+                New-UserCommand (Join-Path $ready 'ЗАПУСК_AntiDPI_Zapret2.cmd') 'GUI'
                 New-UserCommand (Join-Path $ready 'УДАЛИТЬ_AntiDPI_Zapret2.cmd') 'Uninstall'
                 $files=@(Get-ChildItem -LiteralPath $ready -Recurse -File -Force|ForEach-Object {[pscustomobject]@{Path=$_.FullName.Substring($ready.TrimEnd('\','/').Length+1);Sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
                 $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='CLI_1.0';DisplayVersion='CLI Version 1.0';OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
@@ -579,7 +579,10 @@ function Install-AntiDPI {
         Write-Host ("Установлено в:`r`n{0}`r`nИсходные файлы запуска и удаления находятся в этой корневой папке." -f $finalRoot) -ForegroundColor Yellow
         Write-Host '----------------------'
         Complete-AntiDPISessionLog
-        & (Join-Path $installed 'AntiDPI_Manager.ps1') -Action Launch -SkipHeader
+        $guiManager=Join-Path $installed 'AntiDPI_Manager.ps1'
+        $guiArguments=@('-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',$guiManager,'-Action','GUI','-SkipHeader')
+        $guiJoined=(@($guiArguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')
+        $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $guiJoined -WindowStyle Hidden
     }finally{
         Remove-AntiDPITemporaryDirectory $ready
         Remove-AntiDPITemporaryDirectory $stage
@@ -769,7 +772,7 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
             Name='START_AntiDPI.lnk'
             Target=(Join-Path $InstallRoot 'ЗАПУСК_AntiDPI_Zapret2.cmd')
             Icon=(Join-Path $InstallRoot 'AntiDPI\AntiDPI_Zapret2.ico')
-            Description='Запуск AntiDPI Strategies + Bol-Van Zapret2 — CLI Version 1.0'
+            Description='Графическое управление AntiDPI Strategies + Bol-Van Zapret2'
         },
         [pscustomobject]@{
             Name='DELETE_AntiDPI.lnk'
@@ -885,22 +888,32 @@ function Remove-AntiDPIDesktopShortcut($Manifest) {
 
 if($env:OS -ne 'Windows_NT'){throw 'Этот установщик предназначен для Windows 10/11 x64.'}
 if(-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64'){throw 'Нужна Windows x64. ARM64 требует отдельной подготовки официального драйвера.'}
-if(-not (Test-AntiDPIAdmin)){
-    $arguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action',$Action)
-    if($SkipHeader){$arguments+='-SkipHeader'}
+$needsElevation=-not (Test-AntiDPIAdmin)
+$needsSta=($Action -eq 'GUI' -and [Threading.Thread]::CurrentThread.ApartmentState -ne [Threading.ApartmentState]::STA)
+if($needsElevation -or $needsSta){
+    $arguments=@('-NoLogo','-NoProfile')
+    if($Action -eq 'GUI'){$arguments+='-STA'}
+    $arguments+=@('-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action',$Action)
+    if($SkipHeader -or $Action -eq 'GUI'){$arguments+='-SkipHeader'}
     $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $joined=(ConvertTo-WindowsArgument $powershell)+' '+(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')
-    $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $joined -Verb RunAs -PassThru
+    if($Action -eq 'GUI'){
+        $startParameters=@{FilePath=$powershell;ArgumentList=(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ');WindowStyle='Hidden';PassThru=$true}
+        if($needsElevation){$startParameters.Verb='RunAs'}
+        $null=Start-Process @startParameters
+    }else{
+        $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $joined -Verb RunAs -PassThru
+    }
     exit 0
 }
 
 try{
     Start-AntiDPISessionLog
-    if(-not $SkipHeader){
+    if(-not $SkipHeader -and $Action -ne 'GUI'){
         Show-AntiDPIHeader
     }
-    switch($Action){'Install'{Install-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'Uninstall'{Uninstall-AntiDPI}}
+    switch($Action){'Install'{Install-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
 }
 catch [OperationCanceledException]{Write-Host ''}
-catch{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null;exit 1}
+catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
 finally{Close-AntiDPIArtworkConsole;Complete-AntiDPISessionLog}

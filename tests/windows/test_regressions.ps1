@@ -47,6 +47,23 @@ foreach ($root in $scriptRoots) {
     }
 }
 
+$managerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Manager.ps1'))
+$coreText = [IO.File]::ReadAllText($corePath)
+$catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'))
+$guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
+Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
+Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
+$launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
+Assert-True ($launchLines.Count -eq 1) 'primary Windows launcher opens GUI'
+Assert-True ($coreText.Contains('if($ListProfilesJson)')) 'profile catalogue provides JSON for the GUI'
+Assert-True ($catalogueText.Contains('[switch]$ListProfilesJson')) 'catalogue exposes JSON listing switch'
+$guiProfileJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -ListProfilesJson | Out-String)
+$guiProfiles = @($guiProfileJson | ConvertFrom-Json)
+if ($guiProfiles.Count -eq 1 -and $guiProfiles[0] -is [array]) { $guiProfiles = @($guiProfiles[0]) }
+Assert-Equal 492 $guiProfiles.Count 'GUI JSON profile list count'
+Assert-True ($guiText.Contains('[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)')) 'GUI requests managed controller shutdown'
+Assert-True (-not $guiText.Contains('Invoke-WebRequest')) 'GUI does not present a network probe as a tunnel check'
+
 # Ensure the Windows CLI carries the same expanded catalogue as Linux.
 $windowsCataloguePath = Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
 $windowsCatalogueText = [IO.File]::ReadAllText($windowsCataloguePath)
