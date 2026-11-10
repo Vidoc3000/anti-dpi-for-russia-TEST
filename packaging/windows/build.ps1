@@ -4,7 +4,7 @@
 param(
     [string]$RepositoryRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$OutputDirectory,
-    [ValidatePattern('^[0-9]+\.[0-9]+(?:\.[0-9]+){0,2}$')][string]$Version = '1.1',
+    [ValidatePattern('^[0-9]+\.[0-9]+(?:\.[0-9]+){0,2}$')][string]$Version = '1.4',
     [string]$CompilerPath,
     [ValidateRange(0,4294967295)][long]$SourceDateEpoch = 0,
     [switch]$ZipOnly,

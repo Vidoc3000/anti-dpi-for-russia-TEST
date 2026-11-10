@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AntiDPI Strategies + Bol-Van Zapret2, CLI Linux Version 1.4.
+"""AntiDPI Strategies + Bol-Van Zapret2, CLI Linux Version 1.5.
 Copyright Igor Krauch (github.com/igareck).
 """
 from __future__ import annotations
@@ -898,7 +898,7 @@ def choose_benchmark_target(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.3 — Linux Ubuntu/Debian')
+    parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.5 — Linux Ubuntu/Debian')
     parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover'))
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--strategy', type=int)
