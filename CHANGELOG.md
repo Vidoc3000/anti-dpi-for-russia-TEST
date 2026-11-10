@@ -1,11 +1,12 @@
 # Changelog / История изменений
 
-## Unreleased — IPv6 and UDP/QUIC
+## 1.4 — IPv6 and UDP/QUIC
 
 | English | Русский |
 | --- | --- |
 | Add IPv4/IPv6 selection and separate UDP/QUIC Initial profiles to the Windows GUI and Linux CLI. QUIC presets use fake_default_quic and only target QUIC Initial on selected UDP ports. | Добавлены выбор IPv4/IPv6 и отдельные UDP/QUIC Initial-профили в Windows GUI и Linux CLI. QUIC-профили используют fake_default_quic и применяются только к QUIC Initial на выбранных UDP-портах. |
 | TLS benchmark and YouTube checks remain TCP/TLS-specific; neither proves a VPN/Tor tunnel or third-party client authorization. | TLS benchmark и проверка YouTube остаются отдельными TCP/TLS-проверками; они не подтверждают работу VPN/Tor-туннеля или авторизацию стороннего клиента. |
+| Linux package version advances to 1.4; Windows GUI + CLI package advances to 1.3. | Версия Linux-пакета повышена до 1.4; Windows GUI + CLI — до 1.3. |
 
 ## 1.3 — Windows GUI reliability / Linux
 
