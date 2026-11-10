@@ -53,6 +53,9 @@ $windowsCatalogueText = [IO.File]::ReadAllText($windowsCataloguePath)
 $catalogueMatch = [regex]::Match($windowsCatalogueText, '(?s)\$ProfileRows = @''\r?\n(.*?)\r?\n''@ \| ConvertFrom-Json')
 Assert-True $catalogueMatch.Success 'embedded Windows profile catalogue exists'
 $windowsRows = @($catalogueMatch.Groups[1].Value | ConvertFrom-Json)
+if ($windowsRows.Count -eq 1 -and $windowsRows[0] -is [array]) {
+    $windowsRows = @($windowsRows[0])
+}
 $linuxCatalogue = Get-Content -LiteralPath (Join-Path $repoRoot 'linux\data\catalogue.json') -Raw | ConvertFrom-Json
 Assert-Equal $linuxCatalogue.CatalogueInfo.ProfileCount $windowsRows.Count 'Windows profile count matches Linux'
 Assert-Equal 492 $windowsRows.Count 'expanded profile count'
