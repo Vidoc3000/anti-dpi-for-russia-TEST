@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ubuntu/Debian CLI 1.1 installer. Copyright Igor Krauch (github.com/igareck)."""
+"""Ubuntu/Debian CLI 1.2 installer. Copyright Igor Krauch (github.com/igareck)."""
 from __future__ import annotations
 import argparse
 from contextlib import ExitStack
@@ -256,7 +256,7 @@ def install(args):
             (stage/'_state').mkdir(mode=0o700); (stage/'logs').mkdir(mode=0o700)
             for name in ('build.log','parameters-check.log','source-download.log','engine-environment.json'):
                 shutil.move(stage/name, stage/'logs'/name)
-            identity = {'schema':'antidpi.zapret2.linux.install.v1','version':'1.1','prefix':str(prefix),
+            identity = {'schema':'antidpi.zapret2.linux.install.v1','version':'1.2','prefix':str(prefix),
                         'id':install_id,'upstream_commit':meta['commit'],'upstream_selection':selection,'shortcuts':None,'global_command':None,
                         'files':{p.relative_to(stage).as_posix():digest(p) for p in stage.rglob('*') if p.is_file() and p.relative_to(stage).parts[0] not in ('logs','_state','__pycache__')}}
             (stage/'installation.json').write_text(json.dumps(identity,ensure_ascii=False,indent=2)+'\n')
@@ -318,7 +318,7 @@ if __name__ == '__main__':
         raise KeyboardInterrupt
     signal.signal(signal.SIGHUP, terminate)
     signal.signal(signal.SIGTERM, terminate)
-    parser=argparse.ArgumentParser(description='Установка/удаление AntiDPI CLI Linux 1.1')
+    parser=argparse.ArgumentParser(description='Установка/удаление AntiDPI CLI Linux 1.2')
     parser.add_argument('action', nargs='?', choices=('install','uninstall'),default='install')
     parser.add_argument('--prefix')
     parser.add_argument('--engine', choices=('compatible','latest'), help='Версия официального Zapret2; без аргумента предлагается выбор')

@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.1**, **Windows 1.0**. Исправления Linux не повышают версию Windows. Тег `v1.1` фиксирует обновление Linux; Windows в нём остаётся версии **1.0**.
+Текущие версии исходников: **Linux 1.2**, **Windows 1.1**. Исправления Linux не повышают версию Windows. Тег `v1.2` включает обновлённый Windows GUI и Linux-пакет; версии платформ: **Windows 1.1** и **Linux 1.2** соответственно.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.0_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.0_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.0.txt`
+- `dist/AntiDPI_CLI_v1.1_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.1_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.1.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -71,7 +71,7 @@ ZIP содержит одну корневую папку программы. EX
 & .\packaging\windows\build.ps1 -ZipOnly
 ```
 
-Этот режим также работает в PowerShell 7 на Linux. Он создаёт отдельный файл `SHA256SUMS_Windows_ZIP_v1.0.txt` и не компилирует EXE. Для публикации пары ZIP/EXE используйте полную сборку на Windows.
+Этот режим также работает в PowerShell 7 на Linux. Он создаёт отдельный файл `SHA256SUMS_Windows_ZIP_v1.1.txt` и не компилирует EXE. Для публикации пары ZIP/EXE используйте полную сборку на Windows.
 
 ### Исходник EXE
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.1_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.1.txt`
+- `dist/AntiDPI_CLI_v1.2_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.2.txt`
 
 Для пересборки:
 
@@ -123,11 +123,11 @@ bash packaging/linux/build.sh --force
 ### Дополнительные параметры
 
 ```powershell
-& .\packaging\windows\build.ps1 -RepositoryRoot 'C:\Projects\anti-dpi-for-russia' -OutputDirectory 'C:\Builds\AntiDPI' -Version '1.0'
+& .\packaging\windows\build.ps1 -RepositoryRoot 'C:\Projects\anti-dpi-for-russia' -OutputDirectory 'C:\Builds\AntiDPI' -Version '1.1'
 ```
 
 ```bash
-bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.1
+bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.2
 ```
 
 `Version`/`--version` задаёт имена выходных файлов и метаданные EXE. Параметр не меняет текст версии внутри самой программы: его необходимо обновлять в исходниках отдельно. Linux-сборщик сверяет версию с `linux/data/release.json` и отклоняет несовпадение.
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.0_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.0_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.0.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.1_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.1_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.1.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.1.txt)
-tar -tzf dist/AntiDPI_CLI_v1.1_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.2.txt)
+tar -tzf dist/AntiDPI_CLI_v1.2_Linux_x64.tar.gz
 ```
 
 
