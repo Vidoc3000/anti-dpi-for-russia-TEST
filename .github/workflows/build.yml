@@ -23,6 +23,11 @@ on:
         required: true
         default: '1.0'
         type: string
+      publish_release:
+        description: 'Publish a GitHub release from this build (requires platform=all)'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -127,3 +132,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  release:
+    name: Publish GitHub release
+    if: inputs.publish_release && inputs.platform == 'all'
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download platform build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --dir release-artifacts
+
+      - name: Create release with verified binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ inputs.linux_version }}
+          RELEASE_TITLE: AntiDPI CLI — Windows v${{ inputs.windows_version }} / Linux v${{ inputs.linux_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find release-artifacts -type f \
+            \( -name '*.zip' -o -name '*.exe' -o -name '*.tar.gz' -o -name 'SHA256SUMS_*.txt' \) | sort)
+          if [[ ${#assets[@]} -ne 5 ]]; then
+            printf 'Expected five verified release assets; found %s.\n' "${#assets[@]}" >&2
+            printf '%s\n' "${assets[@]}" >&2
+            exit 1
+          fi
+          cat > release-notes.md <<EOF
+          AntiDPI CLI release v${{ inputs.linux_version }}.
+
+          - Linux package: v${{ inputs.linux_version }} (Ubuntu/Debian x64).
+          - Windows package: v${{ inputs.windows_version }} (Windows 10/11 x64).
+          - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
+
+          This is the first AntiDPI-branded release in this repository. Copyright,
+          license notices, and the original author's attribution remain included.
+          EOF
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md
