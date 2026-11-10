@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.6 — Windows installer and live YouTube analysis
+
+| English | Русский |
+| --- | --- |
+| Add a graphical Windows installer with explicit setup choices, progress, and logs. Run YouTube strategy checks sequentially and display each result as soon as it completes; use JSON snapshots instead of parsing optional diagnostic Event fields. Improve GUI scrolling/settings and remove the unused root artwork asset. | Добавлены графический мастер установки Windows с выбором параметров, прогрессом и логами, последовательная проверка стратегий YouTube с немедленным показом результатов и JSON-снимки вместо разбора необязательных полей Event. Улучшены прокрутка и настройки GUI; удалён неиспользуемый корневой ресурс оформления. |
+| Linux package version advances to 1.6 for the combined release; Windows GUI + CLI advances to 1.5. | Версия Linux-пакета повышена до 1.6 для общего выпуска; Windows GUI + CLI — до 1.5. |
+
 ## 1.5 — Windows GUI: анализ YouTube и настройки
 
 | English | Русский |

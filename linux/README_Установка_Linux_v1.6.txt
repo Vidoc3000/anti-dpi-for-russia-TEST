@@ -1,6 +1,6 @@
 ===========================================================================
 AntiDPI Strategies + Bol-Van Zapret2
-CLI Version 1.5 | Linux Ubuntu/Debian x64 | ИНСТРУКЦИЯ ПО УСТАНОВКЕ
+CLI Version 1.6 | Linux Ubuntu/Debian x64 | ИНСТРУКЦИЯ ПО УСТАНОВКЕ
 ===========================================================================
 ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ НА БАЗЕ ZAPRET2 (BOL-VAN)
 В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE
@@ -12,14 +12,14 @@ Telegram: https://t.me/igareq
 
 492 публичные стратегии: 45 Golden + 447 Silver; 24 семейства.
 Golden: 1–45. Silver: 46–492.
-Подробный пошаговый справочник: README_Стратегии_Linux_v1.5.txt.
+Подробный пошаговый справочник: README_Стратегии_Linux_v1.6.txt.
 
 УСТАНОВКА ЧЕРЕЗ АРХИВ
 Перед установкой остановите работающую стратегию через Ctrl+C.
 Откройте терминал в папке со скачанным архивом и выполните:
 
-tar -xzf AntiDPI_CLI_v1.5_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.5_Linux_x64
+tar -xzf AntiDPI_CLI_v1.6_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.6_Linux_x64
 bash INSTALL.sh --no-launch
 
 Последовательно предлагаются:
@@ -75,8 +75,8 @@ https://cdn.gh-proxy.org/https://github.com/bol-van/zapret2/archive/refs/heads/m
 В ней находятся:
   START_AntiDPI — запуск программы двойным кликом;
   DELETE_AntiDPI — стандартное удаление с подтверждением;
-  README_Установка_Linux_v1.5.txt — эта инструкция;
-  README_Стратегии_Linux_v1.5.txt — справочник всех 492 стратегий.
+  README_Установка_Linux_v1.6.txt — эта инструкция;
+  README_Стратегии_Linux_v1.6.txt — справочник всех 492 стратегий.
 В Главном Меню программ появляется отдельный ярлык:
   AntiDPI
 Ярлыки открывают терминал; при необходимости sudo запросит пароль.
