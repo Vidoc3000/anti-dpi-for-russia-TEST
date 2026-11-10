@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.5 — Windows GUI: анализ YouTube и настройки
+
+| English | Русский |
+| --- | --- |
+| Add a Windows GUI tab to compare strategies by YouTube HTTPS availability, persist network settings, and show physical adapter names. Analysis results are limited to IPv4/TCP/TLS YouTube checks and do not validate VPN/Tor clients or tunnels. | Добавлены вкладки Windows GUI для сравнения стратегий по доступности YouTube, сохранения сетевых настроек и отображения имён физических адаптеров. Анализ ограничен YouTube-проверкой по IPv4/TCP/TLS и не проверяет VPN/Tor-клиенты или туннели. |
+| Linux package version advances to 1.5; Windows GUI + CLI advances to 1.4. | Версия Linux-пакета повышена до 1.5; Windows GUI + CLI — до 1.4. |
+
 ## 1.4 — IPv6 and UDP/QUIC
 
 | English | Русский |

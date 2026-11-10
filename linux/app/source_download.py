@@ -81,7 +81,7 @@ def transfer(url, destination, expected_bytes):
                 'curl', '--disable', '--location', '--fail', '--silent', '--show-error',
                 '--globoff', '--proto', '=https', '--proto-redir', '=https',
                 '--connect-timeout', str(WINDOW_SECONDS), '--max-redirs', '5',
-                '--user-agent', 'AntiDPI-Zapret2-Linux/1.3',
+                '--user-agent', 'AntiDPI-Zapret2-Linux/1.5',
                 '--dump-header', str(headers), '--output', str(destination),
                 '--write-out', '%{url_effective}', url
             ], stdout=subprocess.PIPE, stderr=stderr)

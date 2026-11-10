@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.3'
+        default: '1.5'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.2'
+        default: '1.4'
         type: string
       publish_release:
         description: 'Publish a GitHub release from this build (requires platform=all)'
@@ -172,6 +172,8 @@ jobs:
 
           - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64).
           - Windows GUI + CLI package: v${{ inputs.windows_version }} (Windows 10/11 x64).
+          - Windows GUI adds strategy analysis based on YouTube availability, persistent network settings, and named physical adapters.
+          - YouTube analysis checks only IPv4/TCP/TLS HTTPS access; it does not validate VPN/Tor clients or tunnels.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
 
           Copyright, license notices, and the original author's attribution remain included.
