@@ -21,6 +21,7 @@ import engine_environment as environment
 import igareck
 import terminal_bootstrap as terminal
 import remove_installation
+import target_probe
 
 
 def state(mapping='0 0 4294967295', groups='allow', caps='ffffffffffffffff'):
@@ -196,6 +197,58 @@ class DependencyTests(unittest.TestCase):
             apt.assert_not_called()
 
 
+class EndpointProbeTests(unittest.TestCase):
+    def test_target_validation_normalizes_idn_and_defaults_sni(self):
+        target = target_probe.validate_target({'host':'пример.рф','port':'443'})
+        self.assertEqual(target['host'],'xn--e1afmkfd.xn--p1ai')
+        self.assertEqual(target['sni'],target['host'])
+        self.assertTrue(target['verify_certificate'])
+
+    def test_target_validation_rejects_bad_ports_and_names(self):
+        for value in (
+            {'host':'vpn.example.org','port':0},
+            {'host':'vpn.example.org/path','port':443},
+            {'host':'vpn.example.org','port':443,'sni':'192.0.2.1'},
+            {'host':'2001:db8::1','port':443,'sni':'vpn.example.org'},
+        ):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                target_probe.validate_target(value)
+
+    def test_tls_probe_binds_interface_and_source_port_and_sends_no_application_data(self):
+        raw=Mock()
+        raw.getsockname.return_value=('0.0.0.0',20001)
+        secure=Mock()
+        secure.version.return_value='TLSv1.3'
+        context=Mock()
+        context.wrap_socket.return_value=secure
+        info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
+        with patch.object(target_probe.socket,'socket',return_value=raw):
+            result=target_probe.probe('eth0',(20000,20063),
+                {'host':'vpn.example.org','port':443,'sni':'front.example.org'},
+                resolver=Mock(return_value=[info]),context_factory=Mock(return_value=context))
+        self.assertTrue(result['pass'],result)
+        self.assertEqual(result['tls'],'TLSv1.3')
+        raw.bind.assert_called_once_with(('0.0.0.0',20000))
+        raw.connect.assert_called_once_with(info[4])
+        context.wrap_socket.assert_called_once_with(raw,server_hostname='front.example.org')
+        secure.sendall.assert_not_called()
+
+    def test_cli_target_argument_requires_explicit_tcp_port(self):
+        with self.assertRaises(ValueError):
+            igareck.parse_target_argument('vpn.example.org')
+        target=igareck.parse_target_argument('vpn.example.org:2053','front.example.org')
+        self.assertEqual((target['host'],target['port'],target['sni']),
+                         ('vpn.example.org',2053,'front.example.org'))
+
+    def test_ranking_prefers_reliability_then_handshake_latency(self):
+        scores=[
+            {'number':3,'successes':1,'success_rate':.5,'median_seconds':.1},
+            {'number':2,'successes':2,'success_rate':1.0,'median_seconds':.5},
+            {'number':1,'successes':2,'success_rate':1.0,'median_seconds':.2},
+        ]
+        self.assertEqual([row['number'] for row in igareck.rank_endpoint_scores(scores)],[1,2,3])
+
+
 class ResourceTests(unittest.TestCase):
     def test_standard_uninstall_retains_error_reporter_for_later_purge(self):
         self.assertIn('diagnostics.py', remove_installation.RETAIN)
@@ -206,10 +259,13 @@ class ResourceTests(unittest.TestCase):
 
     def test_help_and_catalogue_work_without_display(self):
         env = dict(os.environ, DISPLAY='', WAYLAND_DISPLAY='', PYTHONDONTWRITEBYTECODE='1')
-        for arguments in (['--help'], ['show', '--strategy', '25']):
+        for arguments in (['--help'], ['show', '--strategy', '25'], ['benchmark', '--help']):
             result = subprocess.run(['bash', str(REPO/'linux/START.sh')]+arguments,
                                     env=env, capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
+            if arguments == ['benchmark', '--help']:
+                self.assertIn('--target', result.stdout)
+                self.assertIn('TLS-узел', result.stdout)
 
     def test_traceback_is_visible_and_private_log_is_created(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:

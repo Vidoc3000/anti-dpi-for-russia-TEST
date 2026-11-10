@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import fcntl
+import hashlib
 import ipaddress
 import json
 import os
@@ -18,6 +19,7 @@ import shlex
 import shutil
 import signal
 import socket
+import statistics
 import subprocess
 import sys
 import termios
@@ -30,6 +32,7 @@ import uuid
 import zipfile
 
 import cli_ui
+import target_probe
 from app_paths import resource_path
 
 ROOT = Path(__file__).resolve().parent
@@ -543,6 +546,64 @@ def youtube_attempt(session, ports, number, attempt, stop):
     return result
 
 
+def endpoint_id(target):
+    if target.get('report_id'):
+        return target['report_id']
+    key='|'.join((target['host'].casefold(),str(target['port']),target['sni'].casefold()))
+    return hashlib.sha256(key.encode('utf-8')).hexdigest()[:10]
+
+
+def rank_endpoint_scores(scores):
+    return sorted(scores,key=lambda x:(-x['success_rate'],-x['successes'],
+                  x['median_seconds'] if x['median_seconds'] is not None else float('inf'),x['number']))
+
+
+def endpoint_attempt(session, ports, number, attempt, stop, target):
+    directory=getattr(session,'scan_logs',session.logs)
+    target_key=endpoint_id(target)
+    base=directory/f'Endpoint_{target_key}_p{number:04}_r{attempt}'
+    result_path=base.with_suffix('.result.json')
+    app_root=getattr(session,'root',ROOT)
+    queue=next((x['queue'] for x in getattr(session,'entries',[]) if x['number']==number),None)
+    before=queue_snapshot(queue) if queue is not None else {}
+    with tempfile.TemporaryDirectory(prefix='igareck-endpoint-') as temporary:
+        request_path=Path(temporary)/'request.json'
+        atomic_json(request_path,{'interface':session.interface,'ports':ports,'timeout':12,'target':target})
+        argv=[sys.executable,str(app_root/'engine_guard.py'),str(os.getpid()),sys.executable,'-B',str(app_root/'target_probe.py'),str(request_path)]
+        started=time.monotonic()
+        with tempfile.TemporaryFile() as errors:
+            process=subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=errors)
+            try:
+                while process.poll() is None and not stop.is_set() and time.monotonic()-started<15:
+                    time.sleep(.05)
+                if process.poll() is None:
+                    stop_process(process)
+                    result={'pass':False,'reason':'CANCELLED' if stop.is_set() else 'TIMEOUT',
+                            'seconds':round(time.monotonic()-started,3),'technical':False}
+                    process.communicate()
+                else:
+                    output,_=process.communicate()
+                    try:
+                        result=json.loads(output.decode('utf-8'))
+                        if not isinstance(result,dict) or 'pass' not in result:raise ValueError('Некорректный результат')
+                    except (ValueError,UnicodeDecodeError) as error:
+                        result={'pass':False,'technical':True,'reason':'PROBE_PROCESS_ERROR',
+                                'error':str(error),'exit_code':process.returncode}
+            finally:
+                stop_process(process)
+                if process.stdout is not None:process.stdout.close()
+    # Do not persist endpoint names, addresses, SNI, IPs, or exception text in the report.
+    result.pop('error',None);result.pop('remote_ip',None);result.pop('host',None);result.pop('sni',None)
+    result.update(number=number,attempt=attempt,target_id=target_key,ports=list(ports),queue=queue,
+                  queue_before=before,queue_after=queue_snapshot(queue) if queue is not None else {})
+    if result.get('source_port') and before and result['queue_after'] and result['queue_after'].get('packets_total',0)<=before.get('packets_total',0):
+        result.update(technical=True,reason='TRAFFIC_NOT_INTERCEPTED')
+    atomic_json(result_path,result)
+    if result.get('technical'):
+        raise RuntimeError('Техническая ошибка проверки TLS-узла: '+result['reason']+'.')
+    return result
+
+
 def reserve_ports(excluded=()):
     # Bind all 64 ports simultaneously while choosing a disjoint worker block.
     ephemeral = [int(x) for x in Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split()]
@@ -563,33 +624,47 @@ def reserve_ports(excluded=()):
     raise RuntimeError('Не найден блок свободных TCP-портов.')
 
 
-def scan(session, rows, numbers, parallel):
+def scan(session, rows, numbers, parallel, target=None):
     if not 1 <= parallel <= 5:
         raise ValueError('Число параллелей должно быть от 1 до 5.')
-    if not any(a<=443<=b for a,b in port_ranges(getattr(session,'scope','all'))):
+    if target is None and not any(a<=443<=b for a,b in port_ranges(getattr(session,'scope','all'))):
         print('Проверка YouTube требует TCP-порт 443; выбранные порты его не включают.')
         return []
-    print('Перед проверкой выключите VPN/TUN. Для остановки нажмите Esc. Если нашлась рабочая стратегия, проверку можно остановить заранее.\n----------------------')
+    if target is not None:
+        target=target_probe.validate_target(target)
+        target['report_id']=uuid.uuid4().hex[:10]
+        session.scope=str(target['port'])
+        if not target['verify_certificate']:
+            print('ВНИМАНИЕ: проверка сертификата отключена; успешный результат не подтверждает подлинность сервера.')
+    probe_name='Endpoint_'+endpoint_id(target) if target else 'YouTube'
+    backend='TLS handshake only, IPv4' if target else 'Python SSL, IPv4, HTTP/1.1'
+    print('Перед проверкой выключите VPN/TUN. Проверяется только TCP/TLS, не авторизация или работа самого VPN/Tor-клиента. Для остановки нажмите Esc.\n----------------------')
     numbers=list(numbers)
-    session.scan_logs=session.logs/('YouTube_'+session.stamp+'_'+uuid.uuid4().hex[:6])
+    session.scan_logs=session.logs/(probe_name+'_'+session.stamp+'_'+uuid.uuid4().hex[:6])
     session.scan_logs.mkdir(mode=0o700)
-    atomic_json(session.scan_logs/'scan.json',{'version':VERSION,'interface':getattr(session,'interface',''),'numbers':numbers,'parallel':parallel,'threshold':THRESHOLD,'backend':'Python SSL, IPv4, HTTP/1.1'})
-    stop=threading.Event();found=[];pending=iter(numbers);jobs={};used=set();finished=SimpleQueue()
+    atomic_json(session.scan_logs/'scan.json',{'version':VERSION,'interface':getattr(session,'interface',''),'numbers':numbers,'parallel':parallel,'threshold':THRESHOLD,'backend':backend,'target_id':endpoint_id(target) if target else None})
+    stop=threading.Event();found=[];scores=[];pending=iter(numbers);jobs={};used=set();finished=SimpleQueue()
     log=session.scan_logs/'results.jsonl'
     completed=0;interrupted=False
     def worker(number,ports):
         results=[]
         for attempt in (1,2):
             if stop.is_set():break
-            results.append(youtube_attempt(session,ports,number,attempt,stop))
+            check=endpoint_attempt if target else youtube_attempt
+            results.append(check(session,ports,number,attempt,stop,target) if target else check(session,ports,number,attempt,stop))
         return results
     def emit(number,results):
         nonlocal completed
         successes=sum(x['pass'] for x in results)
-        status='PASS' if successes==2 else 'UNSTABLE' if successes else 'CANCELLED' if not results or any(x.get('reason')=='CANCELLED' for x in results) else 'FAIL'
+        status=('TLS_OK' if successes==2 else 'TLS_UNSTABLE' if successes else 'CANCELLED' if not results or any(x.get('reason')=='CANCELLED' for x in results) else 'FAIL') if target else ('PASS' if successes==2 else 'UNSTABLE' if successes else 'CANCELLED' if not results or any(x.get('reason')=='CANCELLED' for x in results) else 'FAIL')
         with log.open('a',encoding='utf-8') as file:
             file.write(json.dumps({'number':number,'status':status,'attempts':results},ensure_ascii=False)+'\n')
         completed+=1
+        if target:
+            samples=[x.get('seconds',0) for x in results if x.get('pass')]
+            scores.append({'number':number,'successes':successes,'attempts':len(results),
+                           'success_rate':successes/len(results) if results else 0.0,
+                           'median_seconds':round(statistics.median(samples),3) if samples else None})
         if successes:
             print(cli_ui.color((', ' if found else '')+f'{number} ({status})','92'),end='',flush=True)
             found.append(number)
@@ -633,14 +708,19 @@ def scan(session, rows, numbers, parallel):
         atomic_json(session.scan_logs/'technical_error.json',{'error':str(error),'type':type(error).__name__})
         raise
     finally:
-        atomic_json(session.scan_logs/'summary.json',{'requested':len(numbers),'completed':completed,'interrupted':interrupted,'found':found})
+        ranking=rank_endpoint_scores(scores)
+        atomic_json(session.scan_logs/'summary.json',{'requested':len(numbers),'completed':completed,'interrupted':interrupted,'found':found,'target_id':endpoint_id(target) if target else None,'ranking':ranking})
         archive=shutil.make_archive(str(session.scan_logs),'zip',str(session.scan_logs))
         # The full diagnostic ZIP is saved silently; only working recipes are printed.
         print()
         del session.scan_logs
     if not found:
         if interrupted:print('Проверка остановлена пользователем.')
-        print('Рабочие стратегии не найдены')
+        print('Не найдены стратегии с успешным TLS-handshake.' if target else 'Рабочие стратегии не найдены')
+    if target and scores:
+        print('Рейтинг TLS-проверки (успехи из двух попыток; ниже медианная задержка):')
+        ranking=rank_endpoint_scores(scores)
+        cli_ui.table(['Место','Стратегия','Успехи','Медиана, с'],[[str(i),str(x['number']),f"{x['successes']}/{x['attempts']}",str(x['median_seconds'] if x['median_seconds'] is not None else '—')] for i,x in enumerate(ranking,1)],[6,10,9,12])
     print('----------------------')
     return found
 
@@ -652,16 +732,41 @@ def ask_parallel():
             return int(answer)
 
 
+def parse_target_argument(value, sni=None, verify=True):
+    if not isinstance(value,str) or value.count(':') != 1:
+        raise ValueError('Введите узел как имя:порт, например vpn.example.org:443 (IPv4/TCP TLS).')
+    host,port=value.rsplit(':',1)
+    if not port.isdecimal():
+        raise ValueError('Порт цели должен быть числом от 1 до 65535.')
+    return target_probe.validate_target({'host':host,'port':int(port),'sni':sni or host,
+                                         'verify_certificate':verify})
+
+
+def choose_benchmark_target(args):
+    value=args.target
+    if value is None:
+        if not sys.stdin.isatty():
+            raise ValueError('Для benchmark укажите --target имя:порт.')
+        value=input('Адрес TLS-узла в формате имя:порт (например vpn.example.org:443): ').strip()
+        if not args.sni:
+            args.sni=input('SNI, если отличается от адреса (Enter = адрес): ').strip() or None
+    return parse_target_argument(value,args.sni,not args.insecure)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Igareck + Zapret2 CLI 1.1 — Linux Ubuntu/Debian')
-    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','list','show','check-engine','recover'))
+    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover'))
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
-    parser.add_argument('--recipes', default='1-484')
+    parser.add_argument('--recipes', default=None)
     parser.add_argument('--parallel', type=int, choices=range(1, 6))
+    parser.add_argument('--target', help='TLS-узел для benchmark в формате имя:порт (по умолчанию тестируются Golden 1-45)')
+    parser.add_argument('--sni', help='TLS SNI; по умолчанию совпадает с именем узла')
+    parser.add_argument('--insecure', action='store_true', help='не проверять сертификат (только для диагностики; небезопасно)')
     parser.add_argument('--scope',type=parse_ports,help='TCP-порты: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
+    args.recipes=args.recipes or ('1-45' if args.action=='benchmark' else '1-484')
     data = load_catalogue(); rows = {r['Number']: r for r in data['ProfileRows']}
     if args.action == 'list':
         show_table(data); return
@@ -681,6 +786,14 @@ def main():
         if args.action == 'recover':
             print('Собственные оставшиеся правила и временные параметры восстановлены.'); return
         choose_interface(session, args.interface)
+        if args.action == 'benchmark':
+            try:
+                target=choose_benchmark_target(args)
+            except ValueError as error:
+                parser.error(str(error))
+            session.scope=str(target['port'])
+            scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target)
+            return
         choose_ports(session,args.scope if args.scope is not None else 'all' if not sys.stdin.isatty() else None)
         if args.action == 'youtube':
             scan(session, rows, recipe_range(args.recipes), args.parallel or ask_parallel()); return
