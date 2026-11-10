@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.3 — Windows GUI reliability / Linux
+
+| English | Русский |
+| --- | --- |
+| Fix the post-install Windows GUI launch: keep the form visible while hiding only the PowerShell console. Add startup diagnostics for GUI initialization. | Исправлен запуск Windows GUI после установки: окно программы остаётся видимым, скрывается только консоль PowerShell. Добавлена диагностика этапов запуска GUI. |
+| Windows package version advances to 1.2; Linux package version advances to 1.3 for the combined release. | Версия Windows-пакета повышена до 1.2; версия Linux-пакета — до 1.3 для общего выпуска. |
+
 ## 1.2 — Windows GUI / Linux
 
 | English | Русский |
