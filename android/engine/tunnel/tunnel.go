@@ -51,6 +51,9 @@ type Options struct {
 	SOCKS5Addr string
 	// BlockQUIC drops outbound UDP to port 443 so browsers fall back to TCP TLS.
 	BlockQUIC bool
+	// BlockIPv6 rejects IPv6 TCP/UDP flows inside the TUN; IPv6 remains captured
+	// by Android and is never sent directly over the underlying network.
+	BlockIPv6 bool
 	// Log receives human-readable diagnostics. May be nil.
 	Log func(string)
 }
@@ -75,6 +78,7 @@ type Tunnel struct {
 	udpFlows          atomic.Uint64
 	udpFailed         atomic.Uint64
 	quicDropped       atomic.Uint64
+	ipv6Blocked       atomic.Uint64
 	statsMu           sync.Mutex
 	lastEvent         string
 }
@@ -181,6 +185,12 @@ func (t *Tunnel) installTCP() {
 			strconv.Itoa(int(id.LocalPort)),
 		)
 		t.tcpAttempts.Add(1)
+		if t.opts.BlockIPv6 && len(id.LocalAddress.AsSlice()) == net.IPv6len {
+			t.ipv6Blocked.Add(1)
+			t.setLastEvent("IPv6 TCP " + dst + " blocked inside VPN")
+			r.Complete(true)
+			return
+		}
 		var wq waiter.Queue
 		ep, tcperr := r.CreateEndpoint(&wq)
 		if tcperr != nil {
@@ -206,7 +216,7 @@ func (t *Tunnel) installTCP() {
 				return
 			}
 			t.tcpConnected.Add(1)
-			t.setLastEvent(dst + " connected")
+			t.setLastEvent("TCP " + dst + " connected")
 			desync.Relay(local, up)
 		}()
 	})
@@ -218,6 +228,11 @@ func (t *Tunnel) installUDP() {
 		id := r.ID()
 		dstIP := addrToIP(id.LocalAddress)
 		dstPort := int(id.LocalPort)
+		if t.opts.BlockIPv6 && len(id.LocalAddress.AsSlice()) == net.IPv6len {
+			t.ipv6Blocked.Add(1)
+			t.setLastEvent("IPv6 UDP " + net.JoinHostPort(dstIP.String(), strconv.Itoa(dstPort)) + " blocked inside VPN")
+			return true
+		}
 		if t.opts.BlockQUIC && dstPort == 443 {
 			t.quicDropped.Add(1)
 			return true // consume the packet; client may retry over TCP
@@ -310,10 +325,10 @@ func (t *Tunnel) Stats() string {
 	t.statsMu.Lock()
 	last := t.lastEvent
 	t.statsMu.Unlock()
-	return fmt.Sprintf("TCP attempts=%d connected=%d failed=%d (endpoint=%d upstream=%d); UDP flows=%d failed=%d; UDP/443 dropped=%d; last=%s",
+	return fmt.Sprintf("TCP attempts=%d connected=%d failed=%d (endpoint=%d upstream=%d); UDP flows=%d failed=%d; UDP/443 dropped=%d; IPv6 blocked=%d; last=%s",
 		t.tcpAttempts.Load(), t.tcpConnected.Load(), t.tcpFailed.Load(),
 		t.tcpEndpointFailed.Load(), t.tcpDialFailed.Load(),
-		t.udpFlows.Load(), t.udpFailed.Load(), t.quicDropped.Load(), last)
+		t.udpFlows.Load(), t.udpFailed.Load(), t.quicDropped.Load(), t.ipv6Blocked.Load(), last)
 }
 
 func (t *Tunnel) setLastEvent(event string) {

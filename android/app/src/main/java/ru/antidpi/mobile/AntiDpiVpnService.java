@@ -25,6 +25,7 @@ public final class AntiDpiVpnService extends VpnService {
     static final String EXTRA_STRATEGY = "strategy";
     static final String EXTRA_PROFILE_ARGS = "profile_args";
     static final String EXTRA_BLOCK_QUIC = "block_quic";
+    static final String EXTRA_BLOCK_IPV6 = "block_ipv6";
     static final String EXTRA_MTU = "mtu";
     static final String EXTRA_DNS_SERVERS = "dns_servers";
     static final String EXTRA_ALLOWED_APPS = "allowed_apps";
@@ -39,6 +40,7 @@ public final class AntiDpiVpnService extends VpnService {
     private NativeByedpiProxy nativeProxy;
     private String activeStrategy;
     private boolean activeBlockQuic;
+    private boolean activeBlockIPv6;
     private int activeMtu;
     private String[] activeDnsServers;
     private String[] activeAllowedApps;
@@ -84,6 +86,7 @@ public final class AntiDpiVpnService extends VpnService {
         String strategy = intent == null ? "tlsrec:sni" : intent.getStringExtra(EXTRA_STRATEGY);
         if (strategy == null || strategy.isEmpty()) strategy = "tlsrec:sni";
         boolean blockQuic = intent == null || intent.getBooleanExtra(EXTRA_BLOCK_QUIC, true);
+        boolean blockIPv6 = intent != null && intent.getBooleanExtra(EXTRA_BLOCK_IPV6, false);
         String profileArgs = intent == null ? "[]" : intent.getStringExtra(EXTRA_PROFILE_ARGS);
         if (profileArgs == null) profileArgs = "[]";
         int mtu = intent == null ? 1500 : intent.getIntExtra(EXTRA_MTU, 1500);
@@ -96,7 +99,8 @@ public final class AntiDpiVpnService extends VpnService {
         if (engine != null) {
             if (!ACTION_START.equals(intent.getAction())) return START_STICKY;
             if (!forceRestart && strategy.equals(activeStrategy) && blockQuic == activeBlockQuic
-                    && mtu == activeMtu && Arrays.equals(dnsServers, activeDnsServers)
+                    && blockIPv6 == activeBlockIPv6 && mtu == activeMtu
+                    && Arrays.equals(dnsServers, activeDnsServers)
                     && Arrays.equals(allowedApps, activeAllowedApps)) {
                 startForegroundCompat(buildNotification("Защита включена"));
                 return START_STICKY;
@@ -118,17 +122,19 @@ public final class AntiDpiVpnService extends VpnService {
         final String requestedStrategy = strategy;
         final String requestedProfileArgs = profileArgs;
         final boolean requestedBlockQuic = blockQuic;
+        final boolean requestedBlockIPv6 = blockIPv6;
         final int requestedMtu = mtu;
         final String[] requestedDnsServers = dnsServers.clone();
         final String[] requestedAllowedApps = allowedApps.clone();
         startupExecutor.execute(() -> startInBackground(generation, startId, requestedStrategy,
-                requestedProfileArgs, requestedBlockQuic, requestedMtu, requestedDnsServers,
-                requestedAllowedApps));
+                requestedProfileArgs, requestedBlockQuic, requestedBlockIPv6, requestedMtu,
+                requestedDnsServers, requestedAllowedApps));
         return START_STICKY;
     }
 
     private void startInBackground(int generation, int startId, String strategy, String profileArgs,
-                                   boolean blockQuic, int mtu, String[] dnsServers, String[] allowedApps) {
+                                   boolean blockQuic, boolean blockIPv6, int mtu,
+                                   String[] dnsServers, String[] allowedApps) {
         ParcelFileDescriptor startedTun = null;
         AndroidPacketEngine startedEngine = null;
         NativeByedpiProxy startedProxy = null;
@@ -143,12 +149,13 @@ public final class AntiDpiVpnService extends VpnService {
             startedEngine = AndroidPacketEngine.create(getApplicationContext(), this,
                     () -> Log.d(TAG, "native engine log callback"));
             startedProxy = new NativeByedpiProxy();
-            startedProxy.start(AndroidPacketEngine.nativeProfileArgs(profileArgs));
+            startedProxy.start(AndroidPacketEngine.nativeProfileArgs(profileArgs,
+                    NativeByedpiProxy.DEFAULT_PORT, blockIPv6));
             if (generation != startupGeneration) throw new InterruptedException("Запуск отменён");
 
             startupStage = "подключения TUN к движку";
             startedEngine.startTunnelViaProxy(startedTun, mtu,
-                    "127.0.0.1:" + startedProxy.port(), blockQuic);
+                    "127.0.0.1:" + startedProxy.port(), blockQuic, blockIPv6);
 
             ParcelFileDescriptor completedTun = startedTun;
             AndroidPacketEngine completedEngine = startedEngine;
@@ -163,11 +170,14 @@ public final class AntiDpiVpnService extends VpnService {
                 nativeProxy = completedProxy;
                 activeStrategy = strategy;
                 activeBlockQuic = blockQuic;
+                activeBlockIPv6 = blockIPv6;
                 activeMtu = mtu;
                 activeDnsServers = dnsServers.clone();
                 activeAllowedApps = allowedApps.clone();
                 starting = false;
-                setState(true, "VPN активен · native ByeDPI · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
+                setState(true, "VPN активен · native ByeDPI · " + strategy
+                        + (blockQuic ? " · QUIC блокируется" : "")
+                        + (blockIPv6 ? " · IPv4-only, IPv6 блокируется в VPN" : ""));
                 mainHandler.removeCallbacks(statsUpdater);
                 mainHandler.post(statsUpdater);
                 try {
@@ -205,6 +215,7 @@ public final class AntiDpiVpnService extends VpnService {
                 .addAddress("10.111.222.1", 32)
                 .addAddress("fd00:0:0:beef::1", 128)
                 .addRoute("0.0.0.0", 0)
+                // Keep IPv6 captured even in IPv4-only mode; the userspace tunnel drops it.
                 .addRoute("::", 0);
         for (String dns : dnsServers) builder.addDnsServer(dns);
 
@@ -276,6 +287,7 @@ public final class AntiDpiVpnService extends VpnService {
         }
         activeStrategy = null;
         activeBlockQuic = false;
+        activeBlockIPv6 = false;
         activeMtu = 0;
         activeDnsServers = null;
         activeAllowedApps = null;

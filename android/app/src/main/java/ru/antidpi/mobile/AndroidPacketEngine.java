@@ -42,15 +42,30 @@ final class AndroidPacketEngine {
     }
 
     static String[] nativeProfileArgs(String argsJson, int port) {
+        return nativeProfileArgs(argsJson, port, false);
+    }
+
+    static String[] nativeProfileArgs(String argsJson, int port, boolean ipv4Only) {
         try {
             JSONArray json = new JSONArray(Zapret.adaptByeDpiArgs(argsJson, port));
-            String[] args = new String[json.length()];
-            for (int i = 0; i < json.length(); i++) args[i] = json.getString(i);
+            String[] original = new String[json.length()];
+            boolean alreadyIpv4Only = false;
+            for (int i = 0; i < json.length(); i++) {
+                original[i] = json.getString(i);
+                if ("--no-ipv6".equals(original[i])) alreadyIpv4Only = true;
+            }
+            boolean appendIpv4Only = ipv4Only && !alreadyIpv4Only;
+            String[] args = java.util.Arrays.copyOf(original, original.length + (appendIpv4Only ? 1 : 0));
+            if (appendIpv4Only) args[args.length - 1] = "--no-ipv6";
             return args;
         } catch (Exception error) {
             Log.e(TAG, "Failed to adapt native profile; using safe TLS-record fallback", error);
-            return new String[]{"--ip", "127.0.0.1", "--port", String.valueOf(port),
+            String[] fallback = {"--ip", "127.0.0.1", "--port", String.valueOf(port),
                     "--tlsrec", "0+sm"};
+            if (!ipv4Only) return fallback;
+            String[] ipv4Fallback = java.util.Arrays.copyOf(fallback, fallback.length + 1);
+            ipv4Fallback[fallback.length] = "--no-ipv6";
+            return ipv4Fallback;
         }
     }
 
@@ -86,9 +101,9 @@ final class AndroidPacketEngine {
         engine.startTunnel(tun.getFd(), mtu, strategy, blockQuic);
     }
 
-    void startTunnelViaProxy(ParcelFileDescriptor tun, int mtu, String socks5Addr, boolean blockQuic)
-            throws Exception {
-        engine.startTunnelViaProxy(tun.getFd(), mtu, socks5Addr, blockQuic);
+    void startTunnelViaProxy(ParcelFileDescriptor tun, int mtu, String socks5Addr,
+                             boolean blockQuic, boolean blockIPv6) throws Exception {
+        engine.startTunnelViaProxy(tun.getFd(), mtu, socks5Addr, blockQuic, blockIPv6);
     }
 
     String tunnelStats() {
