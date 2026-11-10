@@ -6,13 +6,12 @@ A no-root Android VPN prototype with a local TUN datapath. `VpnService` captures
 
 Zapret2 desktop profiles are **not directly portable** to Android and the adapter does not claim exact equivalence. It translates the useful stream-level recipe parts into the bundled native ByeDPI engine:
 
-- TLS record fragmentation around the SNI;
-- native `fake` with the engine's low-TTL/retransmission technique;
-- `split` and approximate position mappings;
-- `disorder` for selected `fakeddisorder`/`multidisorder` recipes;
-- optional UDP/443 blocking to encourage TCP fallback from QUIC.
+- TLS record fragmentation, native `fake`, approximate `split` positions, and selected `disorder` recipes;
+- supported fake details where practical: numeric fake TTL, fake SNI, and short inline hexadecimal fake payloads;
+- optional UDP/443 blocking to encourage TCP fallback from QUIC;
+- user-selectable DNS, tunnel MTU, and per-app routing. The app's own UID is always kept outside its VPN tunnel to prevent proxy egress loops.
 
-This allows fake/TTL and some disorder strategies without root by using the TCP socket APIs and behavior of the native engine. That does **not** make every Zapret2 operation possible: arbitrary TCP sequence/timestamp field editing, custom packet blobs, SYN data, window-size tricks, and exact packet reordering are not faithfully mapped. Some socket options can also vary by Android kernel/device. The app should report failures rather than claiming unsupported flags were applied.
+The settings are applied to the Android tunnel and native proxy and trigger a VPN restart when changed. Zapret2 desktop profiles are still only approximately translated. Named desktop blobs, arbitrary TCP sequence/timestamp edits, SYN data, window-size manipulation, TCP option injection, and exact packet reordering are not faithfully reproduced by this socket-level no-root architecture. An inline hex fake payload is available only when the source profile actually supplies one; this does not enable arbitrary raw packet crafting. Socket behavior can vary by Android kernel/device.
 
 The VPN is local: it does not decrypt TLS, tunnel traffic to a remote server, or hide the device IP. The Go userspace layer handles UDP directly (except optionally dropped UDP/443); the native strategy engine processes TCP.
 

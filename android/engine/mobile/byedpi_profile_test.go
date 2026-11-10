@@ -29,6 +29,20 @@ func TestAdaptByeDpiArgsUsesTLSRecordFragmentWithoutOtherDesync(t *testing.T) {
 	}
 }
 
+func TestAdaptByeDpiArgsMapsSupportedFakeDetails(t *testing.T) {
+	args := `["--lua-desync=fake:blob=public_tls_pattern:tls_mod=sni=example.org:ip_ttl=12:tcp_ts=-1000",
+		"--lua-desync=multisplit:blob=0x1603:pos=2,midsld"]`
+	got := adaptByeDpiArgs(args, 10808)
+	want := []string{
+		"--ip", "127.0.0.1", "--port", "10808",
+		"--ttl", "12", "--fake-sni", "example.org", "--fake", "0+sm",
+		"--fake-data", `:\x16\x03`, "--fake", "2", "--split", "0+sm",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("adaptByeDpiArgs() = %#v, want %#v", got, want)
+	}
+}
+
 func TestAdaptByeDpiArgsCoversAndroidCatalogue(t *testing.T) {
 	data, err := os.ReadFile("../../app/src/main/assets/catalogue.json")
 	if err != nil {
@@ -59,7 +73,7 @@ func TestAdaptByeDpiArgsCoversAndroidCatalogue(t *testing.T) {
 				t.Fatalf("profile %d has unpaired native argument: %#v", index+1, got)
 			}
 			switch got[i] {
-			case "--tlsrec", "--fake", "--split", "--disorder", "--hosts":
+			case "--tlsrec", "--fake", "--split", "--disorder", "--hosts", "--ttl", "--fake-sni", "--fake-data":
 			default:
 				t.Fatalf("profile %d produced unsupported native flag %q", index+1, got[i])
 			}

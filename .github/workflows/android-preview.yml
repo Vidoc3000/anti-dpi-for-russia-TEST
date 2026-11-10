@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  ANDROID_PREVIEW_VERSION: '0.3.0-preview'
+  ANDROID_PREVIEW_VERSION: '0.4.0-preview'
 
 jobs:
   build:

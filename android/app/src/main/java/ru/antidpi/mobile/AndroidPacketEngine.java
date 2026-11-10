@@ -38,14 +38,18 @@ final class AndroidPacketEngine {
     }
 
     static String[] nativeProfileArgs(String argsJson) {
+        return nativeProfileArgs(argsJson, NativeByedpiProxy.DEFAULT_PORT);
+    }
+
+    static String[] nativeProfileArgs(String argsJson, int port) {
         try {
-            JSONArray json = new JSONArray(Zapret.adaptByeDpiArgs(argsJson, NativeByedpiProxy.PORT));
+            JSONArray json = new JSONArray(Zapret.adaptByeDpiArgs(argsJson, port));
             String[] args = new String[json.length()];
             for (int i = 0; i < json.length(); i++) args[i] = json.getString(i);
             return args;
         } catch (Exception error) {
             Log.e(TAG, "Failed to adapt native profile; using safe TLS-record fallback", error);
-            return new String[]{"--ip", "127.0.0.1", "--port", String.valueOf(NativeByedpiProxy.PORT),
+            return new String[]{"--ip", "127.0.0.1", "--port", String.valueOf(port),
                     "--tlsrec", "0+sm"};
         }
     }

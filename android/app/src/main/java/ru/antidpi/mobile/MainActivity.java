@@ -1,8 +1,10 @@
 package ru.antidpi.mobile;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -35,7 +37,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,6 +75,7 @@ public final class MainActivity extends Activity {
     private TextView testResultText;
     private TextView testProfileText;
     private CheckBox blockQuicCheckBox;
+    private TextView appRoutingSummary;
     private Button vpnButton;
     private Button testButton;
     private Button[] navigationButtons;
@@ -77,8 +84,15 @@ public final class MainActivity extends Activity {
     private int currentPage = PAGE_STRATEGIES;
     private String query = "";
     private Profile selected;
-    private final SharedPreferences.OnSharedPreferenceChangeListener vpnStateListener =
-            (preferences, key) -> runOnUiThread(this::refreshVpnUi);
+    private final SharedPreferences.OnSharedPreferenceChangeListener vpnStateListener = (preferences, key) -> runOnUiThread(() -> {
+        refreshVpnUi();
+        if ("message".equals(key)) {
+            String message = AntiDpiVpnService.stateMessage(this);
+            if (message.startsWith("Не удалось запустить")) {
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+            }
+        }
+    });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -316,6 +330,58 @@ public final class MainActivity extends Activity {
         networkCard.addView(quicHelp, margins(matchWrap(), 0, dp(2), 0, 0));
         page.addView(networkCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
+        LinearLayout routeCard = card();
+        routeCard.addView(text("DNS и размер пакета", 15, CYAN, true), matchWrap());
+        routeCard.addView(text("DNS внутри VPN", 12, MUTED, false), margins(matchWrap(), 0, dp(7), 0, dp(3)));
+        String[] dnsLabels = {"Cloudflare · 1.1.1.1", "Google · 8.8.8.8", "Quad9 · 9.9.9.9"};
+        int dnsChoice = settingsPreferences().getInt("dns_provider", 0);
+        if (dnsChoice < 0 || dnsChoice >= dnsLabels.length) dnsChoice = 0;
+        Spinner dnsSpinner = settingsSpinner(dnsLabels, dnsChoice);
+        final int[] previousDns = {dnsChoice};
+        dnsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == previousDns[0]) return;
+                previousDns[0] = position;
+                settingsPreferences().edit().putInt("dns_provider", position).apply();
+                restartVpnForCurrentSelection("DNS изменён");
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        routeCard.addView(dnsSpinner, margins(matchWrap(), 0, 0, 0, dp(7)));
+
+        routeCard.addView(text("MTU туннеля", 12, MUTED, false), margins(matchWrap(), 0, dp(2), 0, dp(3)));
+        String[] mtuLabels = {"1280 · совместимость IPv6", "1400 · сбалансированный", "1500 · стандартный"};
+        int[] mtuValues = {1280, 1400, 1500};
+        int mtu = configuredMtu();
+        int mtuChoice = mtu == 1280 ? 0 : (mtu == 1400 ? 1 : 2);
+        Spinner mtuSpinner = settingsSpinner(mtuLabels, mtuChoice);
+        final int[] previousMtu = {mtuChoice};
+        mtuSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == previousMtu[0]) return;
+                previousMtu[0] = position;
+                settingsPreferences().edit().putInt("mtu", mtuValues[position]).apply();
+                restartVpnForCurrentSelection("MTU изменён");
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        routeCard.addView(mtuSpinner, margins(matchWrap(), 0, 0, 0, dp(5)));
+        TextView routeHelp = text("Если сайты зависают на загрузке, попробуйте MTU 1400 или 1280. DNS применяется только к приложениям, направленным через VPN.", 12, MUTED, false);
+        routeHelp.setLineSpacing(dp(2), 1.0f);
+        routeCard.addView(routeHelp, matchWrap());
+        page.addView(routeCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        LinearLayout appsCard = card();
+        appsCard.addView(text("Маршрутизация приложений", 15, CYAN, true), matchWrap());
+        appRoutingSummary = text("", 12, MUTED, false);
+        appRoutingSummary.setLineSpacing(dp(2), 1.0f);
+        appsCard.addView(appRoutingSummary, margins(matchWrap(), 0, dp(4), 0, dp(5)));
+        Button chooseApps = button("Выбрать приложения", true);
+        chooseApps.setOnClickListener(v -> showAppRoutingPicker());
+        appsCard.addView(chooseApps, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        page.addView(appsCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+        updateAppRoutingSummary();
+
         LinearLayout strategyCard = card();
         strategyCard.addView(text("Применение стратегии", 15, CYAN, true), matchWrap());
         TextView restartHelp = text(
@@ -328,12 +394,114 @@ public final class MainActivity extends Activity {
         LinearLayout aboutCard = card();
         aboutCard.addView(text("Ограничения Android", 15, CYAN, true), matchWrap());
         TextView about = text(
-                "Встроенный native ByeDPI применяет socket-level fake/TTL, split, TLS-record и disorder-приёмы. Это приближённое сопоставление каталога Zapret2, не точный повтор каждой desktop-команды: произвольные SEQ/TS, SYN data, window-size и custom fake blobs пока не реализованы.",
+                "Встроенный ByeDPI применяет поддерживаемые socket-level fake, TTL, fake SNI, короткие hex fake-данные, split, TLS-record и disorder-приёмы. Это приблизительное сопоставление, а не точный повтор desktop Zapret2. Произвольные SEQ/TS, SYN data, TCP option injection, управление окном TCP и точное переупорядочивание пакетов в no-root-режиме не поддерживаются.",
                 13, TEXT, false);
         about.setLineSpacing(dp(2), 1.0f);
         aboutCard.addView(about, margins(matchWrap(), 0, dp(6), 0, 0));
         page.addView(aboutCard, matchWrap());
         return scroll;
+    }
+
+    private SharedPreferences settingsPreferences() {
+        return getSharedPreferences("android_settings", MODE_PRIVATE);
+    }
+
+    private int configuredMtu() {
+        int mtu = settingsPreferences().getInt("mtu", 1500);
+        return mtu == 1280 || mtu == 1400 || mtu == 1500 ? mtu : 1500;
+    }
+
+    private String[] configuredDnsServers() {
+        switch (settingsPreferences().getInt("dns_provider", 0)) {
+            case 1: return new String[]{"8.8.8.8", "8.8.4.4"};
+            case 2: return new String[]{"9.9.9.9", "149.112.112.112"};
+            default: return new String[]{"1.1.1.1", "1.0.0.1"};
+        }
+    }
+
+    private String[] configuredAllowedApps() {
+        Set<String> apps = settingsPreferences().getStringSet("allowed_apps", Collections.emptySet());
+        ArrayList<String> result = new ArrayList<>(apps);
+        Collections.sort(result);
+        return result.toArray(new String[0]);
+    }
+
+    private Spinner settingsSpinner(String[] labels, int selectedIndex) {
+        Spinner spinner = new Spinner(this);
+        spinner.setBackground(shape(CARD, dp(10)));
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, labels) {
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                return spinnerText(position, false);
+            }
+            @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                return spinnerText(position, true);
+            }
+            private View spinnerText(int position, boolean dropdown) {
+                TextView label = text(getItem(position), 13, TEXT, false);
+                label.setGravity(Gravity.CENTER_VERTICAL);
+                label.setPadding(dp(12), dp(dropdown ? 9 : 0), dp(12), dp(dropdown ? 9 : 0));
+                label.setBackgroundColor(dropdown ? CARD : Color.TRANSPARENT);
+                return label;
+            }
+        };
+        spinner.setAdapter(adapter);
+        spinner.setSelection(selectedIndex);
+        return spinner;
+    }
+
+    private void updateAppRoutingSummary() {
+        if (appRoutingSummary == null) return;
+        Set<String> apps = settingsPreferences().getStringSet("allowed_apps", Collections.emptySet());
+        if (apps.isEmpty()) {
+            appRoutingSummary.setText("Все приложения проходят через VPN, кроме самой AntiDPI (это необходимо для работы прокси).");
+        } else {
+            appRoutingSummary.setText("Через VPN: выбрано приложений — " + apps.size() + ". Остальные используют обычное соединение.");
+        }
+    }
+
+    private void showAppRoutingPicker() {
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolved = getPackageManager().queryIntentActivities(launcherIntent, 0);
+        ArrayList<AppEntry> apps = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (ResolveInfo info : resolved) {
+            String packageName = info.activityInfo.packageName;
+            if (getPackageName().equals(packageName) || !seen.add(packageName)) continue;
+            CharSequence label = info.loadLabel(getPackageManager());
+            apps.add(new AppEntry(packageName, label == null ? packageName : label.toString()));
+        }
+        Collections.sort(apps, Comparator.comparing(entry -> entry.label.toLowerCase(Locale.ROOT)));
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "Не удалось получить список приложений на устройстве.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String[] labels = new String[apps.size()];
+        boolean[] checked = new boolean[apps.size()];
+        Set<String> selectedApps = new HashSet<>(settingsPreferences().getStringSet("allowed_apps", Collections.emptySet()));
+        for (int i = 0; i < apps.size(); i++) {
+            AppEntry entry = apps.get(i);
+            labels[i] = entry.label;
+            checked[i] = selectedApps.contains(entry.packageName);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Приложения через VPN")
+                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Применить", (dialog, which) -> {
+                    Set<String> allowed = new HashSet<>();
+                    for (int i = 0; i < apps.size(); i++) if (checked[i]) allowed.add(apps.get(i).packageName);
+                    settingsPreferences().edit().putStringSet("allowed_apps", allowed).apply();
+                    updateAppRoutingSummary();
+                    restartVpnForCurrentSelection("Список приложений изменён");
+                })
+                .setNegativeButton("Отмена", null)
+                .setNeutralButton("Все приложения", (dialog, which) -> {
+                    settingsPreferences().edit().putStringSet("allowed_apps", new HashSet<>()).apply();
+                    updateAppRoutingSummary();
+                    restartVpnForCurrentSelection("Маршрут сброшен");
+                })
+                .show();
     }
 
     private void loadCatalogue() {
@@ -389,7 +557,7 @@ public final class MainActivity extends Activity {
         String activeNote = AntiDpiVpnService.isRunning(this)
                 ? " VPN перезапускается автоматически при смене профиля." : "";
         androidStrategyText.setText("Native ByeDPI: " + adapted + activeNote +
-                "\nОтдельные поля desktop-профиля (SEQ/TS, SYN data, custom blob) не имеют точного мобильного эквивалента.");
+                "\nНекоторые desktop-поля (SEQ/TS, SYN data, системные blob-файлы) не имеют точного мобильного эквивалента.");
     }
 
     private void toggleVpn() {
@@ -441,6 +609,9 @@ public final class MainActivity extends Activity {
                 .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, selectedStrategy())
                 .putExtra(AntiDpiVpnService.EXTRA_PROFILE_ARGS, selected == null ? "[]" : selected.argsJson)
                 .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuicEnabled())
+                .putExtra(AntiDpiVpnService.EXTRA_MTU, configuredMtu())
+                .putExtra(AntiDpiVpnService.EXTRA_DNS_SERVERS, configuredDnsServers())
+                .putExtra(AntiDpiVpnService.EXTRA_ALLOWED_APPS, configuredAllowedApps())
                 .putExtra(AntiDpiVpnService.EXTRA_FORCE_RESTART, forceRestart);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
         else startService(intent);
@@ -478,7 +649,7 @@ public final class MainActivity extends Activity {
         try {
             java.net.Proxy proxy = throughVpn
                     ? new java.net.Proxy(java.net.Proxy.Type.SOCKS,
-                            new java.net.InetSocketAddress("127.0.0.1", NativeByedpiProxy.PORT))
+                            new java.net.InetSocketAddress("127.0.0.1", AntiDpiVpnService.proxyPort(this)))
                     : java.net.Proxy.NO_PROXY;
             connection = (HttpsURLConnection) new URL(address).openConnection(proxy);
             connection.setRequestMethod("GET");
@@ -621,6 +792,15 @@ public final class MainActivity extends Activity {
     protected void onDestroy() {
         executor.shutdownNow();
         super.onDestroy();
+    }
+
+    private static final class AppEntry {
+        final String packageName;
+        final String label;
+        AppEntry(String packageName, String label) {
+            this.packageName = packageName;
+            this.label = label;
+        }
     }
 
     private static final class Family {

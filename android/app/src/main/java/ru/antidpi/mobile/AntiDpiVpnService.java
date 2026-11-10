@@ -12,6 +12,8 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
+import java.util.Arrays;
+
 /** Runs the no-root TUN -> gVisor -> native ByeDPI datapath as a foreground VPN service. */
 public final class AntiDpiVpnService extends VpnService {
     static final String ACTION_START = "ru.antidpi.mobile.START_VPN";
@@ -19,11 +21,13 @@ public final class AntiDpiVpnService extends VpnService {
     static final String EXTRA_STRATEGY = "strategy";
     static final String EXTRA_PROFILE_ARGS = "profile_args";
     static final String EXTRA_BLOCK_QUIC = "block_quic";
+    static final String EXTRA_MTU = "mtu";
+    static final String EXTRA_DNS_SERVERS = "dns_servers";
+    static final String EXTRA_ALLOWED_APPS = "allowed_apps";
     static final String EXTRA_FORCE_RESTART = "force_restart";
     private static final String TAG = "AntiDpiVpnService";
     private static final String CHANNEL_ID = "antidpi_vpn";
     private static final int NOTIFICATION_ID = 412;
-    private static final int MTU = 1500;
     private static final String PREFS = "vpn_state";
 
     private ParcelFileDescriptor tun;
@@ -31,6 +35,9 @@ public final class AntiDpiVpnService extends VpnService {
     private NativeByedpiProxy nativeProxy;
     private String activeStrategy;
     private boolean activeBlockQuic;
+    private int activeMtu;
+    private String[] activeDnsServers;
+    private String[] activeAllowedApps;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -42,18 +49,32 @@ public final class AntiDpiVpnService extends VpnService {
             startForegroundCompat(buildNotification("Подключено"));
             return START_STICKY;
         }
-        ensureNotificationChannel();
-        startForegroundCompat(buildNotification(engine == null ? "Запуск VPN…" : "Перезапуск VPN…"));
+        try {
+            ensureNotificationChannel();
+            startForegroundCompat(buildNotification(engine == null ? "Запуск VPN…" : "Перезапуск VPN…"));
+        } catch (RuntimeException | LinkageError error) {
+            Log.e(TAG, "Could not enter foreground service state", error);
+            fail("Android не разрешил запустить VPN-службу: " + safeMessage(error));
+            return START_NOT_STICKY;
+        }
 
         String strategy = intent == null ? "tlsrec:sni" : intent.getStringExtra(EXTRA_STRATEGY);
         if (strategy == null || strategy.isEmpty()) strategy = "tlsrec:sni";
         boolean blockQuic = intent == null || intent.getBooleanExtra(EXTRA_BLOCK_QUIC, true);
         String profileArgs = intent == null ? "[]" : intent.getStringExtra(EXTRA_PROFILE_ARGS);
         if (profileArgs == null) profileArgs = "[]";
+        int mtu = intent == null ? 1500 : intent.getIntExtra(EXTRA_MTU, 1500);
+        String[] dnsServers = intent == null ? new String[]{"1.1.1.1", "1.0.0.1"}
+                : intent.getStringArrayExtra(EXTRA_DNS_SERVERS);
+        if (dnsServers == null || dnsServers.length == 0) dnsServers = new String[]{"1.1.1.1", "1.0.0.1"};
+        String[] allowedApps = intent == null ? new String[0] : intent.getStringArrayExtra(EXTRA_ALLOWED_APPS);
+        if (allowedApps == null) allowedApps = new String[0];
         boolean forceRestart = intent != null && intent.getBooleanExtra(EXTRA_FORCE_RESTART, false);
         if (engine != null) {
             if (!ACTION_START.equals(intent.getAction())) return START_STICKY;
-            if (!forceRestart && strategy.equals(activeStrategy) && blockQuic == activeBlockQuic) {
+            if (!forceRestart && strategy.equals(activeStrategy) && blockQuic == activeBlockQuic
+                    && mtu == activeMtu && Arrays.equals(dnsServers, activeDnsServers)
+                    && Arrays.equals(allowedApps, activeAllowedApps)) {
                 startForegroundCompat(buildNotification("Защита включена"));
                 return START_STICKY;
             }
@@ -68,45 +89,65 @@ public final class AntiDpiVpnService extends VpnService {
             return START_NOT_STICKY;
         }
 
+        String startupStage = "создания TUN";
         try {
-            tun = establishTun();
+            tun = establishTun(mtu, dnsServers, allowedApps);
             if (tun == null) throw new IllegalStateException("Android отказал в создании VPN-интерфейса");
 
+            startupStage = "запуска native ByeDPI";
             engine = AndroidPacketEngine.create(getApplicationContext(), this,
                     () -> Log.d(TAG, "native engine log callback"));
             nativeProxy = new NativeByedpiProxy();
             nativeProxy.start(AndroidPacketEngine.nativeProfileArgs(profileArgs));
-            engine.startTunnelViaProxy(tun, MTU,
-                    "127.0.0.1:" + NativeByedpiProxy.PORT, blockQuic);
+
+            startupStage = "подключения TUN к движку";
+            engine.startTunnelViaProxy(tun, mtu,
+                    "127.0.0.1:" + nativeProxy.port(), blockQuic);
             activeStrategy = strategy;
             activeBlockQuic = blockQuic;
+            activeMtu = mtu;
+            activeDnsServers = dnsServers.clone();
+            activeAllowedApps = allowedApps.clone();
             setState(true, "VPN активен · native ByeDPI · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
             startForegroundCompat(buildNotification("Защита включена"));
             Log.i(TAG, "VPN started; strategy=" + strategy + ", blockQuic=" + blockQuic);
             return START_STICKY;
         } catch (Exception | LinkageError error) {
             Log.e(TAG, "Failed to start VPN", error);
-            fail("Не удалось запустить движок: " + safeMessage(error));
+            fail("Не удалось запустить VPN на этапе " + startupStage + ": " + safeMessage(error));
             return START_NOT_STICKY;
         }
     }
 
-    private ParcelFileDescriptor establishTun() throws Exception {
+    private ParcelFileDescriptor establishTun(int mtu, String[] dnsServers, String[] allowedApps) throws Exception {
+        if (mtu < 1280 || mtu > 1500) throw new IllegalArgumentException("MTU должно быть от 1280 до 1500");
         Builder builder = new Builder()
                 .setSession(getString(R.string.app_name))
-                .setMtu(MTU)
+                .setMtu(mtu)
                 .addAddress("10.111.222.1", 32)
                 .addAddress("fd00:0:0:beef::1", 128)
                 .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("1.0.0.1")
-                .addDnsServer("2606:4700:4700::1111");
-        // The native ByeDPI proxy owns sockets outside the Go protector callback.
-        // Exclude this UID to prevent its upstream sockets from looping into the TUN;
-        // diagnostics explicitly connect to the local SOCKS listener when VPN is active.
-        builder.addDisallowedApplication(getPackageName());
+                .addRoute("::", 0);
+        for (String dns : dnsServers) builder.addDnsServer(dns);
+
+        // Allow-list routing keeps the VPN app itself outside the tunnel. With no
+        // valid selected apps, all apps except this UID are routed as before.
+        int addedApps = 0;
+        if (allowedApps != null) {
+            for (String packageName : allowedApps) {
+                if (packageName == null || packageName.isEmpty() || getPackageName().equals(packageName)) continue;
+                try {
+                    builder.addAllowedApplication(packageName);
+                    addedApps++;
+                } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+                    Log.w(TAG, "Ignoring unavailable selected app " + packageName);
+                }
+            }
+        }
+        if (addedApps == 0) builder.addDisallowedApplication(getPackageName());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false);
+        Log.i(TAG, "Creating TUN: mtu=" + mtu + ", dns=" + Arrays.toString(dnsServers)
+                + ", app routing=" + (addedApps == 0 ? "all apps" : addedApps + " selected apps"));
         return builder.establish();
     }
 
@@ -139,6 +180,9 @@ public final class AntiDpiVpnService extends VpnService {
         }
         activeStrategy = null;
         activeBlockQuic = false;
+        activeMtu = 0;
+        activeDnsServers = null;
+        activeAllowedApps = null;
     }
 
     @Override
@@ -205,8 +249,10 @@ public final class AntiDpiVpnService extends VpnService {
     }
 
     private void setState(boolean active, String message) {
+        int port = active && nativeProxy != null ? nativeProxy.port() : 0;
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean("active", active).putString("message", message).apply();
+                .putBoolean("active", active).putString("message", message)
+                .putInt("proxy_port", port).apply();
     }
 
     static boolean isRunning(Context context) {
@@ -217,6 +263,11 @@ public final class AntiDpiVpnService extends VpnService {
     static String stateMessage(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getString("message", "VPN выключен");
+    }
+
+    static int proxyPort(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt("proxy_port", 0);
     }
 
     static void stop(Context context) {
