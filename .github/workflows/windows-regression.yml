@@ -30,9 +30,31 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Download and verify the pinned Windows engine bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $meta = Get-Content -LiteralPath '.\windows\payload\Official_Bundle_20261023_public_v1.json' -Raw | ConvertFrom-Json
+          $archive = Join-Path $env:RUNNER_TEMP 'zapret-win-bundle.zip'
+          $unpack = Join-Path $env:RUNNER_TEMP 'zapret-win-bundle'
+          Invoke-WebRequest -UseBasicParsing -Uri $meta.url -OutFile $archive
+          if ((Get-Item -LiteralPath $archive).Length -ne [long]$meta.bytes) { throw 'Pinned Windows bundle size mismatch.' }
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine $meta.sha256) { throw 'Pinned Windows bundle SHA-256 mismatch.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force
+          $bundle = Join-Path $unpack ('zapret-win-bundle-' + $meta.commit + '\zapret-winws')
+          if (-not (Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf)) { throw 'Pinned winws2.exe missing from verified bundle.' }
+          [IO.File]::AppendAllText($env:GITHUB_ENV, ('IGARECK_WINWS2_DIR=' + $bundle + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+
       - name: Parse scripts and run Windows regression checks
         shell: powershell
-        run: .\tests\windows\test_regressions.ps1
+        run: |
+          try {
+              & .\tests\windows\test_regressions.ps1
+          } catch {
+              Write-Output ('::error title=Windows regression failure::' + $_.Exception.Message)
+              Write-Output ('::error title=Windows regression stack::' + $_.ScriptStackTrace)
+              exit 1
+          }
 
       - name: Smoke-build and verify the Windows ZIP
         shell: powershell

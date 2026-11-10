@@ -193,7 +193,10 @@ def install(args):
         create_desktop = choose_shortcuts(desktop_user, args.shortcuts)
         command_plan = prepare(args.global_command)
         print('----------------------')
-        print('\nУстановка: '+str(prefix)+'\n484 стратегии: 45 Golden + 439 Silver. IPv4 TCP/TLS.')
+        catalogue = json.loads((ROOT/'catalogue.json').read_text(encoding='utf-8'))
+        info = catalogue['CatalogueInfo']
+        total = int(info["ProfileCount"])
+        print(f'\nУстановка: {prefix}\n{total} стратегии: 45 Golden + {total-45} Silver. IPv4 TCP/TLS.')
         from dependencies import ensure_dependencies
         ensure_dependencies(PACKAGES, args.skip_deps)
         meta = select_source(json.loads(resource_path(SOURCE, 'upstream.json').read_text()), selection)
@@ -235,7 +238,7 @@ def install(args):
                 if path.is_dir(): path.chmod(0o755)
                 elif path.is_file() and path.name not in ('build.log',): path.chmod(0o755 if path.name=='nfqws2' or path.suffix=='.sh' else 0o644)
             data = load_catalogue(stage)
-            print('Проверяю параметры всех 484 стратегий...', flush=True)
+            print(f'Проверяю параметры всех {len(data["ProfileRows"])} стратегий...', flush=True)
             with (stage/'parameters-check.log').open('w') as log:
                 for row in data['ProfileRows']:
                     checked = subprocess.run(engine_arguments(stage, row)+['--dry-run'], cwd=engine, stdout=log, stderr=subprocess.STDOUT)

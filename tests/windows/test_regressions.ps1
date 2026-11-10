@@ -47,6 +47,53 @@ foreach ($root in $scriptRoots) {
     }
 }
 
+# Ensure the Windows CLI carries the same expanded catalogue as Linux.
+$windowsCataloguePath = Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
+$windowsCatalogueText = [IO.File]::ReadAllText($windowsCataloguePath)
+$catalogueMatch = [regex]::Match($windowsCatalogueText, '(?s)\$ProfileRows = @''\r?\n(.*?)\r?\n''@ \| ConvertFrom-Json')
+Assert-True $catalogueMatch.Success 'embedded Windows profile catalogue exists'
+$windowsRows = @($catalogueMatch.Groups[1].Value | ConvertFrom-Json)
+if ($windowsRows.Count -eq 1 -and $windowsRows[0] -is [array]) {
+    $windowsRows = @($windowsRows[0])
+}
+$linuxCatalogue = Get-Content -LiteralPath (Join-Path $repoRoot 'linux\data\catalogue.json') -Raw | ConvertFrom-Json
+Assert-Equal $linuxCatalogue.CatalogueInfo.ProfileCount $windowsRows.Count 'Windows profile count matches Linux'
+Assert-Equal 492 $windowsRows.Count 'expanded profile count'
+$newWindowsRows = @($windowsRows | Where-Object { $_.Number -ge 485 })
+Assert-Equal 8 $newWindowsRows.Count 'new strategy count'
+Assert-Contains $newWindowsRows[0].Args '--lua-desync=syndata' 'new SYN-data method'
+Assert-Contains $newWindowsRows[4].Args '--lua-desync=wssize:wsize=1:scale=6' 'new TCP window-size method'
+foreach ($number in 485..492) {
+    $linuxRow = $linuxCatalogue.ProfileRows | Where-Object { $_.Number -eq $number }
+    $windowsRow = $windowsRows | Where-Object { $_.Number -eq $number }
+    Assert-Equal $linuxRow.RecipeSHA256 $windowsRow.RecipeSHA256 ("cross-platform recipe {0}" -f $number)
+}
+Assert-Equal $linuxCatalogue.CatalogueInfo.FamilyCount $linuxCatalogue.FamilyRows.Count 'Linux family metadata'
+
+# The CI job supplies the hash-verified official bundle and runs these with
+# interception disabled, so only option/Lua validation occurs, not packet capture.
+if ($env:IGARECK_WINWS2_DIR) {
+    $enginePath = Join-Path $env:IGARECK_WINWS2_DIR 'winws2.exe'
+    if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) { throw 'Verified winws2.exe not found.' }
+    Push-Location -LiteralPath $env:IGARECK_WINWS2_DIR
+    try {
+        foreach ($profile in $newWindowsRows) {
+            $engineArguments = @(Get-IgareckArguments -Row $profile -Index 1 -PortScope '443')
+            $handlers = @($profile.Args | Where-Object { $_.StartsWith('--lua-desync=') } |
+                ForEach-Object { ($_ -split ':', 2)[0].Substring('--lua-desync='.Length) } | Sort-Object -Unique)
+            $luaChecks = @($handlers | ForEach-Object { "assert(type($_)=='function','missing $_')" })
+            if ($profile.StockTlsPattern) { $luaChecks += "assert(type(fake_default_tls)=='string','missing TLS pattern')" }
+            $engineArguments += '--intercept=0'
+            $engineArguments += '--lua-init=' + ($luaChecks -join ';')
+            $output = & $enginePath @engineArguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                throw ("Windows engine rejected strategy {0} (exit {1}): {2}" -f $profile.Number, $exitCode, ($output -join "`n"))
+            }
+        }
+    } finally { Pop-Location }
+}
+
 # Port-scope normalization and validation.
 Assert-Equal 'all' (ConvertTo-IgareckPortScope '') 'empty scope defaults to all'
 Assert-Equal 'all' (ConvertTo-IgareckPortScope '0-65535') 'full range canonicalizes to all'

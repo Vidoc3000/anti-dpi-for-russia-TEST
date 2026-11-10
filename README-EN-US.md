@@ -56,7 +56,9 @@ No special settings are required. It simply runs in the background.
 
 ### **`What strategies are included? What do Golden and Silver mean?`**
 
-**484 strategies:** 45 Golden + 439 Silver, organized into 23 families.
+**492 strategies:** 45 Golden + 447 Silver, organized into 24 families.
+
+The new Silver family adds SYN-data (an extra initial TCP SYN payload) and TCP window-size (`wssize`) variants combined with TLS segmentation/reordering. These are experimental and network-dependent; the TLS-handshake probe does not validate a VPN/Tor tunnel.
 
 See **[README_Стратегии_Windows_v1.0.txt](windows/README_Стратегии_Windows_v1.0.txt)** for a detailed guide to all strategies.
 
@@ -189,6 +191,7 @@ Press **Enter** with the field blank to select all ports (`all` / `все`). Exa
 |21|Silver|multisplit + fakeddisorder|22|457-478|
 |22|Silver|tcpseg|2|479-480|
 |23|Silver|Large TLS prefix / multisplit|4|481-484|
+|24|Silver|SYN-data + TCP window-size methods|8|485-492|
 | | | | | |
 
 
@@ -373,6 +376,7 @@ Press **Enter** with the field blank to select all ports (`all` / `все`). Exa
 |21|Silver|multisplit + fakeddisorder|22|457-478|
 |22|Silver|tcpseg|2|479-480|
 |23|Silver|Large TLS prefix / multisplit|4|481-484|
+|24|Silver|SYN-data + TCP window-size methods|8|485-492|
 | | | | | |
 
 ### **10. Enter a `strategy number` from the table, or type `YouTube`.**

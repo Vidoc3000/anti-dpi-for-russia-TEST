@@ -1,6 +1,6 @@
 ============================================================================
 Igareck AntiDPI Strategies + Bol-Van Zapret2
-CLI Version 1.1 | Linux Ubuntu/Debian x64 | СПРАВОЧНИК ВСЕХ 484 СТРАТЕГИЙ
+CLI Version 1.1 | Linux Ubuntu/Debian x64 | СПРАВОЧНИК ВСЕХ 492 СТРАТЕГИЙ
 ============================================================================
 ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ IGARECK НА БАЗЕ ZAPRET2 (BOL-VAN)
 В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE
@@ -11,7 +11,7 @@ Telegram: https://t.me/igareq
 ============================================================================
 
 Здесь используется общая нумерация Golden+Silver из меню программы:
-Golden: 1–45 (45); Silver: 46–484 (439). Всего 23 семейства и 484 стратегии.
+Golden: 1–45 (45); Silver: 46–492 (447). Всего 24 семейства и 492 стратегии.
 
 МАРКЕРЫ И ОБРАБОТЧИКИ
 pos: числовые смещения в данных либо позиции, связанные с разобранным TLS.
@@ -60,6 +60,7 @@ padencap — настройка длин TLS/padding фейка с учётом 
 457–478: Silver / multisplit + fakeddisorder (22 шт.)
 479–480: Silver / tcpseg (2 шт.)
 481–484: Silver / Большой TLS-префикс / multisplit (4 шт.)
+485–492: Silver / SYN-data + TCP window-size (8 шт.)
 
 ============================================================================
 СТРАТЕГИЯ 1 — Golden
@@ -14262,3 +14263,152 @@ Telegram: https://t.me/igareq
 Contact person: Igor Krauch 
 Email: igareck@proton.me
 ====================================================================================================
+
+============================================================================
+SYN-DATA И TCP WINDOW-SIZE — НОВЫЕ ЭКСПЕРИМЕНТАЛЬНЫЕ СТРАТЕГИИ
+============================================================================
+Семейство 24 добавляет две техники из закреплённой версии Zapret2:
+syndata отправляет отдельные данные в начальном TCP SYN; это не подмена и не
+замена настоящего TLS ClientHello/SNI. В профилях с tls_client_hello этот
+фильтр относится к следующему обработчику, а SYN-data остаётся отдельным шагом.
+wssize меняет объявленное TCP-окно (wsize=1, scale=6); совместимость зависит
+от сетевого пути. Эти профили экспериментальные, они обрабатывают IPv4 TCP/TLS
+и не проверяют VPN/Tor-туннель, авторизацию или работу клиентского приложения.
+
+============================================================================
+СТРАТЕГИЯ 485 — Silver
+============================================================================
+Название: SYN-data (16 нулевых байт в SYN)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 1.
+Цепочка обработчиков: SYN-data.
+
+СОСТАВ И ПОВЕДЕНИЕ
+syndata: отдельный 16-байтовый нулевой payload отправляется в начальном TCP SYN.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=syndata
+
+============================================================================
+СТРАТЕГИЯ 486 — Silver
+============================================================================
+Название: SYN-data (TLS-фейк с rnd, dupsid и случайным SNI) + multisplit (pos=1,midsld)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 2.
+Цепочка обработчиков: syndata + multisplit.
+
+СОСТАВ И ПОВЕДЕНИЕ
+syndata: в SYN отправляется TLS-фейк из штатного шаблона с rnd, dupsid и случайным SNI; настоящий ClientHello не заменяется.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multisplit: TLS ClientHello обрабатывается частями в обычном порядке; точки разделения указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni
+--payload=tls_client_hello
+--lua-desync=multisplit:pos=1,midsld
+
+============================================================================
+СТРАТЕГИЯ 487 — Silver
+============================================================================
+Название: SYN-data (короткий TLS-префикс 0x1603) + multisplit (pos=2)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 3.
+Цепочка обработчиков: syndata + multisplit.
+
+СОСТАВ И ПОВЕДЕНИЕ
+syndata: в начальном TCP SYN отправляется короткий payload 0x1603.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multisplit: TLS ClientHello обрабатывается частями в обычном порядке; точки разделения указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=syndata:blob=0x1603
+--payload=tls_client_hello
+--lua-desync=multisplit:pos=2
+
+============================================================================
+СТРАТЕГИЯ 488 — Silver
+============================================================================
+Название: SYN-data (TLS-фейк с SNI=google.com) + multidisorder (pos=1,midsld)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 4.
+Цепочка обработчиков: syndata + multidisorder.
+
+СОСТАВ И ПОВЕДЕНИЕ
+syndata: для SYN отправляется отдельный TLS-фейк с изменённым SNI google.com; он не меняет настоящий SNI соединения.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multidisorder: части TLS ClientHello отправляются в изменённом порядке; позиции указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,sni=google.com
+--payload=tls_client_hello
+--lua-desync=multidisorder:pos=1,midsld
+
+============================================================================
+СТРАТЕГИЯ 489 — Silver
+============================================================================
+Название: TCP window-size (wsize=1, scale=6) + multisplit (pos=1,midsld)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 5.
+Цепочка обработчиков: wssize + multisplit.
+
+СОСТАВ И ПОВЕДЕНИЕ
+wssize: объявленный TCP window size задаётся равным 1 при scale=6.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multisplit: TLS ClientHello обрабатывается частями в обычном порядке; точки разделения указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=wssize:wsize=1:scale=6
+--payload=tls_client_hello
+--lua-desync=multisplit:pos=1,midsld
+
+============================================================================
+СТРАТЕГИЯ 490 — Silver
+============================================================================
+Название: TCP window-size + SYN-data (16 нулевых байт) + multisplit (pos=1,midsld)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 6.
+Цепочка обработчиков: wssize + syndata + multisplit.
+
+СОСТАВ И ПОВЕДЕНИЕ
+wssize: объявленный TCP window size задаётся равным 1 при scale=6.
+syndata: отдельный 16-байтовый нулевой payload отправляется в начальном TCP SYN.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multisplit: TLS ClientHello обрабатывается частями в обычном порядке; точки разделения указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=wssize:wsize=1:scale=6
+--lua-desync=syndata
+--payload=tls_client_hello
+--lua-desync=multisplit:pos=1,midsld
+
+============================================================================
+СТРАТЕГИЯ 491 — Silver
+============================================================================
+Название: TCP window-size + SYN-data (TLS-фейк с rnd, dupsid и случайным SNI) + multidisorder
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 7.
+Цепочка обработчиков: wssize + syndata + multidisorder.
+
+СОСТАВ И ПОВЕДЕНИЕ
+wssize: объявленный TCP window size задаётся равным 1 при scale=6.
+syndata: в SYN отправляется TLS-фейк из штатного шаблона с rnd, dupsid и случайным SNI; настоящий ClientHello не заменяется.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multidisorder: части TLS ClientHello отправляются в изменённом порядке; позиции указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=wssize:wsize=1:scale=6
+--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni
+--payload=tls_client_hello
+--lua-desync=multidisorder:pos=1,midsld
+
+============================================================================
+СТРАТЕГИЯ 492 — Silver
+============================================================================
+Название: TCP window-size + SYN-data (короткий TLS-префикс 0x1603) + multisplit (pos=2)
+Семейство 24: Silver / SYN-data + TCP window-size; вариант 8.
+Цепочка обработчиков: wssize + syndata + multisplit.
+
+СОСТАВ И ПОВЕДЕНИЕ
+wssize: объявленный TCP window size задаётся равным 1 при scale=6.
+syndata: в начальном TCP SYN отправляется короткий payload 0x1603.
+Фильтр tls_client_hello ограничивает последующий split/disorder обработчик распознанным TLS ClientHello.
+multisplit: TLS ClientHello обрабатывается частями в обычном порядке; точки разделения указаны в аргументе.
+
+ТОЧНЫЕ АРГУМЕНТЫ СТРАТЕГИИ
+--lua-desync=wssize:wsize=1:scale=6
+--lua-desync=syndata:blob=0x1603
+--payload=tls_client_hello
+--lua-desync=multisplit:pos=2

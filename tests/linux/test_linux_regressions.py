@@ -281,13 +281,29 @@ class EndpointProbeTests(unittest.TestCase):
         ]
         self.assertEqual([row['number'] for row in igareck.rank_endpoint_scores(scores)],[1,2,3])
 
+    def test_new_syn_data_and_window_size_profiles_are_catalogued(self):
+        data=igareck.load_catalogue()
+        self.assertEqual(data['CatalogueInfo']['ProfileCount'],492)
+        self.assertEqual(data['CatalogueInfo']['FamilyCount'],24)
+        rows={row['Number']:row for row in data['ProfileRows']}
+        self.assertEqual(set(range(485,493)),set(rows) - set(range(1,485)))
+        self.assertEqual(igareck.recipe_range('485-492'),list(range(485,493)))
+        with self.assertRaises(ValueError): igareck.recipe_range('493')
+        self.assertEqual(rows[485]['Args'],['--lua-desync=syndata'])
+        self.assertIn('--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni',rows[486]['Args'])
+        self.assertIn('--lua-desync=wssize:wsize=1:scale=6',rows[489]['Args'])
+        self.assertTrue(all(row['NeedsTimestamps'] is False for row in rows.values() if row['Number'] >= 485))
+        self.assertTrue(all(any(arg.startswith('--lua-desync=syndata') for arg in row['Args']) or
+                            any(arg.startswith('--lua-desync=wssize') for arg in row['Args'])
+                            for row in rows.values() if row['Number'] >= 485))
+
     def test_adaptive_search_chooses_one_middle_profile_per_family_then_expands(self):
         data=igareck.load_catalogue()
         rows={row['Number']:row for row in data['ProfileRows']}
         selected=list(rows)
         representatives=igareck.adaptive_representatives(rows,selected)
-        self.assertEqual(len(representatives),23)
-        self.assertEqual(len({rows[number]['Family'] for number in representatives}),23)
+        self.assertEqual(len(representatives),len(data['FamilyRows']))
+        self.assertEqual(len({rows[number]['Family'] for number in representatives}),len(data['FamilyRows']))
         family=rows[representatives[0]]['Family']
         remaining=igareck.adaptive_family_candidates(rows,selected,family,set(representatives))
         self.assertEqual(len(remaining),data['FamilyRows'][family-1]['Count']-1)
@@ -304,7 +320,7 @@ class ResourceTests(unittest.TestCase):
 
     def test_help_and_catalogue_work_without_display(self):
         env = dict(os.environ, DISPLAY='', WAYLAND_DISPLAY='', PYTHONDONTWRITEBYTECODE='1')
-        for arguments in (['--help'], ['show', '--strategy', '25'], ['benchmark', '--help']):
+        for arguments in (['--help'], ['show', '--strategy', '25'], ['show', '--strategy', '492'], ['benchmark', '--help']):
             result = subprocess.run(['bash', str(REPO/'linux/START.sh')]+arguments,
                                     env=env, capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
