@@ -71,7 +71,7 @@ Assert-True ($guiText.Contains("Set-GuiProfileItems 'tls'")) 'GUI populates TCP 
 Assert-True ($guiText.Contains("Set-GuiProfileItems ([string]`$protocolBox.SelectedItem.Value)")) 'GUI switches profiles by transport'
 Assert-True ($guiText.Contains("Label='IPv6';Value='ipv6'")) 'GUI offers IPv6'
 Assert-True ($guiText.Contains("Label='UDP + QUIC Initial (HTTP/3)';Value='quic'")) 'GUI offers UDP/QUIC'
-Assert-True ($guiText.Contains("TabPage('Стратегии')") -and $guiText.Contains("TabPage('Анализ')") -and $guiText.Contains("TabPage('Настройки')")) 'GUI contains strategy, analysis, and settings tabs'
+Assert-True ($guiText.Contains("::new('Стратегии')") -and $guiText.Contains("::new('Анализ')") -and $guiText.Contains("::new('Настройки')")) 'GUI contains strategy, analysis, and settings tabs'
 Assert-True ($guiText.Contains('Save-GuiSettings') -and $guiText.Contains("'gui-settings.json'")) 'GUI persists settings'
 Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiText.Contains('$adapterBox.Items.Add($item)')) 'adapter dropdown displays a name-only wrapper'
 Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
