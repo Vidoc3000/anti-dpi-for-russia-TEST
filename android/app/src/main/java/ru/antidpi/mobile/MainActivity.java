@@ -544,7 +544,7 @@ public final class MainActivity extends Activity {
         showSelectedProfile();
         if (profileAdapter != null) profileAdapter.notifyDataSetChanged();
         updateTestSummary();
-        if (changed && AntiDpiVpnService.isRunning(this)) {
+        if (changed && (AntiDpiVpnService.isRunning(this) || AntiDpiVpnService.isStarting(this))) {
             restartVpnForCurrentSelection("Стратегия изменена");
         }
     }
@@ -561,6 +561,10 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleVpn() {
+        if (AntiDpiVpnService.isStarting(this)) {
+            Toast.makeText(this, "VPN ещё запускается…", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (!AndroidPacketEngine.isReady()) {
             Toast.makeText(this, "В APK отсутствует Android packet engine.", Toast.LENGTH_LONG).show();
             return;
@@ -594,7 +598,7 @@ public final class MainActivity extends Activity {
     }
 
     private void restartVpnForCurrentSelection(String reason) {
-        if (!AntiDpiVpnService.isRunning(this)) return;
+        if (!AntiDpiVpnService.isRunning(this) && !AntiDpiVpnService.isStarting(this)) return;
         vpnStatusText.setText(reason + " · перезапуск VPN…");
         startVpnService(true);
     }
@@ -696,9 +700,10 @@ public final class MainActivity extends Activity {
     private void refreshVpnUi() {
         if (vpnStatusText == null || vpnButton == null) return;
         boolean running = AntiDpiVpnService.isRunning(this);
+        boolean starting = AntiDpiVpnService.isStarting(this);
         vpnStatusText.setText(AntiDpiVpnService.stateMessage(this));
-        vpnButton.setText(running ? "Остановить VPN" : "Запустить VPN");
-        vpnButton.setEnabled(AndroidPacketEngine.isReady());
+        vpnButton.setText(running ? "Остановить VPN" : (starting ? "VPN запускается…" : "Запустить VPN"));
+        vpnButton.setEnabled(AndroidPacketEngine.isReady() && !starting);
         onVpnStateChanged();
     }
 

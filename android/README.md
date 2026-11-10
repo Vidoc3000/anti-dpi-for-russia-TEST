@@ -1,6 +1,6 @@
 # AntiDPI Mobile (Android)
 
-A no-root Android VPN prototype with a local TUN datapath. `VpnService` captures routed device packets, a Go/gVisor userspace stack reconstructs TCP/UDP flows, and TCP flows are handed to a local native ByeDPI SOCKS engine before egress. The C engine uses socket-level TCP techniques; this is materially different from the previous stream-only Go adaptation. The app UID is excluded from the TUN to prevent the native proxy's own upstream sockets from looping. The in-app diagnostics explicitly use the local SOCKS listener while VPN is active.
+A no-root Android VPN prototype with a local TUN datapath. `VpnService` captures routed device packets, a Go/gVisor userspace stack reconstructs TCP/UDP flows, and TCP flows are handed to a local native ByeDPI SOCKS engine before egress. VPN/native-proxy startup (including socket readiness checks) runs on a worker thread so network operations do not execute on Android's main thread. The C engine uses socket-level TCP techniques; this is materially different from the previous stream-only Go adaptation. The app UID is excluded from the TUN to prevent the native proxy's own upstream sockets from looping. The in-app diagnostics explicitly use the local SOCKS listener while VPN is active.
 
 ## Android strategy behavior
 
