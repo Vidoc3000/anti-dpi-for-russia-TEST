@@ -248,6 +248,18 @@ class EndpointProbeTests(unittest.TestCase):
         ]
         self.assertEqual([row['number'] for row in igareck.rank_endpoint_scores(scores)],[1,2,3])
 
+    def test_adaptive_search_chooses_one_middle_profile_per_family_then_expands(self):
+        data=igareck.load_catalogue()
+        rows={row['Number']:row for row in data['ProfileRows']}
+        selected=list(rows)
+        representatives=igareck.adaptive_representatives(rows,selected)
+        self.assertEqual(len(representatives),23)
+        self.assertEqual(len({rows[number]['Family'] for number in representatives}),23)
+        family=rows[representatives[0]]['Family']
+        remaining=igareck.adaptive_family_candidates(rows,selected,family,set(representatives))
+        self.assertEqual(len(remaining),data['FamilyRows'][family-1]['Count']-1)
+        self.assertTrue(all(rows[number]['Family']==family for number in remaining))
+
 
 class ResourceTests(unittest.TestCase):
     def test_standard_uninstall_retains_error_reporter_for_later_purge(self):

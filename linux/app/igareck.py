@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+from collections import deque
 import fcntl
 import hashlib
 import ipaddress
@@ -558,6 +559,18 @@ def rank_endpoint_scores(scores):
                   x['median_seconds'] if x['median_seconds'] is not None else float('inf'),x['number']))
 
 
+def adaptive_representatives(rows,numbers):
+    families={}
+    for number in numbers:
+        families.setdefault(rows[number]['Family'],[]).append(number)
+    return [families[family][len(families[family])//2] for family in sorted(families)]
+
+
+def adaptive_family_candidates(rows,numbers,family,scheduled):
+    return [number for number in numbers
+            if rows[number]['Family']==family and number not in scheduled]
+
+
 def endpoint_attempt(session, ports, number, attempt, stop, target):
     directory=getattr(session,'scan_logs',session.logs)
     target_key=endpoint_id(target)
@@ -624,7 +637,7 @@ def reserve_ports(excluded=()):
     raise RuntimeError('Не найден блок свободных TCP-портов.')
 
 
-def scan(session, rows, numbers, parallel, target=None):
+def scan(session, rows, numbers, parallel, target=None, adaptive=False):
     if not 1 <= parallel <= 5:
         raise ValueError('Число параллелей должно быть от 1 до 5.')
     if target is None and not any(a<=443<=b for a,b in port_ranges(getattr(session,'scope','all'))):
@@ -636,14 +649,21 @@ def scan(session, rows, numbers, parallel, target=None):
         session.scope=str(target['port'])
         if not target['verify_certificate']:
             print('ВНИМАНИЕ: проверка сертификата отключена; успешный результат не подтверждает подлинность сервера.')
+    adaptive=bool(adaptive and target)
+    numbers=list(numbers)
+    representatives=adaptive_representatives(rows,numbers) if adaptive else []
+    representative_set=set(representatives)
+    if adaptive:
+        print(f'Адаптивный поиск: сначала {len(representatives)} представителей семейств; семейство расширяется, если представитель успешен хотя бы в одной из двух попыток.')
     probe_name='Endpoint_'+endpoint_id(target) if target else 'YouTube'
     backend='TLS handshake only, IPv4' if target else 'Python SSL, IPv4, HTTP/1.1'
     print('Перед проверкой выключите VPN/TUN. Проверяется только TCP/TLS, не авторизация или работа самого VPN/Tor-клиента. Для остановки нажмите Esc.\n----------------------')
-    numbers=list(numbers)
     session.scan_logs=session.logs/(probe_name+'_'+session.stamp+'_'+uuid.uuid4().hex[:6])
     session.scan_logs.mkdir(mode=0o700)
-    atomic_json(session.scan_logs/'scan.json',{'version':VERSION,'interface':getattr(session,'interface',''),'numbers':numbers,'parallel':parallel,'threshold':THRESHOLD,'backend':backend,'target_id':endpoint_id(target) if target else None})
-    stop=threading.Event();found=[];scores=[];pending=iter(numbers);jobs={};used=set();finished=SimpleQueue()
+    atomic_json(session.scan_logs/'scan.json',{'version':VERSION,'interface':getattr(session,'interface',''),'numbers':numbers,'parallel':parallel,'threshold':THRESHOLD,'backend':backend,'target_id':endpoint_id(target) if target else None,'adaptive':adaptive,'representatives':representatives})
+    initial=representatives if adaptive else numbers
+    pending=deque(initial);scheduled=set(initial);expanded_families=set()
+    stop=threading.Event();found=[];scores=[];jobs={};used=set();finished=SimpleQueue()
     log=session.scan_logs/'results.jsonl'
     completed=0;interrupted=False
     def worker(number,ports):
@@ -662,9 +682,17 @@ def scan(session, rows, numbers, parallel, target=None):
         completed+=1
         if target:
             samples=[x.get('seconds',0) for x in results if x.get('pass')]
-            scores.append({'number':number,'successes':successes,'attempts':len(results),
+            scores.append({'number':number,'stage':'representative' if number in representative_set else 'expanded',
+                           'successes':successes,'attempts':len(results),
                            'success_rate':successes/len(results) if results else 0.0,
                            'median_seconds':round(statistics.median(samples),3) if samples else None})
+        if adaptive and number in representative_set and successes:
+            family=rows[number]['Family']
+            candidates=adaptive_family_candidates(rows,numbers,family,scheduled)
+            if candidates:
+                expanded_families.add(family)
+                for candidate in candidates:
+                    pending.append(candidate);scheduled.add(candidate)
         if successes:
             print(cli_ui.color((', ' if found else '')+f'{number} ({status})','92'),end='',flush=True)
             found.append(number)
@@ -673,8 +701,8 @@ def scan(session, rows, numbers, parallel, target=None):
             try:
                 while True:
                     while not stop.is_set() and len(jobs)<parallel:
-                        number=next(pending,None)
-                        if number is None:break
+                        if not pending:break
+                        number=pending.popleft()
                         ports=reserve_ports(used)
                         queue=session.start(rows[number],ports)
                         used.add(ports)
@@ -709,7 +737,7 @@ def scan(session, rows, numbers, parallel, target=None):
         raise
     finally:
         ranking=rank_endpoint_scores(scores)
-        atomic_json(session.scan_logs/'summary.json',{'requested':len(numbers),'completed':completed,'interrupted':interrupted,'found':found,'target_id':endpoint_id(target) if target else None,'ranking':ranking})
+        atomic_json(session.scan_logs/'summary.json',{'requested':len(numbers),'scheduled':len(scheduled),'completed':completed,'interrupted':interrupted,'found':found,'target_id':endpoint_id(target) if target else None,'adaptive':adaptive,'representatives':representatives,'expanded_families':sorted(expanded_families),'ranking':ranking})
         archive=shutil.make_archive(str(session.scan_logs),'zip',str(session.scan_logs))
         # The full diagnostic ZIP is saved silently; only working recipes are printed.
         print()
@@ -717,10 +745,12 @@ def scan(session, rows, numbers, parallel, target=None):
     if not found:
         if interrupted:print('Проверка остановлена пользователем.')
         print('Не найдены стратегии с успешным TLS-handshake.' if target else 'Рабочие стратегии не найдены')
+    if adaptive:
+        print(f'Адаптивный поиск завершён: протестировано {completed} из {len(numbers)} отобранных стратегий; расширено семейств: {len(expanded_families)}.')
     if target and scores:
-        print('Рейтинг TLS-проверки (успехи из двух попыток; ниже медианная задержка):')
+        print('Рейтинг TLS-проверки (сначала доля успехов, затем медианная задержка):')
         ranking=rank_endpoint_scores(scores)
-        cli_ui.table(['Место','Стратегия','Успехи','Медиана, с'],[[str(i),str(x['number']),f"{x['successes']}/{x['attempts']}",str(x['median_seconds'] if x['median_seconds'] is not None else '—')] for i,x in enumerate(ranking,1)],[6,10,9,12])
+        cli_ui.table(['Место','Этап','Стратегия','Успехи','Медиана, с'],[[str(i),'Предст.' if x['stage']=='representative' else 'Расшир.',str(x['number']),f"{x['successes']}/{x['attempts']}",str(x['median_seconds'] if x['median_seconds'] is not None else '—')] for i,x in enumerate(ranking,1)],[6,9,10,8,12])
     print('----------------------')
     return found
 
@@ -764,6 +794,7 @@ def main():
     parser.add_argument('--target', help='TLS-узел для benchmark в формате имя:порт (по умолчанию тестируются Golden 1-45)')
     parser.add_argument('--sni', help='TLS SNI; по умолчанию совпадает с именем узла')
     parser.add_argument('--insecure', action='store_true', help='не проверять сертификат (только для диагностики; небезопасно)')
+    parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='TCP-порты: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
     args.recipes=args.recipes or ('1-45' if args.action=='benchmark' else '1-484')
@@ -792,7 +823,7 @@ def main():
             except ValueError as error:
                 parser.error(str(error))
             session.scope=str(target['port'])
-            scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target)
+            scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target,adaptive=not args.exhaustive)
             return
         choose_ports(session,args.scope if args.scope is not None else 'all' if not sys.stdin.isatty() else None)
         if args.action == 'youtube':
