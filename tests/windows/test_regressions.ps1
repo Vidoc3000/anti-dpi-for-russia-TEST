@@ -53,7 +53,8 @@ $catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Za
 $guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
-Assert-True ([regex]::IsMatch($managerText, "New-UserCommand \(Join-Path `$ready '.*?\.cmd'\) 'GUI'")) 'primary Windows launcher opens GUI'
+$launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
+Assert-True ($launchLines.Count -eq 1) 'primary Windows launcher opens GUI'
 Assert-True ($coreText.Contains('if($ListProfilesJson)')) 'profile catalogue provides JSON for the GUI'
 Assert-True ($catalogueText.Contains('[switch]$ListProfilesJson')) 'catalogue exposes JSON listing switch'
 $guiProfileJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -ListProfilesJson | Out-String)
