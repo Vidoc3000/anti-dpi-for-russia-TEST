@@ -6,10 +6,10 @@ import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import go.Seq;
-import ru.antidpi.mobile.engine.Engine;
-import ru.antidpi.mobile.engine.Logger;
-import ru.antidpi.mobile.engine.Protector;
-import ru.antidpi.mobile.engine.Zapret;
+import ru.antidpi.mobile.engine.zapret.Engine;
+import ru.antidpi.mobile.engine.zapret.Logger;
+import ru.antidpi.mobile.engine.zapret.Protector;
+import ru.antidpi.mobile.engine.zapret.Zapret;
 
 /** JNI bridge to the Go/gVisor userspace TUN datapath and stream-safe desync engine. */
 final class AndroidPacketEngine {
@@ -22,7 +22,7 @@ final class AndroidPacketEngine {
 
     static boolean isReady() {
         try {
-            Class.forName("ru.antidpi.mobile.engine.Zapret");
+            Class.forName("ru.antidpi.mobile.engine.zapret.Zapret");
             return true;
         } catch (ClassNotFoundException | LinkageError error) {
             Log.e(TAG, "Native Android engine is missing", error);
