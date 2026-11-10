@@ -22,11 +22,15 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("service.protect((int) fd)", engine)
         self.assertIn("if (!AndroidPacketEngine.isReady())", service)
         self.assertIn("builder.establish()", service)
-        self.assertIn("builder.addDisallowedApplication(getPackageName())", service)
+        self.assertNotIn("builder.addDisallowedApplication(getPackageName())", service)
+        self.assertIn("EXTRA_FORCE_RESTART", service)
         self.assertIn("engine.startTunnel(tun, MTU, strategy, blockQuic)", service)
         self.assertIn("engine.stop()", service)
         self.assertIn("VpnService.prepare(this)", activity)
         self.assertIn("AndroidPacketEngine.adaptProfileArgs(selected.argsJson)", activity)
+        self.assertIn("startVpnService(true)", activity)
+        self.assertIn("navButton(\"Тесты\", PAGE_TESTS)", activity)
+        self.assertIn("navButton(\"Настройки\", PAGE_SETTINGS)", activity)
         self.assertIn("FOREGROUND_SERVICE_TYPE_SPECIAL_USE", service)
 
     def test_android_build_includes_generated_engine_aar(self):
