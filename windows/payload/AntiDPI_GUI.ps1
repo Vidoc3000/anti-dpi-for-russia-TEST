@@ -4,14 +4,39 @@ Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
 . (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
 $AntiDPILibraryOnly=$false
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
-
 $installRoot=Split-Path -Parent $PSScriptRoot
 $bundle=Join-Path $installRoot 'zapret-winws'
 $state=Join-Path $PSScriptRoot '_state'
 $catalogue=Join-Path $PSScriptRoot 'Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
+$guiLog=Join-Path $state 'gui\startup.log'
+function Write-GuiLog([string]$Message) {
+    try {
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $guiLog))|Out-Null
+        [IO.File]::AppendAllText($guiLog,((Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')+' '+$Message+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+    } catch {}
+}
+Write-GuiLog 'GUI script entry'
+Add-Type -AssemblyName System.Windows.Forms
+Write-GuiLog 'Loaded Windows Forms assembly'
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+if(-not ('AntiDPIConsoleWindow' -as [type])){
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AntiDPIConsoleWindow {
+    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool ShowWindow(IntPtr handle, int command);
+    public static void Hide() {
+        IntPtr handle=GetConsoleWindow();
+        if(handle!=IntPtr.Zero) ShowWindow(handle,0);
+    }
+}
+'@
+}
+[AntiDPIConsoleWindow]::Hide()
+
+Write-GuiLog ('GUI startup; PSVersion='+$PSVersionTable.PSVersion.ToString()+'; Apartment='+[Threading.Thread]::CurrentThread.ApartmentState)
 $profileRows=@()
 $script:profileItems=@()
 $script:runningProfile=0
@@ -91,6 +116,7 @@ function Refresh-GuiAdapters {
     if(Test-Path -LiteralPath $config){try{$savedGuid=[string](Get-Content -LiteralPath $config -Raw -Encoding UTF8|ConvertFrom-Json).Guid}catch{}}
     $adapterBox.Items.Clear()
     $adapters=@(Get-GuiAdapters)
+    Write-GuiLog ('Available physical IPv4 adapters='+$adapters.Count)
     foreach($adapter in $adapters){$null=$adapterBox.Items.Add($adapter)}
     if($adapterBox.Items.Count){
         $adapterBox.DisplayMember='Name'
@@ -108,7 +134,9 @@ function Refresh-GuiAdapters {
 try{
     if(-not (Test-Path -LiteralPath $bundle -PathType Container)){throw 'Не найдена папка установленного Zapret2: '+$bundle}
     if(-not (Test-Path -LiteralPath (Join-Path $installRoot '.antidpi-install.json') -PathType Leaf)){throw 'Маркер установки не найден. Запустите установку заново.'}
+    Write-GuiLog 'Validating installation files'
     $profileRows=Get-GuiProfiles
+    Write-GuiLog ('Loaded profiles='+$profileRows.Count)
     if($profileRows.Count -ne 492){throw ('Ожидалось 492 стратегии, найдено '+$profileRows.Count+'.')}
 
     $form=New-Object System.Windows.Forms.Form
@@ -214,6 +242,8 @@ try{
         }
     })
     $form.Add_FormClosed({$timer.Stop();$timer.Dispose()})
+    Write-GuiLog 'Showing main form'
     [void]$form.ShowDialog()
-}catch{Show-GuiError $_.Exception.Message}
+    Write-GuiLog 'Main form closed normally'
+}catch{Write-GuiLog ('FATAL: '+$_.Exception.ToString());Show-GuiError $_.Exception.Message}
 finally{if($null -ne $script:worker){$script:worker.Dispose()}}
