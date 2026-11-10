@@ -90,6 +90,17 @@ Assert-True ($installerCommand -notmatch '(?i)-WindowStyle\s+Hidden') 'ZIP insta
 Assert-True ($setupText.Contains('0x00000010') -and $setupText -notmatch '(?i)-WindowStyle Hidden') 'EXE bootstrapper starts its installer visibly instead of creating a hidden PowerShell process'
 Assert-True ($setupText.Contains('AntiDPI_Installer.ps1') -and $installerCommand.Contains('AntiDPI_Installer.ps1')) 'EXE and ZIP entry points both launch the new Windows installer UI'
 Assert-True ($managerText.Contains('$NonInteractiveInstaller') -and $managerText.Contains('$CreateShortcutChoice') -and $managerText.Contains('$BundleSelection')) 'installer backend accepts the GUI-selected setup options'
+Assert-True ($managerText.Contains("'AntiDPI_Zapret2.ico'") -and $managerText.Contains("'AntiDPI_Zapret2_delete.ico'")) 'install and uninstall shortcuts use their separate application icons'
+foreach ($iconName in @('AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')) {
+    $iconBytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot ('windows\payload\' + $iconName)))
+    Assert-Equal 0 ([BitConverter]::ToUInt16($iconBytes,0)) ($iconName + ' reserved header')
+    Assert-Equal 1 ([BitConverter]::ToUInt16($iconBytes,2)) ($iconName + ' ICO type')
+    Assert-Equal 7 ([BitConverter]::ToUInt16($iconBytes,4)) ($iconName + ' contains seven standard resolutions')
+}
+Assert-True (-not $managerText.Contains('AntiDPIArtCLI.ttf') -and -not $coreText.Contains('PrepareFont') -and -not $coreText.Contains('AntiDPI_Console_Artwork.cs')) 'Windows CLI uses the system console font and no longer installs the artwork font'
+foreach ($removedAsset in @('windows\payload\AntiDPIArtCLI.ttf','windows\payload\AntiDPIArtCLI_OFL.txt','licenses\AntiDPIArtCLI_OFL.txt','windows\payload\AntiDPI_Artwork_CLI.json','windows\payload\AntiDPI_Console_Artwork.cs','windows\payload\ascii-art-new-1147-25102026.txt','linux\assets\logo\ascii-art-new-1147-25102026.txt')) {
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $repoRoot $removedAsset))) ('Removed unused custom-font/artwork asset: ' + $removedAsset)
+}
 Assert-True (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'assets'))) 'Removed unused root assets directory'
 Assert-True ($coreText.Contains('if($Analyze)') -and $coreText.Contains('strategy-analysis.v1')) 'analysis uses measured YouTube results'
 Assert-True ($catalogueText.Contains('[switch]$Analyze')) 'catalogue provides GUI analysis mode'

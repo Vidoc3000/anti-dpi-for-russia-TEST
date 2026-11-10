@@ -201,48 +201,6 @@ function Get-AntiDPIFamilyTable([int]$Width) {
         Get-AntiDPITableLines -Headers @('Поле','Значение') -Widths @(6,($width-13)) -Rows $rows.ToArray()
     }
 }
-function Initialize-AntiDPIArtworkTypes {
-    if(-not ('AntiDPI.ConsoleArtworkCLI' -as [type])){
-        $source=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'AntiDPI_Console_Artwork.cs'),[Text.Encoding]::UTF8)
-        Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
-    }
-}
-function Initialize-AntiDPIArtworkConsole([string]$FontPath) {
-    if($env:OS -ne 'Windows_NT'){return $false}
-    Initialize-AntiDPIArtworkTypes
-    $data=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'AntiDPI_Artwork_CLI.json') -Raw -Encoding UTF8|ConvertFrom-Json
-    return [AntiDPI.ConsoleArtworkCLI]::PrepareFont($FontPath,[int]$data.GlyphCount)
-}
-function Resize-AntiDPIArtworkConsole([int]$Columns,[int]$Rows) {
-    return [AntiDPI.ConsoleArtworkCLI]::EnsureWidth($Columns,$Rows)
-}
-function Set-AntiDPIArtworkLayout([int]$Columns,[int]$Rows,[string]$FontPath) {
-    try{
-        if(-not (Initialize-AntiDPIArtworkConsole $FontPath)){return $false}
-        return (Resize-AntiDPIArtworkConsole ($Columns+1) ($Rows+10)) -and (Get-AntiDPIConsoleWidth) -ge ($Columns+1)
-    }catch{Write-Verbose ('Console artwork: '+$_.Exception.Message);return $false}
-}
-function Close-AntiDPIArtworkConsole {
-    if($env:OS -eq 'Windows_NT' -and ('AntiDPI.ConsoleArtworkCLI' -as [type])){
-        try{[AntiDPI.ConsoleArtworkCLI]::ReleaseFont()}catch{Write-Verbose $_.Exception.Message}
-    }
-}
-function Show-AntiDPIArtwork([string]$Path,[switch]$Prepared) {
-    try{
-        Initialize-AntiDPIArtworkTypes
-        $data=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json
-        if([int]$data.Columns -ne 100 -or [int]$data.Rows -ne 32){throw 'Некорректный формат логотипа.'}
-        $font=Join-Path (Split-Path -Parent $Path) 'AntiDPIArtCLI.ttf'
-        if(-not $Prepared -and -not (Set-AntiDPIArtworkLayout 100 32 $font)){
-            Write-Host 'Для логотипа нужен обычный терминал с шириной не меньше 101 колонки.' -ForegroundColor Yellow
-            return
-        }
-        if(-not [AntiDPI.ConsoleArtworkCLI]::DrawRows([string[]]$data.Tiles,[string[]]$data.Colours)){
-            Write-Host 'Для логотипа нужен обычный терминал с шириной не меньше 101 колонки.' -ForegroundColor Yellow
-        }
-    }catch{Write-Warning ('Логотип: '+$_.Exception.Message)}
-}
-
 function Select-AntiDPIAdapter([int]$Requested=0,[switch]$Prompt,[string]$AddressFamily='ipv4') {
     if($AddressFamily -notin @('ipv4','ipv6')){throw 'Неподдерживаемое IP-семейство.'}
     $family=if($AddressFamily -eq 'ipv6'){'IPv6'}else{'IPv4'}
