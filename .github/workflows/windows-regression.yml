@@ -1,0 +1,51 @@
+name: Windows regression tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - 'packaging/windows/**'
+      - 'tests/windows/**'
+      - '.github/workflows/windows-regression.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - 'packaging/windows/**'
+      - 'tests/windows/**'
+      - '.github/workflows/windows-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: PowerShell 5.1 parsing and Windows CLI regressions
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parse scripts and run Windows regression checks
+        shell: powershell
+        run: .\tests\windows\test_regressions.ps1
+
+      - name: Smoke-build and verify the Windows ZIP
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = '.\dist\windows-regression'
+          & .\packaging\windows\build.ps1 -ZipOnly -Version '1.0' -OutputDirectory $output
+          $sums = Join-Path $output 'SHA256SUMS_Windows_ZIP_v1.0.txt'
+          foreach ($line in Get-Content -LiteralPath $sums) {
+              if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Invalid ZIP checksum line.' }
+              $expected = $Matches[1]
+              $path = Join-Path $output $Matches[2]
+              if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $expected) {
+                  throw ('Windows ZIP SHA-256 mismatch: ' + $path)
+              }
+          }

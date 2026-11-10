@@ -44,6 +44,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Run Windows regression checks
+        shell: powershell
+        run: .\tests\windows\test_regressions.ps1
+
       - name: Build Windows release files
         shell: powershell
         run: |
