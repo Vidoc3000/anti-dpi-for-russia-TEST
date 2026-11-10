@@ -6,7 +6,6 @@
 
 <div align="center">
 
-[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoN3Y3SDB6TTkgMGg3djdIOXpNMCA5aDd2N0gwek05IDloN3Y3SDl6Ii8%2BPC9zdmc%2B)](https://github.com/igareck/anti-dpi-for-russia/releases)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/igareck/anti-dpi-for-russia/releases)
 
 
