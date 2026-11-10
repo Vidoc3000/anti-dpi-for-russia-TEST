@@ -105,6 +105,9 @@ function Read-IgareckTcpPorts {
     Write-Host '----------------------'
     Write-Host ''
     Write-Host 'Выберите порты назначения TCP, трафик которых будет перехватываться Zapret2.' -ForegroundColor Cyan
+    Write-Host 'Охват: IPv4 TCP; стратегии применяются к TLS. IPv6, UDP и QUIC/HTTP/3 не перехватываются.' -ForegroundColor Yellow
+    Write-Host 'Все/all охватывает все TCP-порты: больше соединений может попасть в обработку и увеличить нагрузку.' -ForegroundColor Yellow
+    Write-Host 'Если порт узла известен, выберите его; динамические порты подписок VPN могут требовать all.'
     Write-Host ''
     Write-Host 'Либо определенный номер порта, например 443, 80 и т.д.'
     Write-Host 'Либо диапазон, например 0–1023'
@@ -795,7 +798,8 @@ function Show-IgareckSelectedStrategy($Row,$Adapter,[string]$PortScope,$Family) 
         ('{0} #{1}:' -f $set.Groups[1].Value,$Row.Number),
         ('Семейство {0}: {1}; вариант {2};' -f $Row.Family,$Family.Name,$Row.Variant),
         [string]$Row.Name,
-        ('Физический адаптер {0}, индекс {1}; IPv4 TLS/TCP, порты {2}' -f $Adapter.Name,$Adapter.ifIndex,$PortScope)
+        ('Физический адаптер {0}, индекс {1}; IPv4 TLS/TCP, порты {2}' -f $Adapter.Name,$Adapter.ifIndex,$PortScope),
+        'IPv6, UDP и QUIC/HTTP/3 не перехватываются; all охватывает все TCP-порты и может увеличить нагрузку.'
     )
     foreach($part in $parts){
         Write-Host $part

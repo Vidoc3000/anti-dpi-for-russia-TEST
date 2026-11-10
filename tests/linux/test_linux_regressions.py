@@ -1,5 +1,5 @@
 """Offline checks for Linux launch, dependency and container regressions."""
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 import os
@@ -26,6 +26,39 @@ import target_probe
 
 def state(mapping='0 0 4294967295', groups='allow', caps='ffffffffffffffff'):
     return dict(uid_map=mapping, gid_map=mapping, setgroups=groups, cap_effective=caps)
+
+
+class ScopeDiagnosticTests(unittest.TestCase):
+    def test_all_ports_explains_coverage_and_potential_overhead(self):
+        text=' '.join(igareck.scope_guidance('all'))
+        self.assertIn('IPv4 TCP',text)
+        self.assertIn('IPv6, UDP и QUIC/HTTP/3',text)
+        self.assertIn('нагрузка/задержка',text)
+        self.assertIn('динамические порты',text)
+
+    def test_narrow_scope_reports_selected_port_count(self):
+        text=' '.join(igareck.scope_guidance('443,1000-1002'))
+        self.assertIn('всего 4 TCP-портов',text)
+        self.assertIn('остальных портах не перехватываются',text)
+        self.assertNotIn('охват максимальный',text)
+
+    def test_queue_drop_metrics_are_explained_and_flagged(self):
+        with redirect_stdout(StringIO()) as output:
+            igareck.show_queue_metrics(12,{'id_sequence':500,'kernel_drops':2,'userspace_drops':1})
+        self.assertIn('последний ID пакета 500',output.getvalue())
+        self.assertIn('потери ядра 2, userspace 1',output.getvalue())
+        self.assertIn('Есть потери в NFQUEUE',output.getvalue())
+
+    def test_nfqueue_progress_uses_packet_sequence_changes_not_monotonic_counts(self):
+        self.assertTrue(igareck.queue_progressed({'id_sequence':0xffffffff},{'id_sequence':0}))
+        self.assertFalse(igareck.queue_progressed({'id_sequence':7},{'id_sequence':7}))
+        self.assertFalse(igareck.queue_progressed({},{}))
+
+    def test_windows_prompt_discloses_protocol_limits_and_all_port_cost(self):
+        source=(REPO/'windows/payload/Igareck_Launcher_Core_20261023_public_v1.ps1').read_text(encoding='utf-8')
+        self.assertIn('IPv6, UDP и QUIC/HTTP/3 не перехватываются',source)
+        self.assertIn('увеличить нагрузку',source)
+        self.assertIn('могут требовать all',source)
 
 
 class ContainerTests(unittest.TestCase):
