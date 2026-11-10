@@ -17,9 +17,9 @@ $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.Window
 if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
     try{
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $arguments=@('-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$PSCommandPath)
+        $arguments=@('-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',$PSCommandPath)
         $joined=(@($arguments|ForEach-Object {ConvertTo-InstallerArgument ([string]$_)}) -join ' ')
-        $null=Start-Process -FilePath $powershell -ArgumentList $joined -Verb RunAs -WindowStyle Hidden
+        $null=Start-Process -FilePath $powershell -ArgumentList $joined -Verb RunAs
     }catch{Show-InstallerError ('Для установки нужны права администратора. '+$_.Exception.Message)}
     exit
 }
@@ -136,7 +136,7 @@ $installButton.Add_Click({
         $shortcut=if($shortcutCheck.Checked){'Yes'}else{'No'}
         $args=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action','Install','-InstallPath',$target,'-BundleSelection',$choice,'-CreateShortcutChoice',$shortcut,'-NonInteractiveInstaller','-SkipHeader')
         $joined=(@($args|ForEach-Object {ConvertTo-InstallerArgument ([string]$_)}) -join ' ')
-        $script:installProcess=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Hidden -RedirectStandardOutput $script:stdoutPath -RedirectStandardError $script:stderrPath -PassThru
+        $script:installProcess=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Normal -RedirectStandardOutput $script:stdoutPath -RedirectStandardError $script:stderrPath -PassThru
         $installButton.Enabled=$false;$pathBox.Enabled=$false;$browseButton.Enabled=$false;$bundleGroup.Enabled=$false;$shortcutCheck.Enabled=$false
         $openLogsButton.Enabled=$true;$progress.Style=[System.Windows.Forms.ProgressBarStyle]::Marquee;$progress.MarqueeAnimationSpeed=25
         $status.Text='Идёт загрузка, проверка и установка. Это может занять несколько минут.'
