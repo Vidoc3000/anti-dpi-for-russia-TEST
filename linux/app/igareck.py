@@ -60,8 +60,11 @@ def atomic_json(path, value):
 def load_catalogue(root=ROOT):
     data = json.loads(resource_path(root, 'catalogue.json').read_text(encoding='utf-8'))
     rows, families = data['ProfileRows'], data['FamilyRows']
-    if [r['Number'] for r in rows] != list(range(1, 485)) or len(families) != 23:
-        raise RuntimeError('Повреждён каталог: ожидаются 484 стратегии и 23 семейства.')
+    expected_profiles = int(data['CatalogueInfo']['ProfileCount'])
+    expected_families = int(data['CatalogueInfo']['FamilyCount'])
+    if ([r['Number'] for r in rows] != list(range(1, expected_profiles + 1))
+            or len(families) != expected_families):
+        raise RuntimeError('Повреждён каталог: число стратегий/семейств не совпадает с метаданными.')
     for family in families:
         group = [r for r in rows if r['Family'] == family['Number']]
         if len(group) != family['Count'] or [r['Number'] for r in group] != list(range(family['First'], family['Last'] + 1)):
@@ -74,8 +77,9 @@ def recipe_range(value):
     if not match:
         raise ValueError('Введите номер или диапазон, например 1-50.')
     first, last = int(match[1]), int(match[2] or match[1])
-    if not 1 <= first <= last <= 484:
-        raise ValueError('Допустимые номера: 1–484.')
+    maximum = int(load_catalogue()['CatalogueInfo']['ProfileCount'])
+    if not 1 <= first <= last <= maximum:
+        raise ValueError(f'Допустимые номера: 1–{maximum}.')
     return list(range(first, last + 1))
 
 
@@ -840,13 +844,15 @@ def main():
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='TCP-порты: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
-    args.recipes=args.recipes or ('1-45' if args.action=='benchmark' else '1-484')
-    data = load_catalogue(); rows = {r['Number']: r for r in data['ProfileRows']}
+    data = load_catalogue()
+    maximum = int(data['CatalogueInfo']['ProfileCount'])
+    args.recipes=args.recipes or ('1-45' if args.action=='benchmark' else f'1-{maximum}')
+    rows = {r['Number']: r for r in data['ProfileRows']}
     if args.action == 'list':
         show_table(data); return
     if args.action == 'show':
         if args.strategy not in rows:
-            parser.error('Укажите --strategy от 1 до 484.')
+            parser.error(f'Укажите --strategy от 1 до {maximum}.')
         print(json.dumps(rows[args.strategy], ensure_ascii=False, indent=2)); return
     if args.action == 'check-engine':
         for n in recipe_range(args.recipes):
@@ -887,8 +893,8 @@ def main():
                 number = int(answer) if answer.isdigit() else None
             if number not in rows:
                 if args.action == 'start':
-                    parser.error('Укажите --strategy от 1 до 484.')
-                print('Допустимые номера: 1–484.'); number = None; continue
+                    parser.error(f'Укажите --strategy от 1 до {maximum}.')
+                print(f'Допустимые номера: 1–{maximum}.'); number = None; continue
             key = activate(session, rows[number])
             if key == 'quit':
                 return

@@ -156,8 +156,9 @@ def show_intro(root, prefix=None, installing=False):
 
 def catalogue(data):
     print('\n######################\n')
-    paragraphs(['КАТАЛОГ (Октябрь 2026): Golden+Silver; 484 уникальных AntiDPI стратегии, подобранные специально для российских сетей.',
-                'Golden: 1–45 (45). Silver: 46–484 (439).'],'96')
+    info=data['CatalogueInfo']; total=int(info['ProfileCount']); golden=45; silver=total-golden
+    paragraphs([f'КАТАЛОГ (Октябрь 2026): Golden+Silver; {total} стратегии AntiDPI.',
+                f'Golden: 1–{golden} ({golden}). Silver: {golden+1}–{total} ({silver}).'],'96')
     print('\n'+SEPARATOR+'\n\nВводите номер стратегии из колонки «Номера».')
     family_width=max(10,min(65,columns()-40))
     rows=[]

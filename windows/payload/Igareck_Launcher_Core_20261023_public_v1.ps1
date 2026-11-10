@@ -284,7 +284,7 @@ function Show-IgareckFamilies {
     Write-Host ''
     $set=([string]$CatalogueInfo.Slug).Replace('_','+')
     Write-Host ('КАТАЛОГ (Октябрь 2026): {0}; {1} уникальных AntiDPI стратегии, подобранные специально для российских сетей.' -f $set,$ProfileRows.Count) -ForegroundColor Cyan
-    if($CatalogueInfo.Slug -eq 'Golden_Silver'){Write-Host 'Golden: 1-45 (45). Silver: 46-484 (439).'}
+    if($CatalogueInfo.Slug -eq 'Golden_Silver'){$golden=45;$silver=[int]$ProfileRows.Count-$golden;Write-Host ('Golden: 1-{0} ({0}). Silver: {1}-{2} ({3}).' -f $golden,($golden+1),$ProfileRows.Count,$silver)}
     Write-Host '----------------------'
     Write-Host 'Вводите номер стратегии из колонки «Номера».'
     $table=@(Get-IgareckFamilyTable -Width ((Get-IgareckConsoleWidth)-1))

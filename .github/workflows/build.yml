@@ -104,7 +104,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libnetfilter-queue-dev libnfnetlink-dev libmnl-dev zlib1g-dev libcap-dev libluajit-5.1-dev
 
-      - name: Build pinned engine and validate all 484 strategies
+      - name: Build pinned engine and validate every strategy
         run: python3 tests/linux/check_compatible_engine.py
 
       - name: Build Linux release files

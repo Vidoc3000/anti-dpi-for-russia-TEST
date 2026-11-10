@@ -55,7 +55,9 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 ### **`Какие есть стратегии? Что за Golden и Silver разделения в таблице?`**
 
-**484 стратегии:** 45 Golden + 439 Silver; 23 семейства.
+**492 стратегии:** 45 Golden + 447 Silver; 24 семейства.
+
+Новое семейство Silver добавляет SYN-data (отдельный начальный TCP SYN payload) и TCP window-size (`wssize`) варианты в сочетании с TLS-сегментацией/перестановкой. Они экспериментальные: результат зависит от сети; TLS-handshake-пробник не является проверкой VPN/Tor-туннеля.
 
 Подробный справочник всех стратегий: **[README_Стратегии_Windows_v1.0.txt](windows/README_Стратегии_Windows_v1.0.txt)**
 
@@ -194,6 +196,7 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 |21|Silver|multisplit + fakeddisorder|22|457-478|
 |22|Silver|tcpseg|2|479-480|
 |23|Silver|Большой TLS-префикс / multisplit|4|481-484|
+|24|Silver|SYN-data + TCP window-size|8|485-492|
 | | | | | |
 
 
@@ -378,6 +381,7 @@ ip -br address
 |21|Silver|multisplit + fakeddisorder|22|457-478|
 |22|Silver|tcpseg|2|479-480|
 |23|Silver|Большой TLS-префикс / multisplit|4|481-484|
+|24|Silver|SYN-data + TCP window-size|8|485-492|
 | | | | | |
 
 ### **10. Введите `номер стратегии` из таблицы или слово `YouTube`.**

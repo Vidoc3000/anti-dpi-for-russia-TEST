@@ -11,8 +11,8 @@ $CatalogueInfo = @'
   "Schema": "igareck.tls.catalogue.v1",
   "Slug": "Golden_Silver",
   "Version": "20261023_public_v1",
-  "ProfileCount": 484,
-  "FamilyCount": 23
+  "ProfileCount": 492,
+  "FamilyCount": 24
 }
 '@ | ConvertFrom-Json
 $FamilyRows = @'
@@ -177,6 +177,13 @@ $FamilyRows = @'
     "Count": 4,
     "First": 481,
     "Last": 484
+  },
+  {
+    "Number": 24,
+    "Name": "Silver / SYN-data + TCP window-size",
+    "Count": 8,
+    "First": 485,
+    "Last": 492
   }
 ]
 '@ | ConvertFrom-Json
@@ -8815,6 +8822,151 @@ $ProfileRows = @'
     "StockTlsPattern": false,
     "PrefixOnly": false,
     "RecipeSHA256": "e3defe6046877e3275c9a109eab7b1ab308cedcd6f0d13636072a98cccdc7dc1"
+  },
+  {
+    "Number": 485,
+    "Family": 24,
+    "Variant": 1,
+    "Name": "SYN-data (16 нулевых байт в SYN)",
+    "Processing": "SYN",
+    "Chain": "SYN-data",
+    "Args": [
+      "--lua-desync=syndata"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": false,
+    "PrefixOnly": false,
+    "RecipeSHA256": "0e97d5216b376d2726f868b5305b9735426aee5c7617be2fed922a0eff679655"
+  },
+  {
+    "Number": 486,
+    "Family": 24,
+    "Variant": 2,
+    "Name": "SYN-data (TLS-фейк с rnd, dupsid и случайным SNI) + multisplit (pos=1,midsld)",
+    "Processing": "SYN",
+    "Chain": "syndata + multisplit",
+    "Args": [
+      "--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni",
+      "--payload=tls_client_hello",
+      "--lua-desync=multisplit:pos=1,midsld"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": true,
+    "PrefixOnly": false,
+    "RecipeSHA256": "7ea1f1ff536bbcbee3de70a5424964791eb10a72746de09cef4467ac771b9038"
+  },
+  {
+    "Number": 487,
+    "Family": 24,
+    "Variant": 3,
+    "Name": "SYN-data (короткий TLS-префикс 0x1603) + multisplit (pos=2)",
+    "Processing": "SYN",
+    "Chain": "syndata + multisplit",
+    "Args": [
+      "--lua-desync=syndata:blob=0x1603",
+      "--payload=tls_client_hello",
+      "--lua-desync=multisplit:pos=2"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": false,
+    "PrefixOnly": false,
+    "RecipeSHA256": "d556c0cf32350843677dff39561d82ead479a4b0a31ed307b0bdb0e1a5eb9d2e"
+  },
+  {
+    "Number": 488,
+    "Family": 24,
+    "Variant": 4,
+    "Name": "SYN-data (TLS-фейк с SNI=google.com) + multidisorder (pos=1,midsld)",
+    "Processing": "SYN",
+    "Chain": "syndata + multidisorder",
+    "Args": [
+      "--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,sni=google.com",
+      "--payload=tls_client_hello",
+      "--lua-desync=multidisorder:pos=1,midsld"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": true,
+    "PrefixOnly": false,
+    "RecipeSHA256": "43b27cdc3f706f3105ae8b952a2c3ffbd7d438decff7055511f32e582bd86972"
+  },
+  {
+    "Number": 489,
+    "Family": 24,
+    "Variant": 5,
+    "Name": "TCP window-size (wsize=1, scale=6) + multisplit (pos=1,midsld)",
+    "Processing": "SYN",
+    "Chain": "wssize + multisplit",
+    "Args": [
+      "--lua-desync=wssize:wsize=1:scale=6",
+      "--payload=tls_client_hello",
+      "--lua-desync=multisplit:pos=1,midsld"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": false,
+    "PrefixOnly": false,
+    "RecipeSHA256": "54968fd0f6c1518d025de40e1460c8c8eea9403c183f85f5f840536c6076e799"
+  },
+  {
+    "Number": 490,
+    "Family": 24,
+    "Variant": 6,
+    "Name": "TCP window-size + SYN-data (16 нулевых байт) + multisplit (pos=1,midsld)",
+    "Processing": "SYN",
+    "Chain": "wssize + syndata + multisplit",
+    "Args": [
+      "--lua-desync=wssize:wsize=1:scale=6",
+      "--lua-desync=syndata",
+      "--payload=tls_client_hello",
+      "--lua-desync=multisplit:pos=1,midsld"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": false,
+    "PrefixOnly": false,
+    "RecipeSHA256": "7620abfc60e4f589432cd15dc4cfcef350ec4c9e761cdf109229e2dbe573e96b"
+  },
+  {
+    "Number": 491,
+    "Family": 24,
+    "Variant": 7,
+    "Name": "TCP window-size + SYN-data (TLS-фейк с rnd, dupsid и случайным SNI) + multidisorder",
+    "Processing": "SYN",
+    "Chain": "wssize + syndata + multidisorder",
+    "Args": [
+      "--lua-desync=wssize:wsize=1:scale=6",
+      "--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni",
+      "--payload=tls_client_hello",
+      "--lua-desync=multidisorder:pos=1,midsld"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": true,
+    "PrefixOnly": false,
+    "RecipeSHA256": "61741cc42628d8cd89d03890216d8437a976c9e31e84589dc142102f33ee2667"
+  },
+  {
+    "Number": 492,
+    "Family": 24,
+    "Variant": 8,
+    "Name": "TCP window-size + SYN-data (короткий TLS-префикс 0x1603) + multisplit (pos=2)",
+    "Processing": "SYN",
+    "Chain": "wssize + syndata + multisplit",
+    "Args": [
+      "--lua-desync=wssize:wsize=1:scale=6",
+      "--lua-desync=syndata:blob=0x1603",
+      "--payload=tls_client_hello",
+      "--lua-desync=multisplit:pos=2"
+    ],
+    "Init": null,
+    "NeedsTimestamps": false,
+    "StockTlsPattern": false,
+    "PrefixOnly": false,
+    "RecipeSHA256": "edc8b99e24201a18cd9ed31eb3c421c6280f85fd7225da78c872479741f87bc2"
   }
 ]
 '@ | ConvertFrom-Json

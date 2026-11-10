@@ -37,7 +37,7 @@
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\test_regressions.ps1
 ```
 
-Тесты разбирают все поставляемые PowerShell-скрипты парсером Windows PowerShell 5.1 и проверяют нормализацию TCP-портов, фильтры движка и изоляцию probe-портов. GitHub Actions запускает их для изменений Windows-кода, а также выполняет ZIP smoke-build с проверкой SHA-256.
+Тесты разбирают все поставляемые PowerShell-скрипты парсером Windows PowerShell 5.1 и проверяют нормализацию TCP-портов, фильтры движка и изоляцию probe-портов. Windows CI скачивает и проверяет SHA-256 закреплённой официальной сборки Zapret2, затем проверяет Lua-функции и параметры восьми новых стратегий с отключённым перехватом; это не запускает обработку трафика. CI также выполняет ZIP smoke-build с проверкой SHA-256.
 
 Откройте PowerShell в корне репозитория:
 

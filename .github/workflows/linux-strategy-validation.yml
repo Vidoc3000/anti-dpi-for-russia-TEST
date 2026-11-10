@@ -1,0 +1,42 @@
+name: Linux strategy validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'linux/app/**'
+      - 'linux/data/catalogue.json'
+      - 'tests/linux/**'
+      - '.github/workflows/linux-strategy-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'linux/app/**'
+      - 'linux/data/catalogue.json'
+      - 'tests/linux/**'
+      - '.github/workflows/linux-strategy-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Linux regressions and pinned-engine dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run offline Linux regressions
+        run: python3 -m unittest discover -s tests/linux -v
+
+      - name: Install native validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libnetfilter-queue-dev libnfnetlink-dev libmnl-dev zlib1g-dev libcap-dev libluajit-5.1-dev
+
+      - name: Build pinned engine and dry-run every strategy
+        run: python3 tests/linux/check_compatible_engine.py

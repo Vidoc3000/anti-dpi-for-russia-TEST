@@ -55,7 +55,8 @@ def main():
                                      cwd=engine, capture_output=True, text=True, timeout=20)
             if checked.returncode:
                 raise RuntimeError('Strategy '+str(row['Number'])+': '+checked.stdout+checked.stderr)
-        print('Verified 484/484 parameter/Lua dry-runs against '+meta['commit']+'.')
+        count = len(data['ProfileRows'])
+        print(f'Verified {count}/{count} parameter/Lua dry-runs against {meta["commit"]}.')
 
 
 if __name__ == '__main__':
