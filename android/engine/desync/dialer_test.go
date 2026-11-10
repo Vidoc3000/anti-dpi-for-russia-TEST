@@ -2,10 +2,42 @@ package desync
 
 import (
 	"bytes"
+	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"testing"
+	"time"
 )
+
+func TestTLSRecordFragmentIsAcceptedByGoTLSParser(t *testing.T) {
+	clientSide, serverSide := net.Pipe()
+	defer clientSide.Close()
+	defer serverSide.Close()
+	_ = clientSide.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = serverSide.SetDeadline(time.Now().Add(5 * time.Second))
+
+	seenSNI := make(chan string, 1)
+	server := tls.Server(serverSide, &tls.Config{
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			seenSNI <- hello.ServerName
+			return nil, errors.New("stop after confirming ClientHello parse")
+		},
+	})
+	go func() { _ = server.Handshake() }()
+
+	conn := &desyncConn{Conn: clientSide, strat: Default()}
+	client := tls.Client(conn, &tls.Config{ServerName: "www.example.com", InsecureSkipVerify: true})
+	_ = client.Handshake() // The server deliberately aborts after parsing ClientHello.
+	select {
+	case sni := <-seenSNI:
+		if sni != "www.example.com" {
+			t.Fatalf("server parsed SNI %q, want www.example.com", sni)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Go TLS server did not parse the fragmented ClientHello")
+	}
+}
 
 func TestDialerBuffersSplitClientHelloBeforeTransform(t *testing.T) {
 	clientSide, serverSide := net.Pipe()
