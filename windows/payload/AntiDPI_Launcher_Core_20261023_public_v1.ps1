@@ -495,6 +495,28 @@ function Write-AntiDPIDiagnostic([string]$Path,$Data) {
         [IO.File]::WriteAllText($fallback,$line+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
     }
 }
+function Get-AntiDPIAnalysisRow($Result,[int]$Number) {
+    $successes=[int]$Result.Successes
+    $status=if($Result.Cancelled){'CANCELLED'}elseif($Result.Error){'ERROR'}elseif($successes -eq 2){'PASS'}elseif($successes -eq 1){'UNSTABLE'}else{'FAIL'}
+    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;Details=[string]$Result.Error}
+}
+function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0) {
+    if(-not $Path){return}
+    $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;CurrentProfile=$CurrentProfile;Results=@($Results.Values|Sort-Object Number)}
+    $parent=Split-Path -Parent $Path
+    [IO.Directory]::CreateDirectory($parent)|Out-Null
+    $temporary=$Path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try{
+        [IO.File]::WriteAllText($temporary,($document|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+        if(Test-Path -LiteralPath $Path -PathType Leaf){
+            $replaced=$false
+            for($attempt=0;$attempt -lt 8 -and -not $replaced;$attempt++){
+                try{[IO.File]::Replace($temporary,$Path,[NullString]::Value);$replaced=$true}
+                catch{if($attempt -ge 7){throw};Start-Sleep -Milliseconds 25}
+            }
+        }else{[IO.File]::Move($temporary,$Path)}
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
+}
 function Test-AntiDPINoOtherEngine {
     if(-not (Test-AntiDPIAdmin)){throw 'Запустите CMD от администратора.'}
     if(@(Get-Process -Name 'winws','winws2','goodbyedpi' -ErrorAction SilentlyContinue).Count){
@@ -688,6 +710,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
     $scanState=Join-Path $State ('youtube_'+$tag)
     [IO.Directory]::CreateDirectory($scanState)|Out-Null
     $found=[Collections.Generic.List[string]]::new()
+    $analysisResults=@{}
     $jobs=[Collections.Generic.List[object]]::new()
     $retryQueue=[Collections.Generic.Queue[int]]::new()
     $recoveryPending=$false;$recoveryReason=""
@@ -701,6 +724,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
     try{
         $script:AntiDPIScanControl=[AntiDPI.Public10.YoutubeScanControl]::new($inputState.Supported)
         $next=[int]$Range.First;$completed=0;$total=$Range.Last-$Range.First+1
+        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next}
         Write-Host '----------------------'
         Write-Host 'Для остановки проверки нажмите клавишу Esc. Если нашлась рабочая стратегия, проверку можно остановить заранее.' -ForegroundColor Yellow
         if($null -ne $previousTitle){Write-Host 'Ход проверки отображается в заголовке окна.'}
@@ -720,12 +744,17 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             $ready=@($jobs | Where-Object {$_.Worker.Task.IsCompleted} | Sort-Object {$_.Worker.Task.Result.CompletedUtc})
             foreach($job in $ready){
                 $script:AntiDPIScanControl.Unregister($job.Worker)
-                $driverFailure=[bool]$job.Worker.Task.Result.DriverFailure
-                $driverReason=[string]$job.Worker.Task.Result.DriverError
+                $jobResult=$job.Worker.Task.GetAwaiter().GetResult()
+                $driverFailure=[bool]$jobResult.DriverFailure
+                $driverReason=[string]$jobResult.DriverError
                 $entry=Receive-AntiDPIYoutubeJob $job $log -RetryRequired:$driverFailure
                 if($driverFailure){
                     $retryQueue.Enqueue([int]$job.Number)
                     $recoveryPending=$true;$recoveryReason=$driverReason
+                }elseif($AnalysisResultPath){
+                    $analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number)
+                    $current=if($retryQueue.Count){[int]$retryQueue.Peek()}else{[int]$next}
+                    Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $current
                 }
                 if($entry){
                     if($found.Count){Write-Host ', ' -NoNewline}
@@ -756,6 +785,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                     Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$number;Slot=$slot;Event='RECIPE_START';SourcePorts=$job.Ports;NativeLog=$nativeLog})
                 }catch{
                     Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$number;Slot=$slot;Event='TECHNICAL_ERROR';Error=$_.Exception.Message;Successes=0})
+                    if($AnalysisResultPath){$analysisResults[[int]$number]=[pscustomobject]@{Number=[int]$number;Status='ERROR';Successes=0;Details=$_.Exception.Message};Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults ([int]$next)}
                     $completed++
                 }
             }
@@ -774,8 +804,10 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             foreach($job in @($jobs.ToArray())){
                 try{
                     $script:AntiDPIScanControl.Unregister($job.Worker)
+                    $jobResult=$job.Worker.Task.GetAwaiter().GetResult()
                     $job.Worker.Dispose()
                     $entry=Receive-AntiDPIYoutubeJob $job $log
+                    if($AnalysisResultPath){$analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number);Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0}
                     if($entry){
                         if($found.Count){Write-Host ', ' -NoNewline}
                         Write-Host $entry -NoNewline -ForegroundColor Green
@@ -804,26 +836,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             if(-not @(Get-ChildItem -LiteralPath $scanState -Force).Count){Remove-Item -LiteralPath $scanState -Force}
         }
     }
-    if($AnalysisResultPath){
-        $resultByNumber=@{}
-        foreach($line in [IO.File]::ReadAllLines($log,[Text.Encoding]::UTF8)){
-            try{$entry=$line|ConvertFrom-Json -ErrorAction Stop}catch{continue}
-            if($entry.Event -eq 'RESULT'){
-                $resultByNumber[[int]$entry.Profile]=[pscustomobject]@{Number=[int]$entry.Profile;Status=[string]$entry.Status;Successes=[int]$entry.Successes;Details=''}
-            }elseif($entry.Event -eq 'TECHNICAL_ERROR'){
-                $resultByNumber[[int]$entry.Profile]=[pscustomobject]@{Number=[int]$entry.Profile;Status='ERROR';Successes=[int]$entry.Successes;Details=[string]$entry.Error}
-            }
-        }
-        $resultRows=@($resultByNumber.Values|Sort-Object Number)
-        $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;Results=$resultRows}
-        $resultParent=Split-Path -Parent $AnalysisResultPath
-        [IO.Directory]::CreateDirectory($resultParent)|Out-Null
-        $temporary=$AnalysisResultPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
-        try{
-            [IO.File]::WriteAllText($temporary,($document|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
-            if(Test-Path -LiteralPath $AnalysisResultPath -PathType Leaf){[IO.File]::Replace($temporary,$AnalysisResultPath,[NullString]::Value)}else{[IO.File]::Move($temporary,$AnalysisResultPath)}
-        }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
-    }
+    if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0}
     return ($script:AntiDPIScanSignal -eq 'Stop')
 }
 

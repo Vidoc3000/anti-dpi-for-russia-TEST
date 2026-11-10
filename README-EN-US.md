@@ -17,12 +17,6 @@
 
 </div>
 
-<div align="center">
-
-<img src="assets/AntiDPI_CLI_v1_UI.jpg" width="860"/>
-
-</div>
-
 ```diff
 + This program was built to get public VPN/Tor subscriptions working again!
 - Accessing YouTube, Discord, Facebook, LinkedIn, and X (Twitter) without a VPN

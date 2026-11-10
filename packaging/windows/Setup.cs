@@ -59,6 +59,7 @@ namespace AntiDPI.Setup
             Dictionary<string, bool> paths = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> entries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             bool hasManager = false;
+            bool hasInstaller = false;
             long total = 0;
             using (MemoryStream memory = new MemoryStream(bytes, false))
             using (ZipArchive zip = new ZipArchive(memory, ZipArchiveMode.Read, false, Encoding.UTF8))
@@ -110,9 +111,10 @@ namespace AntiDPI.Setup
                     if (target.Length > (directory ? 247 : 259) || Path.GetDirectoryName(target).Length > 247)
                         throw new PathTooLongException("Выберите более короткий путь для временных файлов установщика.");
                     if (name == prefix + "AntiDPI_Manager.ps1" && !directory) hasManager = true;
+                    if (name == prefix + "AntiDPI_Installer.ps1" && !directory) hasInstaller = true;
                     targets.Add(target);
                 }
-                if (!hasManager) throw new InvalidDataException("Во встроенном архиве нет AntiDPI_Manager.ps1.");
+                if (!hasManager || !hasInstaller) throw new InvalidDataException("Во встроенном архиве отсутствует установщик AntiDPI.");
                 for (int n = 0; n < zip.Entries.Count; n++)
                 {
                     ZipArchiveEntry entry = zip.Entries[n];
@@ -239,18 +241,18 @@ namespace AntiDPI.Setup
                 Log("Embedded ZIP and extracted paths verified.");
                 string system = Environment.GetFolderPath(Environment.SpecialFolder.System);
                 string powershell = Path.Combine(system, "WindowsPowerShell", "v1.0", "powershell.exe");
-                string conhost = Path.Combine(system, "conhost.exe");
-                if (!File.Exists(powershell) || !File.Exists(conhost))
-                    throw new FileNotFoundException("Не найдены штатные Windows PowerShell или conhost.exe.");
-                StringBuilder command = new StringBuilder(Quote(conhost) + " " + Quote(powershell) +
-                    " -NoLogo -NoProfile -ExecutionPolicy Bypass -File " + Quote(manager) + " -Action Install");
+                string installer = Path.Combine(Path.GetDirectoryName(manager), "AntiDPI_Installer.ps1");
+                if (!File.Exists(powershell) || !File.Exists(installer))
+                    throw new FileNotFoundException("Не найдены штатный Windows PowerShell или графический установщик AntiDPI.");
+                StringBuilder command = new StringBuilder(Quote(powershell) +
+                    " -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File " + Quote(installer));
                 Native.StartupInfo startup = new Native.StartupInfo();
                 startup.cb = Marshal.SizeOf(typeof(Native.StartupInfo));
                 Native.ProcessInformation process;
-                Log("Starting Windows PowerShell in its own console.");
-                if (!Native.CreateProcess(conhost, command, IntPtr.Zero, IntPtr.Zero, false, 0x10,
+                Log("Starting the Windows GUI installer.");
+                if (!Native.CreateProcess(powershell, command, IntPtr.Zero, IntPtr.Zero, false, 0x08000000,
                     IntPtr.Zero, Path.GetDirectoryName(manager), ref startup, out process))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Не удалось запустить установщик.");
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Не удалось запустить графический установщик.");
                 childFinished = false;
                 try
                 {
