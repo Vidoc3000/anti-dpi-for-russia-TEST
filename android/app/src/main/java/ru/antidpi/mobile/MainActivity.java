@@ -1,6 +1,10 @@
 package ru.antidpi.mobile;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.VpnService;
+import android.os.Build;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -14,6 +18,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.BaseAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -43,6 +48,8 @@ public final class MainActivity extends Activity {
     private static final int TEXT = Color.rgb(240, 246, 255);
     private static final int MUTED = Color.rgb(164, 180, 205);
     private static final int WARNING = Color.rgb(255, 200, 115);
+    private static final int VPN_REQUEST = 4101;
+    private static final int NOTIFICATION_REQUEST = 4102;
 
     private final ArrayList<Profile> allProfiles = new ArrayList<>();
     private final ArrayList<Family> families = new ArrayList<>();
@@ -53,9 +60,15 @@ public final class MainActivity extends Activity {
     private TextView selectionText;
     private TextView connectivityText;
     private TextView countText;
+    private TextView androidStrategyText;
+    private TextView vpnStatusText;
+    private CheckBox blockQuicCheckBox;
+    private Button vpnButton;
     private int familyFilter = 0;
     private String query = "";
     private Profile selected;
+    private final SharedPreferences.OnSharedPreferenceChangeListener vpnStateListener =
+            (preferences, key) -> runOnUiThread(this::refreshVpnUi);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,11 +95,11 @@ public final class MainActivity extends Activity {
         root.addView(subtitle, margins(matchWrap(), 0, dp(2), 0, dp(12)));
 
         LinearLayout notice = card();
-        TextView noticeTitle = text("Режим предпросмотра", 16, CYAN, true);
+        TextView noticeTitle = text("Экспериментальный Android VPN", 16, CYAN, true);
         notice.addView(noticeTitle, matchWrap());
         TextView noticeBody = text(
-                "Пакетный DPI-движок ещё не портирован на Android VpnService. " +
-                "VPN не запускается, стратегии не применяются, трафик телефона не меняется.",
+                "VPN работает без root через локальный TUN и встроенный userspace TCP/IP engine. " +
+                "Android применяет безопасное TLS-разбиение выбранного профиля; fake-пакеты, TTL/SEQ/TS и reorder требуют привилегий и не включаются.",
                 13, TEXT, false);
         noticeBody.setLineSpacing(dp(2), 1.0f);
         notice.addView(noticeBody, margins(matchWrap(), 0, dp(6), 0, 0));
@@ -149,12 +162,24 @@ public final class MainActivity extends Activity {
         root.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        selectionText = text("Выберите стратегию для просмотра.", 13, MUTED, false);
+        selectionText = text("Выберите профиль каталога.", 13, MUTED, false);
         selectionText.setPadding(dp(12), dp(10), dp(12), dp(10));
         selectionText.setBackground(shape(CARD, dp(12)));
-        root.addView(selectionText, margins(matchWrap(), 0, dp(8), 0, dp(8)));
+        root.addView(selectionText, margins(matchWrap(), 0, dp(8), 0, dp(4)));
 
-        connectivityText = text("Проверка ниже оценивает прямой доступ к YouTube, без стратегии.",
+        androidStrategyText = text("Android-адаптация появится после выбора профиля.", 11, WARNING, false);
+        root.addView(androidStrategyText, margins(matchWrap(), dp(2), 0, 0, dp(5)));
+
+        blockQuicCheckBox = new CheckBox(this);
+        blockQuicCheckBox.setText("Блокировать UDP/443 (QUIC → TCP/TLS)");
+        blockQuicCheckBox.setTextColor(TEXT);
+        blockQuicCheckBox.setTextSize(12);
+        blockQuicCheckBox.setChecked(getPreferences(MODE_PRIVATE).getBoolean("block_quic", true));
+        blockQuicCheckBox.setOnCheckedChangeListener((button, checked) ->
+                getPreferences(MODE_PRIVATE).edit().putBoolean("block_quic", checked).apply());
+        root.addView(blockQuicCheckBox, margins(matchWrap(), 0, 0, 0, dp(3)));
+
+        connectivityText = text("Проверка YouTube идёт из приложения напрямую и не измеряет VPN-стратегию.",
                 12, MUTED, false);
         root.addView(connectivityText, margins(matchWrap(), dp(2), 0, 0, dp(6)));
 
@@ -163,14 +188,14 @@ public final class MainActivity extends Activity {
         Button checkButton = button("Проверить YouTube", true);
         checkButton.setOnClickListener(v -> runDirectProbe(checkButton));
         actions.addView(checkButton, new LinearLayout.LayoutParams(0, dp(48), 1));
-        Button startButton = button("Запустить DPI", AndroidPacketEngine.isReady());
-        startButton.setContentDescription("Недоступно: Android DPI-движок ещё не портирован");
-        startButton.setOnClickListener(v -> Toast.makeText(this,
-                "Сетевой движок для Android ещё не готов; трафик не изменён.", Toast.LENGTH_LONG).show());
+        vpnButton = button("Запустить VPN", AndroidPacketEngine.isReady());
+        vpnButton.setOnClickListener(v -> toggleVpn());
         LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(0, dp(48), 1);
         startParams.leftMargin = dp(8);
-        actions.addView(startButton, startParams);
+        actions.addView(vpnButton, startParams);
         root.addView(actions, matchWrap());
+        vpnStatusText = text("VPN выключен", 12, MUTED, false);
+        root.addView(vpnStatusText, margins(matchWrap(), 0, dp(5), 0, 0));
 
         searchField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
@@ -189,8 +214,7 @@ public final class MainActivity extends Activity {
         });
         list.setOnItemClickListener((parent, view, position, id) -> {
             selected = profileAdapter.getItem(position);
-            selectionText.setText("Стратегия #" + selected.number + " · " + selected.familyName +
-                    "\n" + selected.name);
+            showSelectedProfile();
             getPreferences(MODE_PRIVATE).edit().putInt("selected_profile", selected.number).apply();
         });
         return root;
@@ -215,7 +239,7 @@ public final class MainActivity extends Activity {
                 String familyName = "Семейство " + familyId;
                 for (Family family : families) if (family.id == familyId) familyName = family.name;
                 allProfiles.add(new Profile(row.getInt("Number"), familyId,
-                        row.getString("Name"), familyName));
+                        row.getString("Name"), familyName, row.getJSONArray("Args").toString()));
             }
         } catch (Exception error) {
             allProfiles.clear();
@@ -228,11 +252,94 @@ public final class MainActivity extends Activity {
         for (Profile profile : allProfiles) {
             if (profile.number == wanted) {
                 selected = profile;
-                selectionText.setText("Стратегия #" + selected.number + " · " + selected.familyName +
-                        "\n" + selected.name);
+                showSelectedProfile();
                 break;
             }
         }
+    }
+
+    private void showSelectedProfile() {
+        if (selected == null) return;
+        selectionText.setText("Профиль #" + selected.number + " · " + selected.familyName +
+                "\n" + selected.name);
+        String adapted = AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
+        String activeNote = AntiDpiVpnService.isRunning(this)
+                ? " Перезапустите VPN, чтобы применить выбор." : "";
+        androidStrategyText.setText("Android-адаптация: " + adapted + activeNote +
+                "\nFake/TTL/SEQ/TS/reorder и прочие packet-level команды пропускаются.");
+    }
+
+    private void toggleVpn() {
+        if (!AndroidPacketEngine.isReady()) {
+            Toast.makeText(this, "В APK отсутствует Android packet engine.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (AntiDpiVpnService.isRunning(this)) {
+            AntiDpiVpnService.stop(this);
+            vpnStatusText.setText("Остановка VPN…");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_REQUEST);
+            return;
+        }
+        requestVpnConsent();
+    }
+
+    private void requestVpnConsent() {
+        Intent prepare = VpnService.prepare(this);
+        if (prepare != null) startActivityForResult(prepare, VPN_REQUEST);
+        else startVpnService();
+    }
+
+    private void startVpnService() {
+        String strategy = selected == null ? "tlsrec:sni" :
+                AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
+        boolean blockQuic = blockQuicCheckBox != null && blockQuicCheckBox.isChecked();
+        Intent intent = new Intent(this, AntiDpiVpnService.class)
+                .setAction(AntiDpiVpnService.ACTION_START)
+                .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, strategy)
+                .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuic);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+        else startService(intent);
+        vpnStatusText.setText("Запускается… " + strategy);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VPN_REQUEST) {
+            if (resultCode == RESULT_OK) startVpnService();
+            else Toast.makeText(this, "Разрешение VPN не выдано; трафик не изменён.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == NOTIFICATION_REQUEST) requestVpnConsent();
+    }
+
+    private void refreshVpnUi() {
+        if (vpnStatusText == null || vpnButton == null) return;
+        boolean running = AntiDpiVpnService.isRunning(this);
+        vpnStatusText.setText(AntiDpiVpnService.stateMessage(this));
+        vpnButton.setText(running ? "Остановить VPN" : "Запустить VPN");
+        vpnButton.setEnabled(AndroidPacketEngine.isReady());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        getSharedPreferences("vpn_state", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(vpnStateListener);
+        refreshVpnUi();
+    }
+
+    @Override
+    protected void onPause() {
+        getSharedPreferences("vpn_state", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(vpnStateListener);
+        super.onPause();
     }
 
     private void refreshProfiles() {
@@ -352,11 +459,13 @@ public final class MainActivity extends Activity {
         final int familyId;
         final String name;
         final String familyName;
-        Profile(int number, int familyId, String name, String familyName) {
+        final String argsJson;
+        Profile(int number, int familyId, String name, String familyName, String argsJson) {
             this.number = number;
             this.familyId = familyId;
             this.name = name;
             this.familyName = familyName;
+            this.argsJson = argsJson;
         }
     }
 

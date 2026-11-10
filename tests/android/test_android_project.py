@@ -13,17 +13,33 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertEqual(source, bundled)
         self.assertEqual(492, len(bundled["ProfileRows"]))
 
-    def test_vpn_service_fails_closed_until_engine_is_ready(self):
+    def test_vpn_uses_userspace_engine_and_protects_egress(self):
         engine = (ANDROID / "app/src/main/java/ru/antidpi/mobile/AndroidPacketEngine.java").read_text()
         service = (ANDROID / "app/src/main/java/ru/antidpi/mobile/AntiDpiVpnService.java").read_text()
         activity = (ANDROID / "app/src/main/java/ru/antidpi/mobile/MainActivity.java").read_text()
 
-        self.assertRegex(engine, r"static boolean isReady\(\)\s*\{\s*return false;")
+        self.assertIn("engine.startTunnel(tun.getFd(), mtu, strategy, blockQuic)", engine)
+        self.assertIn("service.protect((int) fd)", engine)
         self.assertIn("if (!AndroidPacketEngine.isReady())", service)
-        self.assertNotIn(".establish()", service)
-        self.assertIn('button("Запустить DPI", AndroidPacketEngine.isReady())', activity)
+        self.assertIn("builder.establish()", service)
+        self.assertIn("builder.addDisallowedApplication(getPackageName())", service)
+        self.assertIn("engine.startTunnel(tun, MTU, strategy, blockQuic)", service)
+        self.assertIn("engine.stop()", service)
+        self.assertIn("VpnService.prepare(this)", activity)
+        self.assertIn("AndroidPacketEngine.adaptProfileArgs(selected.argsJson)", activity)
+        self.assertIn("FOREGROUND_SERVICE_TYPE_SPECIAL_USE", service)
 
-    def test_gradle_wrapper_and_project_configuration_are_present(self):
+    def test_android_build_includes_generated_engine_aar(self):
+        gradle = (ANDROID / "app/build.gradle").read_text()
+        workflow = (ROOT / ".github/workflows/android-preview.yml").read_text()
+        self.assertIn("libs/antidpi-engine.aar", gradle)
+        self.assertIn("gomobile init", workflow)
+        self.assertIn("./android/engine/build-aar.sh", workflow)
+        self.assertIn("go test ./...", workflow)
+        self.assertTrue((ANDROID / "engine/THIRD_PARTY_NOTICES.md").is_file())
+        self.assertTrue((ANDROID / "engine/LICENSE.zapret-mobile").is_file())
+
+    def test_gradle_wrapper_and_vpn_permissions_are_present(self):
         jar = ANDROID / "gradle/wrapper/gradle-wrapper.jar"
         self.assertTrue(jar.is_file())
         self.assertGreater(jar.stat().st_size, 10_000)
@@ -33,6 +49,8 @@ class AndroidProjectTests(unittest.TestCase):
         manifest = (ANDROID / "app/src/main/AndroidManifest.xml").read_text()
         self.assertIn("BIND_VPN_SERVICE", manifest)
         self.assertIn("android.permission.INTERNET", manifest)
+        self.assertIn("FOREGROUND_SERVICE_SPECIAL_USE", manifest)
+        self.assertIn('android:foregroundServiceType="specialUse"', manifest)
 
 
 if __name__ == "__main__":
