@@ -47,7 +47,14 @@ jobs:
 
       - name: Parse scripts and run Windows regression checks
         shell: powershell
-        run: .\tests\windows\test_regressions.ps1
+        run: |
+          try {
+              & .\tests\windows\test_regressions.ps1
+          } catch {
+              Write-Output ('::error title=Windows regression failure::' + $_.Exception.Message)
+              Write-Output ('::error title=Windows regression stack::' + $_.ScriptStackTrace)
+              exit 1
+          }
 
       - name: Smoke-build and verify the Windows ZIP
         shell: powershell
