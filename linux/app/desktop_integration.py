@@ -12,8 +12,8 @@ import sys
 import tempfile
 
 FOLDER_NAME = 'AntiDPI'
-INSTALL_README = 'README_Установка_Linux_v1.5.txt'
-STRATEGIES_README = 'README_Стратегии_Linux_v1.5.txt'
+INSTALL_README = 'README_Установка_Linux_v1.6.txt'
+STRATEGIES_README = 'README_Стратегии_Linux_v1.6.txt'
 
 
 def graphical_user(environ=None):

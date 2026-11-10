@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.5**, **Windows 1.4**. Исправления одной платформы не повышают версию другой. Релиз `v1.5` добавляет анализ доступности YouTube в Windows GUI, сохранение настроек и отображение имён адаптеров; он также включает поддержку IPv6 и UDP/QUIC из v1.4.
+Текущие версии исходников: **Linux 1.6**, **Windows 1.5**. Версии пакетов платформ ведутся независимо; для общего релиза `v1.6` Linux-пакет пересобран без функциональных изменений относительно v1.5, а Windows-пакет включает графический мастер установки и последовательный анализ доступности YouTube с отображением результатов по мере готовности.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.4_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.4_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.4.txt`
+- `dist/AntiDPI_CLI_v1.5_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.5_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.5.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.5_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.5.txt`
+- `dist/AntiDPI_CLI_v1.6_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.6.txt`
 
 Для пересборки:
 
@@ -127,7 +127,7 @@ bash packaging/linux/build.sh --force
 ```
 
 ```bash
-bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.5
+bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.6
 ```
 
 `Version`/`--version` задаёт имена выходных файлов и метаданные EXE. Параметр не меняет текст версии внутри самой программы: его необходимо обновлять в исходниках отдельно. Linux-сборщик сверяет версию с `linux/data/release.json` и отклоняет несовпадение.
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.4_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.4_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.4.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.5_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.5_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.5.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.5.txt)
-tar -tzf dist/AntiDPI_CLI_v1.5_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.6.txt)
+tar -tzf dist/AntiDPI_CLI_v1.6_Linux_x64.tar.gz
 ```
 
 
