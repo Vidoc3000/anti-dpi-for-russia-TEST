@@ -55,6 +55,20 @@ func adaptByeDpiArgs(encodedArgs string, listenPort int) []string {
 			continue
 		}
 		positions := splitZapretPositions(fields["pos"])
+		if fields["host"] != "" && method == "hostfakesplit" {
+			out = append(out, "--hosts", ":"+fields["host"])
+		}
+		if method == "fake" || method == "fakedsplit" || method == "fakeddisorder" || method == "hostfakesplit" {
+			if ttl := validNativeTTL(fields["ip_ttl"]); ttl != "" {
+				out = append(out, "--ttl", ttl)
+			}
+			if sni := tlsModSNI(fields["tls_mod"]); sni != "" {
+				out = append(out, "--fake-sni", sni)
+			}
+			if data := hexBlobArgument(fields["blob"]); data != "" {
+				out = append(out, "--fake-data", data)
+			}
+		}
 		switch method {
 		case "fake":
 			// ByeDPI's native fake is injected with low TTL and lets the kernel
@@ -62,14 +76,24 @@ func adaptByeDpiArgs(encodedArgs string, listenPort int) []string {
 			// are intentionally not claimed as equivalent.
 			out = append(out, "--fake", "0+sm")
 		case "multisplit", "tcpseg":
+			if method == "multisplit" && nativeFakeBlob(fields["blob"]) && len(positions) > 0 {
+				if ttl := validNativeTTL(fields["ip_ttl"]); ttl != "" {
+					out = append(out, "--ttl", ttl)
+				}
+				if sni := tlsModSNI(fields["tls_mod"]); sni != "" {
+					out = append(out, "--fake-sni", sni)
+				}
+				if data := hexBlobArgument(fields["blob"]); data != "" {
+					out = append(out, "--fake-data", data)
+				}
+				out = append(out, "--fake", mapByeDpiPosition(positions[0]))
+				positions = positions[1:]
+			}
 			for _, position := range positions {
 				out = append(out, "--split", mapByeDpiPosition(position))
 			}
 		case "fakedsplit", "hostfakesplit":
 			if method == "hostfakesplit" {
-				if fields["host"] != "" {
-					out = append(out, "--hosts", ":"+fields["host"])
-				}
 				if len(positions) == 0 {
 					positions = []string{fields["midhost"]}
 				}
@@ -100,6 +124,54 @@ func adaptByeDpiArgs(encodedArgs string, listenPort int) []string {
 		}
 	}
 	return out
+}
+
+func nativeFakeBlob(value string) bool {
+	return value == "fake_default_tls" || value == "public_tls_pattern" || hexBlobArgument(value) != ""
+}
+
+func validNativeTTL(value string) string {
+	value = strings.TrimSpace(value)
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 || n > 255 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+func tlsModSNI(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "sni=") {
+		host := strings.TrimSpace(strings.TrimPrefix(value, "sni="))
+		if host != "" && !strings.ContainsAny(host, " \t\r\n") {
+			return host
+		}
+	}
+	return ""
+}
+
+// ByeDPI accepts a C-style escaped data string. Restrict this conversion to
+// short, even-length hexadecimal blobs so arbitrary file references are never
+// treated as local paths on Android.
+func hexBlobArgument(value string) string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "0x") {
+		return ""
+	}
+	hex := value[2:]
+	if len(hex) == 0 || len(hex)%2 != 0 || len(hex) > 512 {
+		return ""
+	}
+	var escaped strings.Builder
+	escaped.WriteByte(':')
+	for i := 0; i < len(hex); i += 2 {
+		if _, err := strconv.ParseUint(hex[i:i+2], 16, 8); err != nil {
+			return ""
+		}
+		escaped.WriteString(`\x`)
+		escaped.WriteString(strings.ToLower(hex[i : i+2]))
+	}
+	return escaped.String()
 }
 
 func parseZapretDesync(spec string) (string, map[string]string, bool) {

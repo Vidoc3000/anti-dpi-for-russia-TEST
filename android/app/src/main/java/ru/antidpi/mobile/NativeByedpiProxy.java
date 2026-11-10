@@ -7,13 +7,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 
 /** Lifecycle bridge to the bundled MIT-licensed native ByeDPI SOCKS engine. */
 final class NativeByedpiProxy {
-    static final int PORT = 10808;
+    static final int DEFAULT_PORT = 10808;
     private static final String TAG = "AntiDpiByedpi";
     private static final long START_TIMEOUT_MS = 6000;
+    private static final int START_ATTEMPTS = 3;
+    private volatile int port;
 
     static {
         System.loadLibrary("antidpi_native");
@@ -29,35 +32,77 @@ final class NativeByedpiProxy {
         if (worker != null && worker.isAlive()) {
             throw new IOException("Native ByeDPI proxy is already running");
         }
-        exitCode = Integer.MIN_VALUE;
-        worker = new Thread(() -> {
-            try {
-                exitCode = nativeStartProxy(strategyArguments);
-            } catch (Throwable error) {
-                Log.e(TAG, "Native ByeDPI worker failed", error);
-                exitCode = -1;
-            }
-        }, "AntiDpi-ByeDPI");
-        worker.start();
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= START_ATTEMPTS; attempt++) {
+            port = reserveEphemeralPort();
+            String[] arguments = withPort(strategyArguments, port);
+            exitCode = Integer.MIN_VALUE;
+            worker = new Thread(() -> {
+                try {
+                    exitCode = nativeStartProxy(arguments);
+                } catch (Throwable error) {
+                    Log.e(TAG, "Native ByeDPI worker failed", error);
+                    exitCode = -1;
+                }
+            }, "AntiDpi-ByeDPI");
+            worker.start();
 
-        long deadline = SystemClock.elapsedRealtime() + START_TIMEOUT_MS;
-        while (SystemClock.elapsedRealtime() < deadline) {
-            if (!worker.isAlive()) {
-                throw new IOException("Native ByeDPI proxy exited during startup (code " + exitCode + ")");
+            long deadline = SystemClock.elapsedRealtime() + START_TIMEOUT_MS;
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (!worker.isAlive()) {
+                    lastFailure = new IOException("Native ByeDPI exited during startup (code " + exitCode + ")");
+                    break;
+                }
+                if (socksHandshakeReady(port)) {
+                    Log.i(TAG, "Native ByeDPI SOCKS listener ready on 127.0.0.1:" + port);
+                    return;
+                }
+                SystemClock.sleep(40);
             }
-            if (socksHandshakeReady()) {
-                Log.i(TAG, "Native ByeDPI SOCKS listener ready on 127.0.0.1:" + PORT);
-                return;
+            if (worker.isAlive()) {
+                lastFailure = new IOException("SOCKS listener did not become ready on port " + port);
+                stop();
+                if (worker != null && worker.isAlive()) {
+                    port = 0;
+                    throw new IOException("Native ByeDPI failed to stop after startup timeout");
+                }
+            } else {
+                worker = null;
             }
-            SystemClock.sleep(40);
+            Log.w(TAG, "Native proxy startup attempt " + attempt + " failed: " + lastFailure.getMessage());
         }
-        stop();
-        throw new IOException("Native ByeDPI SOCKS listener did not become ready");
+        port = 0;
+        throw lastFailure == null ? new IOException("Native ByeDPI proxy failed to start") : lastFailure;
     }
 
-    private boolean socksHandshakeReady() {
+    int port() {
+        return port;
+    }
+
+    private static String[] withPort(String[] original, int port) {
+        String[] result = original == null ? new String[0] : original.clone();
+        for (int i = 0; i + 1 < result.length; i++) {
+            if ("--port".equals(result[i])) {
+                result[i + 1] = String.valueOf(port);
+                return result;
+            }
+        }
+        String[] expanded = new String[result.length + 2];
+        System.arraycopy(result, 0, expanded, 0, result.length);
+        expanded[result.length] = "--port";
+        expanded[result.length + 1] = String.valueOf(port);
+        return expanded;
+    }
+
+    private static int reserveEphemeralPort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
+            return socket.getLocalPort();
+        }
+    }
+
+    private boolean socksHandshakeReady(int port) {
         try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("127.0.0.1", PORT), 200);
+            socket.connect(new InetSocketAddress("127.0.0.1", port), 200);
             socket.setSoTimeout(500);
             OutputStream output = socket.getOutputStream();
             InputStream input = socket.getInputStream();
