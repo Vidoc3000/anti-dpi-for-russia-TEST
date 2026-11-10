@@ -3,7 +3,7 @@
 param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [string]$Scope='all',
  [string]$ZapretDirectory=$PSScriptRoot,[string]$StateDirectory='',
- [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListInterfaces,
+ [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListProfilesJson,[switch]$ListInterfaces,
  [switch]$ShowRecipe,[switch]$PrintArguments,[switch]$Check,[switch]$SkipTimestampSetup)
 
 $CatalogueInfo = @'
