@@ -582,7 +582,7 @@ function Install-AntiDPI {
         $guiManager=Join-Path $installed 'AntiDPI_Manager.ps1'
         $guiArguments=@('-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',$guiManager,'-Action','GUI','-SkipHeader')
         $guiJoined=(@($guiArguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')
-        $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $guiJoined -WindowStyle Hidden
+        $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $guiJoined -WindowStyle Normal
     }finally{
         Remove-AntiDPITemporaryDirectory $ready
         Remove-AntiDPITemporaryDirectory $stage
@@ -898,7 +898,7 @@ if($needsElevation -or $needsSta){
     $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $joined=(ConvertTo-WindowsArgument $powershell)+' '+(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')
     if($Action -eq 'GUI'){
-        $startParameters=@{FilePath=$powershell;ArgumentList=(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ');WindowStyle='Hidden';PassThru=$true}
+        $startParameters=@{FilePath=$powershell;ArgumentList=(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ');WindowStyle='Normal';PassThru=$true}
         if($needsElevation){$startParameters.Verb='RunAs'}
         $null=Start-Process @startParameters
     }else{

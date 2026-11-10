@@ -62,6 +62,10 @@ $guiProfiles = @($guiProfileJson | ConvertFrom-Json)
 if ($guiProfiles.Count -eq 1 -and $guiProfiles[0] -is [array]) { $guiProfiles = @($guiProfiles[0]) }
 Assert-Equal 492 $guiProfiles.Count 'GUI JSON profile list count'
 Assert-True ($guiText.Contains('[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)')) 'GUI requests managed controller shutdown'
+Assert-True ($guiText.Contains('[AntiDPIConsoleWindow]::Hide()')) 'GUI hides only the console, not its form'
+Assert-True ($managerText.Contains("WindowStyle='Normal';PassThru=`$true")) 'restarted GUI process starts with a visible window style'
+Assert-True ($managerText.Contains('-WindowStyle Normal')) 'post-install GUI process starts with a visible window style'
+Assert-True ($guiText.Contains("Write-GuiLog 'Showing main form'")) 'GUI records whether the form was shown'
 Assert-True (-not $guiText.Contains('Invoke-WebRequest')) 'GUI does not present a network probe as a tunnel check'
 
 # Ensure the Windows CLI carries the same expanded catalogue as Linux.
