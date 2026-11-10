@@ -18,6 +18,7 @@ public final class AntiDpiVpnService extends VpnService {
     static final String ACTION_STOP = "ru.antidpi.mobile.STOP_VPN";
     static final String EXTRA_STRATEGY = "strategy";
     static final String EXTRA_BLOCK_QUIC = "block_quic";
+    static final String EXTRA_FORCE_RESTART = "force_restart";
     private static final String TAG = "AntiDpiVpnService";
     private static final String CHANNEL_ID = "antidpi_vpn";
     private static final int NOTIFICATION_ID = 412;
@@ -26,6 +27,8 @@ public final class AntiDpiVpnService extends VpnService {
 
     private ParcelFileDescriptor tun;
     private AndroidPacketEngine engine;
+    private String activeStrategy;
+    private boolean activeBlockQuic;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -33,13 +36,28 @@ public final class AntiDpiVpnService extends VpnService {
             stopVpn();
             return START_NOT_STICKY;
         }
-        if (engine != null) {
+        if (intent == null && engine != null) {
             startForegroundCompat(buildNotification("Подключено"));
             return START_STICKY;
         }
         ensureNotificationChannel();
-        startForegroundCompat(buildNotification("Запуск VPN…"));
-        setState(false, "Подготовка VPN");
+        startForegroundCompat(buildNotification(engine == null ? "Запуск VPN…" : "Перезапуск VPN…"));
+
+        String strategy = intent == null ? "tlsrec:sni" : intent.getStringExtra(EXTRA_STRATEGY);
+        if (strategy == null || strategy.isEmpty()) strategy = "tlsrec:sni";
+        boolean blockQuic = intent == null || intent.getBooleanExtra(EXTRA_BLOCK_QUIC, true);
+        boolean forceRestart = intent != null && intent.getBooleanExtra(EXTRA_FORCE_RESTART, false);
+        if (engine != null) {
+            if (!ACTION_START.equals(intent.getAction())) return START_STICKY;
+            if (!forceRestart && strategy.equals(activeStrategy) && blockQuic == activeBlockQuic) {
+                startForegroundCompat(buildNotification("Защита включена"));
+                return START_STICKY;
+            }
+            cleanup();
+            setState(false, "Перезапуск VPN с новой стратегией");
+        } else {
+            setState(false, "Подготовка VPN");
+        }
 
         if (!AndroidPacketEngine.isReady()) {
             fail("Встроенный DPI-движок не загружен. Пересоберите APK с Android engine.");
@@ -47,16 +65,14 @@ public final class AntiDpiVpnService extends VpnService {
         }
 
         try {
-            String strategy = intent == null ? "tlsrec:sni" :
-                    intent.getStringExtra(EXTRA_STRATEGY);
-            if (strategy == null || strategy.isEmpty()) strategy = "tlsrec:sni";
-            boolean blockQuic = intent == null || intent.getBooleanExtra(EXTRA_BLOCK_QUIC, true);
             tun = establishTun();
             if (tun == null) throw new IllegalStateException("Android отказал в создании VPN-интерфейса");
 
             engine = AndroidPacketEngine.create(getApplicationContext(), this,
                     () -> Log.d(TAG, "native engine log callback"));
             engine.startTunnel(tun, MTU, strategy, blockQuic);
+            activeStrategy = strategy;
+            activeBlockQuic = blockQuic;
             setState(true, "VPN активен · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
             startForegroundCompat(buildNotification("Защита включена"));
             Log.i(TAG, "VPN started; strategy=" + strategy + ", blockQuic=" + blockQuic);
@@ -79,8 +95,8 @@ public final class AntiDpiVpnService extends VpnService {
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("1.0.0.1")
                 .addDnsServer("2606:4700:4700::1111");
-        // App-owned upstream sockets are additionally protected one-by-one from the VPN.
-        builder.addDisallowedApplication(getPackageName());
+        // Engine-owned upstream sockets are excluded individually with VpnService.protect().
+        // Keep this app itself inside the VPN so the built-in HTTPS tests exercise the tunnel.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false);
         return builder.establish();
     }
@@ -108,6 +124,8 @@ public final class AntiDpiVpnService extends VpnService {
             try { tun.close(); } catch (Exception error) { Log.w(TAG, "TUN close failed", error); }
             tun = null;
         }
+        activeStrategy = null;
+        activeBlockQuic = false;
     }
 
     @Override

@@ -3,11 +3,11 @@ package ru.antidpi.mobile;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.VpnService;
-import android.os.Build;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.VpnService;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -20,8 +20,10 @@ import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -40,7 +42,7 @@ import java.util.concurrent.Executors;
 
 import javax.net.ssl.HttpsURLConnection;
 
-/** Offline strategy browser and direct-connectivity checker for the Android preview. */
+/** Android strategy catalogue, VPN controls, settings, and in-app connectivity tests. */
 public final class MainActivity extends Activity {
     private static final int NAVY = Color.rgb(10, 16, 34);
     private static final int CARD = Color.rgb(20, 31, 57);
@@ -50,6 +52,9 @@ public final class MainActivity extends Activity {
     private static final int WARNING = Color.rgb(255, 200, 115);
     private static final int VPN_REQUEST = 4101;
     private static final int NOTIFICATION_REQUEST = 4102;
+    private static final int PAGE_STRATEGIES = 0;
+    private static final int PAGE_TESTS = 1;
+    private static final int PAGE_SETTINGS = 2;
 
     private final ArrayList<Profile> allProfiles = new ArrayList<>();
     private final ArrayList<Family> families = new ArrayList<>();
@@ -58,13 +63,18 @@ public final class MainActivity extends Activity {
     private EditText searchField;
     private Spinner familySpinner;
     private TextView selectionText;
-    private TextView connectivityText;
     private TextView countText;
     private TextView androidStrategyText;
     private TextView vpnStatusText;
+    private TextView testResultText;
+    private TextView testProfileText;
     private CheckBox blockQuicCheckBox;
     private Button vpnButton;
+    private Button testButton;
+    private Button[] navigationButtons;
+    private FrameLayout pageHost;
     private int familyFilter = 0;
+    private int currentPage = PAGE_STRATEGIES;
     private String query = "";
     private Profile selected;
     private final SharedPreferences.OnSharedPreferenceChangeListener vpnStateListener =
@@ -76,38 +86,97 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(NAVY);
         getWindow().setNavigationBarColor(NAVY);
         getWindow().getDecorView().setSystemUiVisibility(0);
-
         loadCatalogue();
+        selected = findProfile(getPreferences(MODE_PRIVATE).getInt("selected_profile", 1));
         setContentView(buildScreen());
-        restoreSelection();
-        refreshProfiles();
+        showPage(PAGE_STRATEGIES);
     }
 
     private View buildScreen() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(NAVY);
-        root.setPadding(dp(18), dp(16), dp(18), dp(12));
+        root.setPadding(dp(16), dp(12), dp(16), dp(10));
 
-        TextView title = text("AntiDPI", 30, TEXT, true);
-        root.addView(title, matchWrap());
-        TextView subtitle = text("Стратегии и диагностика для Android", 14, MUTED, false);
-        root.addView(subtitle, margins(matchWrap(), 0, dp(2), 0, dp(12)));
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text("AntiDPI", 26, TEXT, true);
+        TextView subtitle = text("VPN · стратегии и диагностика", 12, MUTED, false);
+        heading.addView(title, matchWrap());
+        heading.addView(subtitle, matchWrap());
+        header.addView(heading, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView badge = text(AndroidPacketEngine.isReady() ? "ENGINE READY" : "ENGINE OFF", 10,
+                AndroidPacketEngine.isReady() ? CYAN : WARNING, true);
+        badge.setPadding(dp(9), dp(7), dp(9), dp(7));
+        badge.setBackground(shape(CARD, dp(18)));
+        header.addView(badge, wrap());
+        root.addView(header, margins(matchWrap(), 0, 0, 0, dp(12)));
 
-        LinearLayout notice = card();
-        TextView noticeTitle = text("Экспериментальный Android VPN", 16, CYAN, true);
-        notice.addView(noticeTitle, matchWrap());
-        TextView noticeBody = text(
-                "VPN работает без root через локальный TUN и встроенный userspace TCP/IP engine. " +
-                "Android применяет безопасное TLS-разбиение выбранного профиля; fake-пакеты, TTL/SEQ/TS и reorder требуют привилегий и не включаются.",
-                13, TEXT, false);
-        noticeBody.setLineSpacing(dp(2), 1.0f);
-        notice.addView(noticeBody, margins(matchWrap(), 0, dp(6), 0, 0));
-        root.addView(notice, margins(matchWrap(), 0, 0, 0, dp(12)));
+        LinearLayout navigation = new LinearLayout(this);
+        navigation.setOrientation(LinearLayout.HORIZONTAL);
+        navigation.setPadding(dp(4), dp(4), dp(4), dp(4));
+        navigation.setBackground(shape(CARD, dp(14)));
+        navigationButtons = new Button[] {
+                navButton("Стратегии", PAGE_STRATEGIES),
+                navButton("Тесты", PAGE_TESTS),
+                navButton("Настройки", PAGE_SETTINGS)
+        };
+        for (int i = 0; i < navigationButtons.length; i++) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1);
+            if (i > 0) params.leftMargin = dp(4);
+            navigation.addView(navigationButtons[i], params);
+        }
+        root.addView(navigation, margins(matchWrap(), 0, 0, 0, dp(10)));
 
-        TextView section = text("Каталог стратегий", 18, TEXT, true);
-        root.addView(section, margins(matchWrap(), 0, 0, 0, dp(7)));
+        pageHost = new FrameLayout(this);
+        root.addView(pageHost, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
+        vpnButton = button("Запустить VPN", AndroidPacketEngine.isReady());
+        vpnButton.setTextSize(15);
+        vpnButton.setOnClickListener(v -> toggleVpn());
+        root.addView(vpnButton, margins(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52)), 0, dp(8), 0, dp(4)));
+        vpnStatusText = text("VPN выключен", 12, MUTED, false);
+        vpnStatusText.setGravity(Gravity.CENTER);
+        root.addView(vpnStatusText, matchWrap());
+        return root;
+    }
+
+    private Button navButton(String label, int page) {
+        Button button = button(label, true);
+        button.setTextSize(12);
+        button.setOnClickListener(v -> showPage(page));
+        return button;
+    }
+
+    private void showPage(int page) {
+        if (pageHost == null) return;
+        currentPage = page;
+        pageHost.removeAllViews();
+        View content;
+        if (page == PAGE_TESTS) content = buildTestsPage();
+        else if (page == PAGE_SETTINGS) content = buildSettingsPage();
+        else content = buildStrategiesPage();
+        pageHost.addView(content, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        for (int i = 0; i < navigationButtons.length; i++) {
+            boolean active = i == page;
+            navigationButtons[i].setBackground(shape(active ? CYAN : Color.TRANSPARENT, dp(11)));
+            navigationButtons[i].setTextColor(active ? NAVY : MUTED);
+        }
+        refreshVpnUi();
+    }
+
+    private View buildStrategiesPage() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+
+        TextView heading = text("Выберите профиль", 18, TEXT, true);
+        page.addView(heading, margins(matchWrap(), 0, 0, 0, dp(7)));
         searchField = new EditText(this);
         searchField.setSingleLine(true);
         searchField.setTextColor(TEXT);
@@ -116,8 +185,8 @@ public final class MainActivity extends Activity {
         searchField.setHint("Поиск по номеру или названию");
         searchField.setPadding(dp(12), 0, dp(12), 0);
         searchField.setBackground(shape(CARD, dp(12)));
-        root.addView(searchField, margins(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)), 0, 0, 0, dp(8)));
+        page.addView(searchField, margins(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)), 0, 0, 0, dp(7)));
 
         familySpinner = new Spinner(this);
         familySpinner.setBackground(shape(CARD, dp(12)));
@@ -126,18 +195,14 @@ public final class MainActivity extends Activity {
         for (Family family : families) familyNames.add(family.name);
         ArrayAdapter<String> familyAdapter = new ArrayAdapter<String>(this,
                 android.R.layout.simple_spinner_item, familyNames) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
                 return spinnerLabel(position, parent, false);
             }
-
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+            @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
                 return spinnerLabel(position, parent, true);
             }
-
             private View spinnerLabel(int position, ViewGroup parent, boolean dropdown) {
-                TextView label = text(getItem(position), 14, TEXT, false);
+                TextView label = text(getItem(position), 13, TEXT, false);
                 label.setGravity(Gravity.CENTER_VERTICAL);
                 label.setPadding(dp(12), dp(dropdown ? 10 : 0), dp(12), dp(dropdown ? 10 : 0));
                 label.setBackgroundColor(dropdown ? CARD : Color.TRANSPARENT);
@@ -146,56 +211,27 @@ public final class MainActivity extends Activity {
         };
         familyAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         familySpinner.setAdapter(familyAdapter);
-        root.addView(familySpinner, margins(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)), 0, 0, 0, dp(6)));
+        page.addView(familySpinner, margins(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42)), 0, 0, 0, dp(5)));
 
-        countText = text("Загружаю каталог…", 12, MUTED, false);
-        root.addView(countText, margins(matchWrap(), dp(2), 0, 0, dp(4)));
-
+        countText = text("Загружаю каталог…", 11, MUTED, false);
+        page.addView(countText, margins(matchWrap(), dp(2), 0, 0, dp(5)));
         ListView list = new ListView(this);
         list.setDivider(null);
-        list.setDividerHeight(dp(5));
+        list.setDividerHeight(dp(6));
         list.setBackgroundColor(Color.TRANSPARENT);
         list.setCacheColorHint(Color.TRANSPARENT);
         profileAdapter = new ProfileAdapter();
         list.setAdapter(profileAdapter);
-        root.addView(list, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        page.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
-        selectionText = text("Выберите профиль каталога.", 13, MUTED, false);
-        selectionText.setPadding(dp(12), dp(10), dp(12), dp(10));
+        selectionText = text("Выберите профиль каталога.", 12, MUTED, false);
+        selectionText.setPadding(dp(12), dp(9), dp(12), dp(9));
         selectionText.setBackground(shape(CARD, dp(12)));
-        root.addView(selectionText, margins(matchWrap(), 0, dp(8), 0, dp(4)));
-
-        androidStrategyText = text("Android-адаптация появится после выбора профиля.", 11, WARNING, false);
-        root.addView(androidStrategyText, margins(matchWrap(), dp(2), 0, 0, dp(5)));
-
-        blockQuicCheckBox = new CheckBox(this);
-        blockQuicCheckBox.setText("Блокировать UDP/443 (QUIC → TCP/TLS)");
-        blockQuicCheckBox.setTextColor(TEXT);
-        blockQuicCheckBox.setTextSize(12);
-        blockQuicCheckBox.setChecked(getPreferences(MODE_PRIVATE).getBoolean("block_quic", true));
-        blockQuicCheckBox.setOnCheckedChangeListener((button, checked) ->
-                getPreferences(MODE_PRIVATE).edit().putBoolean("block_quic", checked).apply());
-        root.addView(blockQuicCheckBox, margins(matchWrap(), 0, 0, 0, dp(3)));
-
-        connectivityText = text("Проверка YouTube идёт из приложения напрямую и не измеряет VPN-стратегию.",
-                12, MUTED, false);
-        root.addView(connectivityText, margins(matchWrap(), dp(2), 0, 0, dp(6)));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button checkButton = button("Проверить YouTube", true);
-        checkButton.setOnClickListener(v -> runDirectProbe(checkButton));
-        actions.addView(checkButton, new LinearLayout.LayoutParams(0, dp(48), 1));
-        vpnButton = button("Запустить VPN", AndroidPacketEngine.isReady());
-        vpnButton.setOnClickListener(v -> toggleVpn());
-        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(0, dp(48), 1);
-        startParams.leftMargin = dp(8);
-        actions.addView(vpnButton, startParams);
-        root.addView(actions, matchWrap());
-        vpnStatusText = text("VPN выключен", 12, MUTED, false);
-        root.addView(vpnStatusText, margins(matchWrap(), 0, dp(5), 0, 0));
+        page.addView(selectionText, margins(matchWrap(), 0, dp(6), 0, dp(4)));
+        androidStrategyText = text("Android-адаптация профиля.", 10, WARNING, false);
+        page.addView(androidStrategyText, margins(matchWrap(), dp(2), 0, 0, 0));
 
         searchField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
@@ -212,12 +248,92 @@ public final class MainActivity extends Activity {
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            selected = profileAdapter.getItem(position);
-            showSelectedProfile();
-            getPreferences(MODE_PRIVATE).edit().putInt("selected_profile", selected.number).apply();
+        list.setOnItemClickListener((parent, view, position, id) -> selectProfile(profileAdapter.getItem(position)));
+        refreshProfiles();
+        showSelectedProfile();
+        return page;
+    }
+
+    private View buildTestsPage() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(0, 0, 0, dp(8));
+        scroll.addView(page);
+
+        page.addView(text("Проверка соединения", 20, TEXT, true), margins(matchWrap(), 0, 0, 0, dp(8)));
+        LinearLayout vpnCard = card();
+        vpnCard.addView(text("Состояние VPN", 13, MUTED, true), matchWrap());
+        testProfileText = text("", 13, TEXT, false);
+        testProfileText.setLineSpacing(dp(2), 1.0f);
+        vpnCard.addView(testProfileText, margins(matchWrap(), 0, dp(5), 0, 0));
+        page.addView(vpnCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        TextView explanation = text(
+                "Проверка выполняет HTTPS-запросы к YouTube и Google. При включённом VPN запросы этого приложения идут через TUN и выбранную Android-адаптацию; при выключенном — напрямую. Успех проверки не гарантирует доступность всех сайтов.",
+                13, MUTED, false);
+        explanation.setLineSpacing(dp(2), 1.0f);
+        page.addView(explanation, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        testButton = button("Запустить тесты", true);
+        testButton.setOnClickListener(v -> runConnectivityTests());
+        page.addView(testButton, margins(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)), 0, 0, 0, dp(10)));
+        testResultText = text("Результаты тестов появятся здесь.", 13, TEXT, false);
+        testResultText.setPadding(dp(13), dp(12), dp(13), dp(12));
+        testResultText.setLineSpacing(dp(3), 1.0f);
+        testResultText.setBackground(shape(CARD, dp(13)));
+        page.addView(testResultText, matchWrap());
+        updateTestSummary();
+        return scroll;
+    }
+
+    private View buildSettingsPage() {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(0, 0, 0, dp(8));
+        scroll.addView(page);
+
+        page.addView(text("Настройки", 20, TEXT, true), margins(matchWrap(), 0, 0, 0, dp(9)));
+        LinearLayout networkCard = card();
+        networkCard.addView(text("Сетевое поведение", 15, CYAN, true), matchWrap());
+        blockQuicCheckBox = new CheckBox(this);
+        blockQuicCheckBox.setText("Блокировать UDP/443 (QUIC)");
+        blockQuicCheckBox.setTextColor(TEXT);
+        blockQuicCheckBox.setTextSize(14);
+        blockQuicCheckBox.setButtonTintList(android.content.res.ColorStateList.valueOf(CYAN));
+        blockQuicCheckBox.setChecked(getPreferences(MODE_PRIVATE).getBoolean("block_quic", true));
+        blockQuicCheckBox.setOnCheckedChangeListener((button, checked) -> {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("block_quic", checked).apply();
+            if (AntiDpiVpnService.isRunning(this)) restartVpnForCurrentSelection("Настройка QUIC изменена");
         });
-        return root;
+        networkCard.addView(blockQuicCheckBox, margins(matchWrap(), -dp(8), dp(4), 0, 0));
+        TextView quicHelp = text("Может заставить некоторые приложения перейти на TCP/TLS. Не все приложения автоматически переключаются.",
+                12, MUTED, false);
+        quicHelp.setLineSpacing(dp(2), 1.0f);
+        networkCard.addView(quicHelp, margins(matchWrap(), 0, dp(2), 0, 0));
+        page.addView(networkCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        LinearLayout strategyCard = card();
+        strategyCard.addView(text("Применение стратегии", 15, CYAN, true), matchWrap());
+        TextView restartHelp = text(
+                "При выборе другого профиля активный VPN автоматически перезапускается. Во время перезапуска соединения могут кратковременно прерваться.",
+                13, TEXT, false);
+        restartHelp.setLineSpacing(dp(2), 1.0f);
+        strategyCard.addView(restartHelp, margins(matchWrap(), 0, dp(6), 0, 0));
+        page.addView(strategyCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        LinearLayout aboutCard = card();
+        aboutCard.addView(text("Ограничения Android", 15, CYAN, true), matchWrap());
+        TextView about = text(
+                "Без root доступны только stream-safe TLS-разбиение и приблизительные TCP write boundaries. Fake-пакеты, TTL/SEQ/TS и настоящее переупорядочивание desktop-профилей не применяются.",
+                13, TEXT, false);
+        about.setLineSpacing(dp(2), 1.0f);
+        aboutCard.addView(about, margins(matchWrap(), 0, dp(6), 0, 0));
+        page.addView(aboutCard, matchWrap());
+        return scroll;
     }
 
     private void loadCatalogue() {
@@ -247,24 +363,31 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void restoreSelection() {
-        int wanted = getPreferences(MODE_PRIVATE).getInt("selected_profile", 1);
-        for (Profile profile : allProfiles) {
-            if (profile.number == wanted) {
-                selected = profile;
-                showSelectedProfile();
-                break;
-            }
+    private Profile findProfile(int number) {
+        for (Profile profile : allProfiles) if (profile.number == number) return profile;
+        return allProfiles.isEmpty() ? null : allProfiles.get(0);
+    }
+
+    private void selectProfile(Profile profile) {
+        if (profile == null) return;
+        boolean changed = selected == null || selected.number != profile.number;
+        selected = profile;
+        getPreferences(MODE_PRIVATE).edit().putInt("selected_profile", selected.number).apply();
+        showSelectedProfile();
+        if (profileAdapter != null) profileAdapter.notifyDataSetChanged();
+        updateTestSummary();
+        if (changed && AntiDpiVpnService.isRunning(this)) {
+            restartVpnForCurrentSelection("Стратегия изменена");
         }
     }
 
     private void showSelectedProfile() {
-        if (selected == null) return;
+        if (selectionText == null || androidStrategyText == null || selected == null) return;
         selectionText.setText("Профиль #" + selected.number + " · " + selected.familyName +
                 "\n" + selected.name);
         String adapted = AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
         String activeNote = AntiDpiVpnService.isRunning(this)
-                ? " Перезапустите VPN, чтобы применить выбор." : "";
+                ? " VPN перезапускается автоматически при смене профиля." : "";
         androidStrategyText.setText("Android-адаптация: " + adapted + activeNote +
                 "\nFake/TTL/SEQ/TS/reorder и прочие packet-level команды пропускаются.");
     }
@@ -293,17 +416,91 @@ public final class MainActivity extends Activity {
         else startVpnService();
     }
 
+    private String selectedStrategy() {
+        return selected == null ? "tlsrec:sni" : AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
+    }
+
+    private boolean blockQuicEnabled() {
+        return blockQuicCheckBox != null ? blockQuicCheckBox.isChecked()
+                : getPreferences(MODE_PRIVATE).getBoolean("block_quic", true);
+    }
+
+    private void restartVpnForCurrentSelection(String reason) {
+        if (!AntiDpiVpnService.isRunning(this)) return;
+        vpnStatusText.setText(reason + " · перезапуск VPN…");
+        startVpnService(true);
+    }
+
     private void startVpnService() {
-        String strategy = selected == null ? "tlsrec:sni" :
-                AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
-        boolean blockQuic = blockQuicCheckBox != null && blockQuicCheckBox.isChecked();
+        startVpnService(false);
+    }
+
+    private void startVpnService(boolean forceRestart) {
         Intent intent = new Intent(this, AntiDpiVpnService.class)
                 .setAction(AntiDpiVpnService.ACTION_START)
-                .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, strategy)
-                .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuic);
+                .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, selectedStrategy())
+                .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuicEnabled())
+                .putExtra(AntiDpiVpnService.EXTRA_FORCE_RESTART, forceRestart);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
         else startService(intent);
-        vpnStatusText.setText("Запускается… " + strategy);
+        vpnStatusText.setText("Применяется профиль #" + (selected == null ? 1 : selected.number) + "…");
+    }
+
+    private void runConnectivityTests() {
+        if (testButton == null || testResultText == null) return;
+        final Button runningTestButton = testButton;
+        final TextView runningResultView = testResultText;
+        final boolean throughVpn = AntiDpiVpnService.isRunning(this);
+        final int profileNumber = selected == null ? 1 : selected.number;
+        String route = throughVpn ? "через активный VPN" : "напрямую (VPN выключен)";
+        runningTestButton.setEnabled(false);
+        runningResultView.setText("Проверяю HTTPS " + route + "…");
+        executor.execute(() -> {
+            String youtube = probe("https://www.youtube.com/generate_204");
+            String google = probe("https://www.google.com/generate_204");
+            String path = throughVpn ? "через VPN · профиль #" + profileNumber : "напрямую";
+            String result = "Путь: " + path + "\n" +
+                    "YouTube: " + youtube + "\n" +
+                    "Google: " + google + "\n\n" +
+                    "Это базовая HTTPS-проверка TCP, не гарантия обхода блокировки.";
+            runOnUiThread(() -> {
+                if (!isFinishing()) {
+                    runningResultView.setText(result);
+                    runningTestButton.setEnabled(true);
+                }
+            });
+        });
+    }
+
+    private String probe(String address) {
+        HttpsURLConnection connection = null;
+        try {
+            connection = (HttpsURLConnection) new URL(address).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(7000);
+            connection.setInstanceFollowRedirects(true);
+            int code = connection.getResponseCode();
+            return "HTTP " + code;
+        } catch (Exception error) {
+            return "ошибка " + error.getClass().getSimpleName();
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private void updateTestSummary() {
+        if (testProfileText == null) return;
+        boolean running = AntiDpiVpnService.isRunning(this);
+        testProfileText.setText((running ? "VPN активен" : "VPN выключен") + "\n" +
+                (selected == null ? "Профиль не выбран" : "Профиль #" + selected.number + " · " +
+                        AndroidPacketEngine.adaptProfileArgs(selected.argsJson)));
+    }
+
+    private void onVpnStateChanged() {
+        refreshVpnUi();
+        showSelectedProfile();
+        updateTestSummary();
     }
 
     @Override
@@ -327,6 +524,7 @@ public final class MainActivity extends Activity {
         vpnStatusText.setText(AntiDpiVpnService.stateMessage(this));
         vpnButton.setText(running ? "Остановить VPN" : "Запустить VPN");
         vpnButton.setEnabled(AndroidPacketEngine.isReady());
+        onVpnStateChanged();
     }
 
     @Override
@@ -358,38 +556,6 @@ public final class MainActivity extends Activity {
             countText.setText(allProfiles.isEmpty() ? "Не удалось загрузить каталог стратегий."
                     : "Показано " + filtered.size() + " из " + allProfiles.size() + " стратегий");
         }
-    }
-
-    private void runDirectProbe(Button button) {
-        button.setEnabled(false);
-        connectivityText.setText("Проверяю прямой доступ к YouTube…");
-        executor.execute(() -> {
-            String result;
-            HttpsURLConnection connection = null;
-            try {
-                connection = (HttpsURLConnection) new URL("https://www.youtube.com/generate_204").openConnection();
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
-                connection.setInstanceFollowRedirects(true);
-                int code = connection.getResponseCode();
-                result = code >= 200 && code < 400
-                        ? "Прямой HTTPS-доступ ответил: " + code + ". Стратегии не применялись."
-                        : "YouTube ответил HTTP " + code + ". Это только прямая проверка, не тест стратегии.";
-            } catch (Exception error) {
-                result = "Прямой HTTPS-тест не прошёл: " + error.getClass().getSimpleName()
-                        + ". DPI-стратегия не применялась.";
-            } finally {
-                if (connection != null) connection.disconnect();
-            }
-            final String message = result;
-            runOnUiThread(() -> {
-                if (!isFinishing()) {
-                    connectivityText.setText(message);
-                    button.setEnabled(true);
-                }
-            });
-        });
     }
 
     private LinearLayout card() {
@@ -433,6 +599,11 @@ public final class MainActivity extends Activity {
 
     private LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams wrap() {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
@@ -485,9 +656,8 @@ public final class MainActivity extends Activity {
                 LinearLayout layout = new LinearLayout(MainActivity.this);
                 layout.setOrientation(LinearLayout.VERTICAL);
                 layout.setPadding(dp(12), dp(9), dp(12), dp(9));
-                layout.setBackground(shape(CARD, dp(10)));
-                TextView primary = text("", 14, TEXT, true);
-                TextView secondary = text("", 11, MUTED, false);
+                TextView primary = text("", 13, TEXT, true);
+                TextView secondary = text("", 10, MUTED, false);
                 layout.addView(primary, matchWrap());
                 layout.addView(secondary, margins(matchWrap(), 0, dp(3), 0, 0));
                 row = new ProfileRow(primary, secondary);
@@ -497,6 +667,7 @@ public final class MainActivity extends Activity {
             Profile profile = getItem(position);
             row.primary.setText("#" + profile.number + "  " + profile.name);
             row.secondary.setText(profile.familyName);
+            convertView.setBackground(shape(profile == selected ? Color.rgb(31, 61, 83) : CARD, dp(10)));
             convertView.setContentDescription("Стратегия " + profile.number + ": " + profile.name);
             return convertView;
         }

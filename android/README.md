@@ -1,6 +1,6 @@
 # AntiDPI Mobile (Android)
 
-A no-root Android VPN prototype with a real local TUN datapath. `VpnService` captures routed device packets, a bundled Go/gVisor userspace TCP/IP stack relays TCP and UDP flows, and a per-flow dialer applies a server-safe, stream-level interpretation of the selected catalogue recipe to the first TLS ClientHello (or plaintext HTTP request). Egress sockets are protected with `VpnService.protect()` and the app's own UID is excluded from the VPN to prevent loops.
+A no-root Android VPN prototype with a real local TUN datapath. `VpnService` captures routed device packets, a bundled Go/gVisor userspace TCP/IP stack relays TCP and UDP flows, and a per-flow dialer applies a server-safe, stream-level interpretation of the selected catalogue recipe to the first TLS ClientHello (or plaintext HTTP request). Every engine-owned egress socket is protected with `VpnService.protect()` to prevent loops. The app itself remains routed through the VPN so the built-in HTTPS diagnostics exercise the selected Android adaptation.
 
 ## What the Android engine applies
 
