@@ -520,7 +520,7 @@ function Install-AntiDPI {
                 }
                 [IO.File]::WriteAllText((Join-Path $installed 'Official_Bundle_20261023_public_v1.json'),($selectedMeta|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
                 $lists=Join-Path $installed 'lists';[IO.Directory]::CreateDirectory($lists)|Out-Null
-                foreach($name in @('ips-exclude.txt')){
+                foreach($name in @('ips-exclude.txt','ips6-exclude.txt')){
                     Copy-Item -LiteralPath (Join-Path (Join-Path $payload 'lists') $name) -Destination $lists
                 }
                 Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $installed 'AntiDPI_Manager.ps1')

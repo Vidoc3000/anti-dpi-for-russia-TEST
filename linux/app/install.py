@@ -196,7 +196,7 @@ def install(args):
         catalogue = json.loads((ROOT/'catalogue.json').read_text(encoding='utf-8'))
         info = catalogue['CatalogueInfo']
         total = int(info["ProfileCount"])
-        print(f'\nУстановка: {prefix}\n{total} стратегии: 45 Golden + {total-45} Silver. IPv4 TCP/TLS.')
+        print(f'\nУстановка: {prefix}\n{total} TCP/TLS-стратегий: 45 Golden + {total-45} Silver; также IPv4/IPv6 UDP/QUIC.')
         from dependencies import ensure_dependencies
         ensure_dependencies(PACKAGES, args.skip_deps)
         meta = select_source(json.loads(resource_path(SOURCE, 'upstream.json').read_text()), selection)

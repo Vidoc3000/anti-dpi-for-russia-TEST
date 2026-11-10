@@ -38,8 +38,6 @@ def validate_target(target):
         address=ipaddress.ip_address(host)
     except ValueError:
         address=None
-    if address is not None and address.version != 4:
-        raise ValueError('Проверка TLS-узла пока поддерживает только IPv4.')
     try:
         port = int(target.get('port'))
     except (TypeError, ValueError) as error:
@@ -65,20 +63,21 @@ def validate_target(target):
 
 
 def probe(interface, ports, target, timeout=12, resolver=socket.getaddrinfo,
-          context_factory=ssl.create_default_context):
+          context_factory=ssl.create_default_context, address_family='ipv4'):
     target = validate_target(target)
     started = time.monotonic()
     result = {'pass': False, 'reason': 'NOT_STARTED', 'seconds': 0.0,
               'tls': '', 'technical': False, 'error': '', 'source_port': 0}
     raw = secure = None
     try:
-        addresses = resolver(target['host'], target['port'], socket.AF_INET, socket.SOCK_STREAM)
+        family=socket.AF_INET6 if address_family=='ipv6' else socket.AF_INET
+        addresses=resolver(target['host'],target['port'],family,socket.SOCK_STREAM)
         if not addresses:
-            raise socket.gaierror('DNS не вернул IPv4-адрес.')
+            raise socket.gaierror('DNS не вернул адрес выбранного IP-семейства.')
         deadline = started + timeout
         last_error = None
         for info in addresses:
-            raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw = socket.socket(info[0],socket.SOCK_STREAM)
             try:
                 raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 if interface:
@@ -86,7 +85,7 @@ def probe(interface, ports, target, timeout=12, resolver=socket.getaddrinfo,
                 bound = False
                 for local_port in range(int(ports[0]), int(ports[1]) + 1):
                     try:
-                        raw.bind(('0.0.0.0', local_port))
+                        raw.bind(('::',local_port,0,0) if info[0]==socket.AF_INET6 else ('0.0.0.0',local_port))
                         bound = True
                         break
                     except OSError as error:
@@ -141,7 +140,7 @@ def probe(interface, ports, target, timeout=12, resolver=socket.getaddrinfo,
 if __name__ == '__main__':
     try:
         request = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
-        answer = probe(request['interface'], request['ports'], request['target'], request.get('timeout', 12))
+        answer = probe(request['interface'],request['ports'],request['target'],request.get('timeout',12),address_family=request.get('address_family','ipv4'))
         print(json.dumps(answer, ensure_ascii=False), flush=True)
     except Exception as error:
         print(json.dumps({'pass': False, 'technical': True, 'reason': 'PROBE_INTERNAL_ERROR',

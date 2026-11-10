@@ -19,7 +19,7 @@ import urllib.request
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO/'linux/app'))
 from install import extract_source
-from antidpi import engine_arguments, load_catalogue
+from antidpi import QUIC_PROFILES, engine_arguments, load_catalogue
 
 
 def main():
@@ -55,8 +55,17 @@ def main():
                                      cwd=engine, capture_output=True, text=True, timeout=20)
             if checked.returncode:
                 raise RuntimeError('Strategy '+str(row['Number'])+': '+checked.stdout+checked.stderr)
+        quic_count=0
+        for address_family in ('ipv4','ipv6'):
+            for profile in QUIC_PROFILES.values():
+                checked=subprocess.run(engine_arguments(root,profile,queue=20000,scope='443',
+                                     address_family=address_family,protocol='udp-quic')+['--dry-run'],
+                                     cwd=engine,capture_output=True,text=True,timeout=20)
+                if checked.returncode:
+                    raise RuntimeError(f'QUIC {address_family} / {profile["Name"]}: '+checked.stdout+checked.stderr)
+                quic_count+=1
         count = len(data['ProfileRows'])
-        print(f'Verified {count}/{count} parameter/Lua dry-runs against {meta["commit"]}.')
+        print(f'Verified {count}/{count} TCP/TLS recipes and {quic_count} IPv4/IPv6 UDP/QUIC dry-runs against {meta["commit"]}.')
 
 
 if __name__ == '__main__':

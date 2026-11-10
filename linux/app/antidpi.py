@@ -107,88 +107,126 @@ def parse_ports(value):
     return ','.join(str(a) if a==b else f'{a}-{b}' for a,b in ranges)
 
 
-def scope_guidance(scope):
+def scope_guidance(scope, address_family='ipv4', protocol='tcp-tls'):
     scope=parse_ports(scope)
-    lines=['Область действия: только IPv4 TCP; стратегия применяется к распознанному TLS.',
-           'IPv6, UDP и QUIC/HTTP/3 этим перехватом не обрабатываются.',
-           f'nftables направляет в NFQUEUE первые до {PACKETS} пакетов новых TCP-соединений на выбранных портах; остальной трафик и незашифрованные/не-TLS протоколы не подвергаются TLS-стратегии.']
+    family='IPv6' if address_family == 'ipv6' else 'IPv4'
+    transport='UDP/QUIC' if protocol == 'udp-quic' else 'TCP/TLS'
+    l4='UDP' if protocol == 'udp-quic' else 'TCP'
+    lines=[f'Область действия: {family} {transport}; применяется только к распознанному QUIC Initial.' if protocol == 'udp-quic' else f'Область действия: {family} {transport}; стратегия применяется к распознанному TLS ClientHello.',
+           f'Перехват ограничен выбранным IP-семейством, {l4} и портами; VPN/Tor-туннель, авторизация и доступность стороннего приложения не проверяются.',
+           f'nftables направляет в NFQUEUE первые до {PACKETS} пакетов подходящего трафика; остальной трафик не подвергается данной стратегии.']
     if scope=='all':
-        lines.append('Выбраны все TCP-порты: охват максимальный, в очередь может попасть больше новых соединений и вырасти нагрузка/задержка. Это нужно, когда VPN-подписка использует динамические порты; для известного порта выберите узкий диапазон.')
+        extra=' Динамические порты VPN могут требовать all.' if protocol=='tcp-tls' else ' Для QUIC обычно достаточно 443.'
+        lines.append(f'Выбраны все {l4}-порты: в очередь может попасть больше трафика и вырасти нагрузка/задержка. Для известного порта выбирайте узкий диапазон.'+extra)
     else:
         count=sum(last-first+1 for first,last in port_ranges(scope))
-        lines.append(f'Выбран набор {scope}: всего {count} TCP-портов; соединения на остальных портах не перехватываются. Узкий диапазон обычно уменьшает число соединений, попадающих в NFQUEUE.')
+        lines.append(f'Выбран набор {scope}: всего {count} {l4}-портов; остальные порты не перехватываются.')
     return lines
-
 
 def show_scope_guidance(scope):
     cli_ui.paragraphs(scope_guidance(scope),'93')
 
 
 def choose_ports(session,explicit=None):
+    default='443' if session.protocol == 'udp-quic' else 'all'
     if explicit is not None:
         session.scope=parse_ports(explicit)
-        show_scope_guidance(session.scope)
+        show_scope_guidance(session.scope,session.address_family,session.protocol)
         return session.scope
+    transport='UDP' if session.protocol == 'udp-quic' else 'TCP'
     print('\n----------------------\n')
-    print(cli_ui.color('Выберите порты назначения TCP, трафик которых будет перехватываться Zapret2.','96'))
-    cli_ui.paragraphs(['','Либо определенный номер порта, например 443, 80 и т.д.',
-        'Либо диапазон, например 0–1023',
-        'Либо введите комбинацию: несколько диапазонов и/или одиночных портов через запятую, например: 53, 80, 443, 1000-2000, 3000-4000',
-        'Либо введите слово "все/all" (регистр неважен), чтобы перехватывать любые TCP-порты (нужно для подписок VPN).',''])
+    print(cli_ui.color(f'Выберите порты назначения {transport}, трафик которых будет перехватываться Zapret2.','96'))
+    if session.protocol == 'udp-quic':
+        cli_ui.paragraphs(['QUIC/HTTP/3 обрабатывается только на UDP-портах; обычно это 443.',
+                           'QUIC-профили изменяют QUIC Initial; это не проверка доступности сайта или VPN/Tor-туннеля.'],'93')
+    else:
+        cli_ui.paragraphs(['TLS-стратегии работают только с TCP ClientHello; UDP/QUIC используйте в режиме QUIC.'],'93')
     while True:
-        answer=input('Ваш выбор [Нажатие Enter активирует все порты по умолчанию]: ')
+        answer=input(f'Порты [Enter = {default}]: ').strip()
         try:
-            session.scope=parse_ports(answer)
-            print();show_scope_guidance(session.scope)
+            session.scope=parse_ports(answer or default)
+            print();show_scope_guidance(session.scope,session.address_family,session.protocol)
             return session.scope
         except ValueError as error:print(error)
 
 
-def engine_arguments(root, row, queue=20000, scope='all'):
+def choose_network_mode(session,address_family=None,protocol=None):
+    if address_family is None:
+        if sys.stdin.isatty():
+            print('Семейство IP: 1) IPv4  2) IPv6')
+            address_family='ipv6' if input('Выбор [1]: ').strip()=='2' else 'ipv4'
+        else:address_family='ipv4'
+    if protocol is None:
+        if sys.stdin.isatty():
+            print('Протокол: 1) TCP + TLS  2) UDP + QUIC/HTTP/3')
+            protocol='udp-quic' if input('Выбор [1]: ').strip()=='2' else 'tcp-tls'
+        else:protocol='tcp-tls'
+    session.address_family=address_family
+    session.protocol=protocol
+    session.nft_family='ip6' if address_family=='ipv6' else 'ip'
+    return address_family,protocol
+
+QUIC_PROFILES={
+    'fake2': {'Number':493,'Name':'QUIC fake (2 повторения)','Protocol':'udp-quic','NeedsTimestamps':False,
+              'Args':['--payload=quic_initial','--lua-desync=fake:blob=fake_default_quic:repeats=2']},
+    'fake11': {'Number':494,'Name':'QUIC fake (11 повторений)','Protocol':'udp-quic','NeedsTimestamps':False,
+               'Args':['--payload=quic_initial','--lua-desync=fake:blob=fake_default_quic:repeats=11']},
+}
+
+
+def engine_arguments(root, row, queue=20000, scope='all', address_family='ipv4', protocol='tcp-tls'):
     engine = root / 'engine'
-    args = [str(engine / 'nfqws2'), '--qnum=' + str(queue), '--fwmark=' + MARK, '--bind-fix4',
+    ipver='6' if address_family=='ipv6' else '4'
+    transport='udp' if protocol=='udp-quic' else 'tcp'
+    app_proto='quic' if protocol=='udp-quic' else 'tls'
+    args = [str(engine / 'nfqws2'), '--qnum=' + str(queue), '--fwmark=' + MARK, '--bind-fix'+ipver,
             '--lua-init=@' + str(engine / 'lua/zapret-lib.lua'),
             '--lua-init=@' + str(engine / 'lua/zapret-antidpi.lua')]
     if os.geteuid() == 0:
         from engine_environment import privilege_arguments
         args[1:1] = privilege_arguments()
-    if any(a.startswith('--lua-desync=fake:') and 'blob=reasm_data' in a and ':tls_mod=' in a for a in row['Args']):
+    if protocol == 'tcp-tls' and any(a.startswith('--lua-desync=fake:') and 'blob=reasm_data' in a and ':tls_mod=' in a for a in row['Args']):
         args.append('--lua-init=@' + str(root / 'actual_tls_guard.lua'))
-    if row['Init']:
+    if row.get('Init'):
         args.append('--lua-init=' + row['Init'])
     scope=parse_ports(scope)
-    args += ['--filter-tcp=' + ('0-65535' if scope == 'all' else scope), '--filter-l7=tls',
-             '--ipset-exclude=' + str(root / 'lists/ips-exclude.txt')]
+    args += [f'--filter-{transport}=' + ('*' if scope == 'all' else scope), '--filter-l7='+app_proto,
+             '--ipset-exclude=' + str(root / 'lists' / ('ips6-exclude.txt' if address_family=='ipv6' else 'ips-exclude.txt'))]
     return args + row['Args']
 
-
-def nft_rules(table, interface, entries, networks, scope='all', replace=False):
+def nft_rules(table, interface, entries, networks, scope='all', replace=False,
+              address_family='ipv4', protocol='tcp-tls'):
     if not re.fullmatch(r'antidpi_z2_[0-9a-f]{12}', table) or not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,15}', interface):
         raise ValueError('Некорректное имя таблицы или интерфейса.')
-    nets = list(ipaddress.collapse_addresses(ipaddress.IPv4Network(x) for x in networks))
+    version=6 if address_family=='ipv6' else 4
+    nft_family='ip6' if version==6 else 'ip'
+    addr_type='ipv6_addr' if version==6 else 'ipv4_addr'
+    l4='udp' if protocol=='udp-quic' else 'tcp'
+    nets=list(ipaddress.collapse_addresses(ipaddress.ip_network(x) for x in networks
+              if ipaddress.ip_network(x).version==version))
     scope=parse_ports(scope)
     selected=port_ranges(scope)
     port_set='{ '+', '.join(str(a) if a==b else f'{a}-{b}' for a,b in selected)+' }'
-    out = [f'delete table ip {table}'] if replace else []
-    out += [f'table ip {table} {{', ' set excluded { type ipv4_addr; flags interval;',
-            '  elements = { ' + ', '.join(str(n) for n in nets) + ' };', ' }',
+    out=[f'delete table {nft_family} {table}'] if replace else []
+    out += [f'table {nft_family} {table} {{', f' set excluded {{ type {addr_type}; flags interval;',
+            '  elements = { '+', '.join(str(n) for n in nets)+' };', ' }',
             ' chain raw_out { type filter hook output priority -401; policy accept;',
             f'  oifname "{interface}" meta mark & {MARK} != 0 notrack', ' }',
             ' chain out { type filter hook output priority -150; policy accept;',
-            f'  meta mark & {MARK} != 0 return', '  ip daddr @excluded return']
+            f'  meta mark & {MARK} != 0 return', f'  {nft_family} daddr @excluded return']
     for entry in entries:
-        ports = f"tcp sport {entry['ports'][0]}-{entry['ports'][1]} " if entry.get('ports') else ''
-        dest = 'tcp dport '+port_set+' ' if scope != 'all' else 'meta l4proto tcp '
-        out.append(f'  oifname "{interface}" {dest}{ports}ct original packets 1-{PACKETS} counter queue num {entry["queue"]} bypass')
+        service_port=f'{l4} dport {entry["ports"][0]}-{entry["ports"][1]} ' if entry.get('ports') else ''
+        dest=f'{l4} dport {port_set} ' if scope!='all' else f'meta l4proto {l4} '
+        out.append(f'  oifname "{interface}" {dest}{service_port}ct original packets 1-{PACKETS} counter queue num {entry["queue"]} bypass')
     out += [' }', ' chain incoming { type filter hook input priority -150; policy accept;',
-            f'  meta mark & {MARK} != 0 return', '  ip saddr @excluded return']
+            f'  meta mark & {MARK} != 0 return', f'  {nft_family} saddr @excluded return']
     for entry in entries:
-        ports = f"tcp dport {entry['ports'][0]}-{entry['ports'][1]} " if entry.get('ports') else ''
-        src = 'tcp sport '+port_set+' ' if scope != 'all' else 'meta l4proto tcp '
-        out.append(f'  iifname "{interface}" {src}{ports}tcp flags & (syn | ack) == (syn | ack) counter queue num {entry["queue"]} bypass')
+        service_port=f'{l4} dport {entry["ports"][0]}-{entry["ports"][1]} ' if entry.get('ports') else ''
+        src=f'{l4} sport {port_set} ' if scope!='all' else f'meta l4proto {l4} '
+        guard=f'{l4} flags & (syn | ack) == (syn | ack) ' if l4=='tcp' else f'ct original packets 1-{PACKETS} '
+        out.append(f'  iifname "{interface}" {src}{service_port}{guard}counter queue num {entry["queue"]} bypass')
     out += [' }', '}']
-    return '\n'.join(out) + '\n'
-
+    return '\n'.join(out)+'\n'
 
 def stop_process(process):
     if process.poll() is None:
@@ -232,10 +270,14 @@ class Session:
         self.active_table = False
         self.interface = None
         self.scope = 'all'
+        self.address_family = 'ipv4'
+        self.protocol = 'tcp-tls'
+        self.nft_family = 'ip'
         self.stamp = time.strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:8]
         self.logs = root / 'logs'
         self.logs.mkdir(exist_ok=True)
         self.networks = [line.strip() for line in (root / 'lists/ips-exclude.txt').read_text().splitlines() if line.strip() and not line.startswith('#')]
+        self.networks6 = [line.strip() for line in (root / 'lists/ips6-exclude.txt').read_text().splitlines() if line.strip() and not line.startswith('#')]
 
     def __enter__(self):
         if os.geteuid() != 0:
@@ -262,13 +304,14 @@ class Session:
         record = json.loads(self.journal.read_text()) if self.journal.exists() else {'table': self.table}
         if record['table'] != self.table:
             raise RuntimeError('Маркер восстановления не принадлежит этой установке.')
-        listed = run(['nft', 'list', 'table', 'ip', self.table])
-        if listed.returncode == 0:
-            deleted = run(['nft', 'delete', 'table', 'ip', self.table])
-            if deleted.returncode:
-                raise RuntimeError(deleted.stderr.strip())
-        elif 'No such file or directory' not in listed.stderr and 'does not exist' not in listed.stderr:
-            raise RuntimeError(listed.stderr.strip())
+        for nft_family in ('ip', 'ip6'):
+            listed = run(['nft', 'list', 'table', nft_family, self.table])
+            if listed.returncode == 0:
+                deleted = run(['nft', 'delete', 'table', nft_family, self.table])
+                if deleted.returncode:
+                    raise RuntimeError(deleted.stderr.strip())
+            elif 'No such file or directory' not in listed.stderr and 'does not exist' not in listed.stderr:
+                raise RuntimeError(listed.stderr.strip())
         for item in record.get('engines', []):
             pid = item['pid']
             if item.get('stamp') and process_stamp(pid) == item['stamp']:
@@ -287,9 +330,11 @@ class Session:
         if shutil.which('modprobe'):
             for module in ('nf_conntrack', 'nfnetlink_queue', 'nft_queue'):
                 run(['modprobe', module])
-        names = ['net.netfilter.nf_conntrack_acct', 'net.netfilter.nf_conntrack_tcp_be_liberal']
-        if timestamps:
-            names.append('net.ipv4.tcp_timestamps')
+        names = ['net.netfilter.nf_conntrack_acct']
+        if self.protocol == 'tcp-tls':
+            names.append('net.netfilter.nf_conntrack_tcp_be_liberal')
+            if timestamps:
+                names.append('net.ipv4.tcp_timestamps')
         for name in names:
             path = Path('/proc/sys') / name.replace('.', '/')
             if not path.is_file():
@@ -306,12 +351,14 @@ class Session:
     def apply(self):
         if not self.entries:
             if self.active_table:
-                result = run(['nft', 'delete', 'table', 'ip', self.table])
+                result = run(['nft', 'delete', 'table', self.nft_family, self.table])
                 if result.returncode:
                     raise RuntimeError('Не удалось убрать собственную таблицу: ' + result.stderr.strip())
             self.active_table = False
             return
-        rules = nft_rules(self.table, self.interface, self.entries, self.networks, self.scope, self.active_table)
+        networks=self.networks6 if self.address_family=='ipv6' else self.networks
+        rules = nft_rules(self.table, self.interface, self.entries, networks, self.scope, self.active_table,
+                          self.address_family,self.protocol)
         (getattr(self, 'scan_logs', self.logs) / ('nft_' + self.stamp + '.nft')).write_text(rules)
         self.save()
         result = run(['nft', '-f', '-'], input=rules)
@@ -328,7 +375,7 @@ class Session:
         if queue is None:
             raise RuntimeError('Не найден свободный номер NFQUEUE.')
         log_path = getattr(self, 'scan_logs', self.logs) / f'nfqws2_{self.stamp}_p{row["Number"]}_{queue}.log'
-        argv = engine_arguments(self.root, row, queue, self.scope)
+        argv = engine_arguments(self.root, row, queue, self.scope,self.address_family,self.protocol)
         checked = run(argv + ['--dry-run'])
         if checked.returncode:
             log_path.write_text(checked.stdout + checked.stderr)
@@ -387,21 +434,30 @@ class Session:
         self.close()
 
 
-def interfaces():
-    addresses = json.loads(run(['ip', '-j', '-4', 'addr', 'show', 'up']).stdout)
-    links = {x['ifindex']: x for x in json.loads(run(['ip', '-j', 'link']).stdout)}
-    excluded = {'tun', 'wireguard', 'gre', 'gretap', 'sit', 'ipip', 'vti'}
-    result = []
+def interfaces(address_family='ipv4'):
+    ip_switch='-6' if address_family=='ipv6' else '-4'
+    addr_family='inet6' if address_family=='ipv6' else 'inet'
+    addresses=json.loads(run(['ip','-j',ip_switch,'addr','show','up']).stdout)
+    links={x['ifindex']:x for x in json.loads(run(['ip','-j','link']).stdout)}
+    excluded={'tun','wireguard','gre','gretap','sit','ipip','vti'}
+    result=[]
     for item in addresses:
-        link = links.get(item['ifindex'], {})
-        kind = link.get('linkinfo', {}).get('info_kind', '')
-        if item['ifname'] == 'lo' or kind in excluded or Path('/sys/class/net', item['ifname'], 'tun_flags').exists():
+        link=links.get(item['ifindex'],{})
+        kind=link.get('linkinfo',{}).get('info_kind','')
+        if item['ifname']=='lo' or kind in excluded or Path('/sys/class/net',item['ifname'],'tun_flags').exists():
             continue
-        ips = [a['local'] for a in item.get('addr_info', []) if a['family'] == 'inet' and a.get('scope') == 'global']
+        ips=[]
+        for address in item.get('addr_info',[]):
+            if address['family']!=addr_family or address.get('scope')!='global':
+                continue
+            local=address['local']
+            if address_family=='ipv6' and (local.lower().startswith(('fe80:','ff')) or local=='::1'):
+                continue
+            ips.append(local)
         if ips:
-            result.append({'index': item['ifindex'], 'name': item['ifname'], 'addresses': ips, 'description': adapter_description(item['ifname'])})
+            result.append({'index':item['ifindex'],'name':item['ifname'],'addresses':ips,
+                           'description':adapter_description(item['ifname'])})
     return result
-
 
 def adapter_description(name):
     path = Path('/sys/class/net') / name
@@ -410,40 +466,42 @@ def adapter_description(name):
     return alias or driver or ('Wi-Fi' if (path/'wireless').exists() else 'Ethernet / сетевой адаптер')
 
 
-def choose_interface(session, explicit=None):
-    items = interfaces()
+def choose_interface(session,explicit=None):
+    family=session.address_family
+    ip_switch='-6' if family=='ipv6' else '-4'
+    items=interfaces(family)
     if explicit:
-        matches = [x for x in items if x['name'] == explicit]
-        if len(matches) != 1:
-            raise RuntimeError('Интерфейс не найден среди активных IPv4-интерфейсов: ' + explicit)
-        session.interface = explicit
+        matches=[x for x in items if x['name']==explicit]
+        if len(matches)!=1:
+            raise RuntimeError(f'Интерфейс не найден среди активных {family.upper()}-интерфейсов: '+explicit)
+        session.interface=explicit
         return explicit
     if not items:
-        raise RuntimeError('Не найден активный IPv4-интерфейс. Проверьте сеть и отключите VPN для выбора.')
-    previous = json.loads(session.config.read_text()).get('name') if session.config.exists() else None
-    defaults = json.loads(run(['ip', '-j', '-4', 'route', 'show', 'default']).stdout)
-    defaults.sort(key=lambda x: x.get('metric', 0))
-    recommended = next((r['dev'] for r in defaults if any(i['name'] == r.get('dev') for i in items)), items[0]['name'])
-    default = next(i for i in items if i['name'] == (previous if any(x['name'] == previous for x in items) else recommended))
-    print(cli_ui.color('\nВыберите активный Интернет-адаптер для работы AntiDPI-стратегий','96'))
-    width = cli_ui.columns()
-    adapter_width = min(35,max(12,(width-18)//3))
-    description_width = max(12,(width-adapter_width-18)//2)
+        raise RuntimeError(f'Не найден активный {family.upper()}-интерфейс. Проверьте IPv{6 if family=="ipv6" else 4} и маршрут.')
+    previous=json.loads(session.config.read_text()).get('name') if session.config.exists() else None
+    defaults=json.loads(run(['ip','-j',ip_switch,'route','show','default']).stdout)
+    defaults.sort(key=lambda x:x.get('metric',0))
+    recommended=next((r['dev'] for r in defaults if any(i['name']==r.get('dev') for i in items)),items[0]['name'])
+    default=next(i for i in items if i['name']==(previous if any(x['name']==previous for x in items) else recommended))
+    print(cli_ui.color(f'\nВыберите активный Интернет-адаптер для {family.upper()} AntiDPI-стратегий','96'))
+    width=cli_ui.columns()
+    adapter_width=min(35,max(12,(width-18)//3))
+    description_width=max(12,(width-adapter_width-18)//2)
     cli_ui.table(['Индекс','Адаптер (Up)','Описание'],
-                 [[str(i['index']),i['name'],i.get('description','')+'; IPv4: '+', '.join(i['addresses'])] for i in items],
+                 [[str(i['index']),i['name'],i.get('description','')+f'; {family.upper()}: '+', '.join(i['addresses'])] for i in items],
                  [6,adapter_width,description_width])
-    rec = next(i for i in items if i['name'] == recommended)
+    rec=next(i for i in items if i['name']==recommended)
     print('Активные (Up) индексы: '+', '.join(str(i['index']) for i in items)+'. Рекомендуется: '+str(rec['index'])+'.')
     if previous:
         print('Прошлый выбор: '+previous+(' (доступен).' if any(i['name']==previous for i in items) else ' (сейчас недоступен).'))
     print(cli_ui.color('Нажмите Enter, если хотите использовать прошлый/рекомендуемый адаптер. Либо введите индекс из предложенного списка.','96'))
     while True:
-        answer = input(f'Индекс основного адаптера [Enter = {default["index"]}]: ').strip()
-        selected = default if not answer else next((i for i in items if str(i['index'])==answer),None)
+        answer=input(f'Индекс основного адаптера [Enter = {default["index"]}]: ').strip()
+        selected=default if not answer else next((i for i in items if str(i['index'])==answer),None)
         if selected is None:
-            print('Введите индекс из таблицы.'); continue
-        session.interface = selected['name']
-        atomic_json(session.config, {'name':selected['name'],'index':selected['index']})
+            print('Введите индекс из таблицы.');continue
+        session.interface=selected['name']
+        atomic_json(session.config,{'name':selected['name'],'index':selected['index'],'family':family})
         return session.interface
 
 
@@ -483,8 +541,10 @@ def show_table(data):
 def activate(session, row):
     queue = session.start(row)
     try:
-        print(f'\n{"Golden" if row["Number"] <= 45 else "Silver"} #{row["Number"]}: {row["Name"]}')
-        print('Интерфейс: '+session.interface+'; только IPv4 TCP/TLS; порты '+session.scope+' (IPv6/UDP/QUIC не перехватываются)')
+        category='QUIC' if row.get('Protocol')=='udp-quic' else ('Golden' if row['Number']<=45 else 'Silver')
+        print(f'\n{category} #{row["Number"]}: {row["Name"]}')
+        transport='UDP/QUIC' if session.protocol=='udp-quic' else 'TCP/TLS'
+        print(f'Интерфейс: {session.interface}; {session.address_family.upper()} {transport}; порты {session.scope}')
         print(colored(f'\nСЕЙЧАС РАБОТАЕТ СТРАТЕГИЯ {row["Number"]}!\n\n'
                       'ЧТОБЫ СМЕНИТЬ СТРАТЕГИЮ — нажмите F1 (или s)\n'
                       'ЧТОБЫ ПЕРЕЗАГРУЗИТЬ ТЕКУЩУЮ СТРАТЕГИЮ — нажмите F2 (или r)\n'
@@ -627,7 +687,7 @@ def endpoint_attempt(session, ports, number, attempt, stop, target):
     before=queue_snapshot(queue) if queue is not None else {}
     with tempfile.TemporaryDirectory(prefix='antidpi-endpoint-') as temporary:
         request_path=Path(temporary)/'request.json'
-        atomic_json(request_path,{'interface':session.interface,'ports':ports,'timeout':12,'target':target})
+        atomic_json(request_path,{'interface':session.interface,'ports':ports,'timeout':12,'target':target,'address_family':session.address_family})
         argv=[sys.executable,str(app_root/'engine_guard.py'),str(os.getpid()),sys.executable,'-B',str(app_root/'target_probe.py'),str(request_path)]
         started=time.monotonic()
         with tempfile.TemporaryFile() as errors:
@@ -663,17 +723,18 @@ def endpoint_attempt(session, ports, number, attempt, stop, target):
     return result
 
 
-def reserve_ports(excluded=()):
+def reserve_ports(excluded=(),address_family='ipv4'):
     # Bind all 64 ports simultaneously while choosing a disjoint worker block.
     ephemeral = [int(x) for x in Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split()]
+    af=socket.AF_INET6 if address_family=='ipv6' else socket.AF_INET
     for first in range(10000, 30000, 64):
         if (first, first+63) in excluded or not (first+63 < ephemeral[0] or first > ephemeral[1]):
             continue
         held = []
         try:
             for port in range(first, first+64):
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                held.append(sock); sock.bind(('0.0.0.0', port))
+                sock = socket.socket(af, socket.SOCK_STREAM)
+                held.append(sock); sock.bind(('::',port,0,0) if af==socket.AF_INET6 else ('0.0.0.0',port) )
             return first, first+63
         except OSError:
             pass
@@ -750,7 +811,7 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
                     while not stop.is_set() and len(jobs)<parallel:
                         if not pending:break
                         number=pending.popleft()
-                        ports=reserve_ports(used)
+                        ports=reserve_ports(used,session.address_family)
                         queue=session.start(rows[number],ports)
                         used.add(ports)
                         future=pool.submit(worker,number,ports)
@@ -810,9 +871,15 @@ def ask_parallel():
 
 
 def parse_target_argument(value, sni=None, verify=True):
-    if not isinstance(value,str) or value.count(':') != 1:
-        raise ValueError('Введите узел как имя:порт, например vpn.example.org:443 (IPv4/TCP TLS).')
-    host,port=value.rsplit(':',1)
+    if not isinstance(value,str):
+        raise ValueError('Введите узел как имя:порт или IPv6 в квадратных скобках:порт.')
+    ipv6_match=re.fullmatch(r'\[([^\]]+)\]:(\d+)',value.strip())
+    if ipv6_match:
+        host,port=ipv6_match.groups()
+    elif value.count(':')==1:
+        host,port=value.rsplit(':',1)
+    else:
+        raise ValueError('Введите узел как имя:порт или IPv6 в квадратных скобках:порт.')
     if not port.isdecimal():
         raise ValueError('Порт цели должен быть числом от 1 до 65535.')
     return target_probe.validate_target({'host':host,'port':int(port),'sni':sni or host,
@@ -836,13 +903,16 @@ def main():
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
+    parser.add_argument('--family', choices=('ipv4','ipv6'), help='IP-семейство для перехвата')
+    parser.add_argument('--protocol', choices=('tcp-tls','udp-quic'), help='Протокол обработки')
+    parser.add_argument('--quic-profile', choices=tuple(QUIC_PROFILES), help='QUIC-профиль: fake2 или fake11')
     parser.add_argument('--recipes', default=None)
     parser.add_argument('--parallel', type=int, choices=range(1, 6))
     parser.add_argument('--target', help='TLS-узел для benchmark в формате имя:порт (по умолчанию тестируются Golden 1-45)')
     parser.add_argument('--sni', help='TLS SNI; по умолчанию совпадает с именем узла')
     parser.add_argument('--insecure', action='store_true', help='не проверять сертификат (только для диагностики; небезопасно)')
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
-    parser.add_argument('--scope',type=parse_ports,help='TCP-порты: all/все, 443, 0-1023 или 53,80,443,1000-2000')
+    parser.add_argument('--scope',type=parse_ports,help='Порты выбранного TCP/UDP протокола: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
     data = load_catalogue()
     maximum = int(data['CatalogueInfo']['ProfileCount'])
@@ -862,10 +932,16 @@ def main():
         print('Параметры всех выбранных стратегий приняты nfqws2.'); return
     if args.action!='recover' and not args.skip_intro:
         cli_ui.show_intro(ROOT)
+    if args.action in ('youtube','benchmark') and args.protocol == 'udp-quic':
+        parser.error('YouTube и benchmark используют TCP/TLS; QUIC этим тестированием не проверяется.')
     with Session() as session:
         if args.action == 'recover':
             print('Собственные оставшиеся правила и временные параметры восстановлены.'); return
-        choose_interface(session, args.interface)
+        default_family='ipv4' if args.action in ('youtube','benchmark') else None
+        choose_network_mode(session,args.family or default_family,args.protocol or ('tcp-tls' if default_family else None))
+        if args.action == 'youtube' and session.address_family != 'ipv4':
+            parser.error('Текущая YouTube-проверка ограничена IPv4/TCP/TLS; выберите --family ipv4.')
+        choose_interface(session,args.interface)
         if args.action == 'benchmark':
             try:
                 target=choose_benchmark_target(args)
@@ -874,9 +950,32 @@ def main():
             session.scope=str(target['port'])
             scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target,adaptive=not args.exhaustive)
             return
-        choose_ports(session,args.scope if args.scope is not None else 'all' if not sys.stdin.isatty() else None)
+        noninteractive_scope=('443' if session.protocol=='udp-quic' else 'all') if not sys.stdin.isatty() else None
+        choose_ports(session,args.scope if args.scope is not None else noninteractive_scope)
         if args.action == 'youtube':
             scan(session, rows, recipe_range(args.recipes), args.parallel or ask_parallel()); return
+        if session.protocol == 'udp-quic':
+            if args.strategy is not None:
+                parser.error('--strategy относится к TCP/TLS; используйте --quic-profile fake2|fake11.')
+            preset=args.quic_profile
+            if preset is None:
+                if sys.stdin.isatty():
+                    print('QUIC-профиль: 1) fake2  2) fake11')
+                    preset='fake11' if input('Выбор [1]: ').strip()=='2' else 'fake2'
+                else:preset='fake2'
+            row=QUIC_PROFILES[preset]
+            while True:
+                key=activate(session,row)
+                if key=='quit':return
+                if key=='restart':
+                    print(f'\nПЕРЕЗАГРУЗКА QUIC-профиля {preset}...');continue
+                if key=='adapter':
+                    choose_interface(session);choose_ports(session);continue
+                print(colored('\nQUIC-профиль остановлен.\n','91'))
+                if sys.stdin.isatty():
+                    answer=input('Нажмите Enter для повтора или 0 для выхода: ').strip()
+                    if answer=='0':return
+                else:return
         show_table(data)
         number = args.strategy
         while True:
