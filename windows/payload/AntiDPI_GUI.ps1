@@ -189,7 +189,12 @@ function Set-GuiAnalysisResults([string]$Path) {
         $profile=@($profileRows|Where-Object {[int]$_.Number -eq $number}|Select-Object -First 1)
         $name=if($profile.Count){[string]$profile[0].Name}else{('Стратегия '+$number)}
         $status=[string]$result.Status
-        $recommendation=switch($status){'PASS'{'Рекомендуется для YouTube'}'UNSTABLE'{'Нестабильно — повторите тест'}'FAIL'{'Не прошла тест YouTube'}default{'Техническая ошибка'}}
+        $recommendation=switch($status){
+            'PASS' {'Рекомендуется для YouTube'}
+            'UNSTABLE' {'Нестабильно — повторите тест'}
+            'FAIL' {'Не прошла тест YouTube'}
+            default {'Техническая ошибка'}
+        }
         $null=$analysisGrid.Rows.Add([object[]]@($number,$name,$status,$recommendation))
         $row=$analysisGrid.Rows[$analysisGrid.Rows.Count-1]
         if($status -eq 'PASS'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(225,245,233)}
