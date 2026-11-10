@@ -19,3 +19,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    implementation files('libs/antidpi-engine.aar')
+}

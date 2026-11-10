@@ -2,6 +2,11 @@
 /dist/
 /build/
 
+# Generated Android native engine bridge and local Android build output.
+/android/app/libs/*.aar
+/android/app/build/
+/android/.gradle/
+
 # Python caches and local virtual environments.
 __pycache__/
 *.pyc
