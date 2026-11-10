@@ -15,9 +15,9 @@ import stat
 import sys
 import uuid
 
-COMMAND = Path('/usr/local/bin/igareck-antidpi')
-LOCK = Path('/run/lock/igareck-antidpi-command.lock')
-MARKER = '# igareck-launcher-v1 '
+COMMAND = Path('/usr/local/bin/antidpi')
+LOCK = Path('/run/lock/antidpi-command.lock')
+MARKER = '# antidpi-launcher-v1 '
 
 
 def launcher_bytes(root, install_id):
@@ -73,7 +73,7 @@ def prepare(value=None):
         return None
     others = path_commands()
     if existing or others:
-        print('Найдена команда igareck-antidpi другой установки:')
+        print('Найдена команда antidpi другой установки:')
         if existing:
             print(str(COMMAND))
         for path in others:
@@ -82,7 +82,7 @@ def prepare(value=None):
             if not sys.stdin.isatty():
                 print('Глобальная команда сохранена за прежней установкой.')
                 return None
-            print('Использовать новую установку по команде igareck-antidpi?')
+            print('Использовать новую установку по команде antidpi?')
             while True:
                 answer = input('Введите Да/Yes или Нет/No: ').strip().casefold()
                 if answer in ('нет', 'no'):
@@ -114,7 +114,7 @@ def register(root, install_id, plan):
         if (current and not current['owned']) or actual != plan['expected_sha256']:
             raise RuntimeError('Команда запуска изменилась во время установки; чужой файл сохранён.')
         COMMAND.parent.mkdir(parents=True, exist_ok=True)
-        temporary = COMMAND.with_name('.igareck-launcher-'+uuid.uuid4().hex)
+        temporary = COMMAND.with_name('.antidpi-launcher-'+uuid.uuid4().hex)
         try:
             with temporary.open('xb') as stream:
                 stream.write(data)
@@ -126,12 +126,12 @@ def register(root, install_id, plan):
                 os.link(temporary, COMMAND)
         finally:
             temporary.unlink(missing_ok=True)
-    return {'schema':'igareck.command.v1', 'path':str(COMMAND), 'id':install_id,
+    return {'schema':'antidpi.command.v1', 'path':str(COMMAND), 'id':install_id,
             'prefix':str(root), 'sha256':sha256(data).hexdigest()}
 
 
 def remove(record):
-    if record.get('schema') != 'igareck.command.v1' or record.get('path') != str(COMMAND):
+    if record.get('schema') != 'antidpi.command.v1' or record.get('path') != str(COMMAND):
         raise RuntimeError('Некорректный маркер глобальной команды.')
     expected = launcher_bytes(Path(record['prefix']), record['id'])
     if sha256(expected).hexdigest() != record.get('sha256'):

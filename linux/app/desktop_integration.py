@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-FOLDER_NAME = 'Igareck_AntiDPI'
+FOLDER_NAME = 'AntiDPI'
 INSTALL_README = 'README_Установка_Linux_v1.1.txt'
 STRATEGIES_README = 'README_Стратегии_Linux_v1.1.txt'
 
@@ -94,15 +94,15 @@ def exec_argument(value):
 
 def launcher(root, action, install_id):
     script = root/('START.sh' if action == 'start' else 'DELETE.sh')
-    title = 'START_Igareck_AntiDPI' if action == 'start' else 'DELETE_Igareck_AntiDPI'
-    comment = 'Запуск стратегий AntiDPI Igareck + Zapret2' if action == 'start' else 'Удаление этой установки Igareck + Zapret2 с подтверждением'
+    title = 'START_AntiDPI' if action == 'start' else 'DELETE_AntiDPI'
+    comment = 'Запуск стратегий AntiDPI + Zapret2' if action == 'start' else 'Удаление этой установки AntiDPI + Zapret2 с подтверждением'
     return '\n'.join([
         '[Desktop Entry]', 'Version=1.0', 'Type=Application',
         'Name='+title, 'Comment='+comment,
         'Exec=/bin/bash '+exec_argument(script),
-        'Icon='+key_string(root/('igareck-zapret2.png' if action == 'start' else 'Igareck_Zapret2_delete.jpg')),
+        'Icon='+key_string(root/('antidpi-zapret2.png' if action == 'start' else 'AntiDPI_Zapret2_delete.jpg')),
         'Terminal=true', 'Categories=Network;', 'StartupNotify=false',
-        'X-Igareck-Install-ID='+install_id, ''
+        'X-AntiDPI-Install-ID='+install_id, ''
     ])
 
 
@@ -124,18 +124,18 @@ def native_shortcuts(root, folder, files):
     # text-based .desktop files in the editor inside ordinary folders.
     # Compile with the existing build-essential dependency, as the user.
     result = []
-    with tempfile.TemporaryDirectory(prefix='.igareck-shortcuts-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='.antidpi-shortcuts-') as temporary:
         build = Path(temporary)
         for action in ('start', 'delete'):
-            header = '#define IGARECK_HELPER '+c_string(root/'desktop_integration.py')+'\n'
-            header += '#define IGARECK_ACTION '+c_string(action)+'\n'
+            header = '#define AntiDPI_HELPER '+c_string(root/'desktop_integration.py')+'\n'
+            header += '#define AntiDPI_ACTION '+c_string(action)+'\n'
             (build/'launcher_config.h').write_text(header, encoding='ascii')
             completed = subprocess.run(['cc', '-std=c99', '-Os', '-s', '-Wall', '-Wextra',
                 '-I', str(build), str(root/'desktop_launcher.c'), '-o', str(build/'launcher')],
                 capture_output=True, text=True, timeout=20)
             if completed.returncode:
                 raise RuntimeError('Не удалось создать файл запуска: '+completed.stderr[-1500:])
-            name = ('START' if action == 'start' else 'DELETE')+'_Igareck_AntiDPI'
+            name = ('START' if action == 'start' else 'DELETE')+'_AntiDPI'
             path = folder/name
             _write_new(path, (build/'launcher').read_bytes(), 0o755, files)
             result.append(path)
@@ -151,7 +151,7 @@ def set_icons(paths, root, user):
     success = True
     for path in paths:
         try:
-            icon = root/('Igareck_Zapret2_delete.jpg' if path.name.startswith('DELETE_') else 'igareck-zapret2.png')
+            icon = root/('AntiDPI_Zapret2_delete.jpg' if path.name.startswith('DELETE_') else 'antidpi-zapret2.png')
             completed = subprocess.run(['gio', 'set', str(path), 'metadata::custom-icon',
                 icon.as_uri()], env=env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
@@ -174,14 +174,14 @@ def _create(user, root, install_id):
         folder = desktop/(FOLDER_NAME+'_'+str(suffix))
     folder.mkdir(mode=0o755)
     files = []
-    record = dict(schema='igareck.desktop.v1', user=user, folder=str(folder), files=files)
+    record = dict(schema='antidpi.desktop.v1', user=user, folder=str(folder), files=files)
     try:
         native = native_shortcuts(root, folder, files)
         for name in (INSTALL_README, STRATEGIES_README):
             _write_new(folder/name, (root/name).read_bytes(), 0o644, files)
-        menu = applications/('io.github.igareck.Zapret2-'+install_id+'.desktop')
+        menu = applications/('io.github.antidpi.Zapret2-'+install_id+'.desktop')
         _write_new(menu, launcher(root, 'start', install_id).replace(
-            'Name=START_Igareck_AntiDPI', 'Name=Igareck AntiDPI').encode('utf-8'), 0o644, files)
+            'Name=START_AntiDPI', 'Name=AntiDPI').encode('utf-8'), 0o644, files)
         record['menu'] = str(menu)
         if shutil.which('update-desktop-database'):
             subprocess.run(['update-desktop-database', str(applications)], stdout=subprocess.DEVNULL,
@@ -232,7 +232,7 @@ def create_shortcuts(user, root, install_id):
 
 
 def remove_shortcuts(record):
-    if record.get('schema') != 'igareck.desktop.v1':
+    if record.get('schema') != 'antidpi.desktop.v1':
         raise RuntimeError('Некорректный маркер ярлыков.')
     return run_as_user('remove', record['user'], record=record)
 

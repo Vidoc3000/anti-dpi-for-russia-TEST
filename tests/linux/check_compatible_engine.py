@@ -19,7 +19,7 @@ import urllib.request
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO/'linux/app'))
 from install import extract_source
-from igareck import engine_arguments, load_catalogue
+from antidpi import engine_arguments, load_catalogue
 
 
 def main():

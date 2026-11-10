@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 Igor Krauch (github.com/igareck). See the repository LICENSE.
 set -euo pipefail
-IGARECK_PACKAGING_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-IGARECK_DEFAULT_ROOT=$(CDPATH= cd -- "$IGARECK_PACKAGING_DIR/../.." && pwd)
-exec python3 - "$IGARECK_DEFAULT_ROOT" "$@" <<'PY'
+AntiDPI_PACKAGING_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AntiDPI_DEFAULT_ROOT=$(CDPATH= cd -- "$AntiDPI_PACKAGING_DIR/../.." && pwd)
+exec python3 - "$AntiDPI_DEFAULT_ROOT" "$@" <<'PY'
 import argparse
 import gzip
 import hashlib
@@ -21,7 +21,7 @@ import tempfile
 def main():
     if sys.version_info < (3, 9):
         raise RuntimeError('Для сборки нужен Python 3.9 или новее.')
-    parser = argparse.ArgumentParser(description='Сборка исходного Linux tar.gz Igareck AntiDPI.')
+    parser = argparse.ArgumentParser(description='Сборка исходного Linux tar.gz AntiDPI.')
     parser.add_argument('--repo-root', type=Path, default=Path(sys.argv[1]))
     parser.add_argument('--output-dir', type=Path)
     parser.add_argument('--version', default='1.1')
@@ -48,12 +48,12 @@ def main():
     source = platform
     if not (source / 'INSTALL.sh').is_file():
         candidates = [p for p in platform.iterdir()
-                      if p.is_dir() and re.fullmatch(r'Igareck_AntiDPI_CLI_v[0-9.]+_Linux_x64', p.name)
+                      if p.is_dir() and re.fullmatch(r'AntiDPI_CLI_v[0-9.]+_Linux_x64', p.name)
                       and (p / 'INSTALL.sh').is_file()]
         if len(candidates) != 1:
             raise RuntimeError('Поместите в linux/ содержимое папки из Linux tar.gz.')
         source = candidates[0]
-    for relative in ('INSTALL.sh', 'START.sh', 'DELETE.sh', 'app/igareck.py', 'app/install.py', 'data/catalogue.json'):
+    for relative in ('INSTALL.sh', 'START.sh', 'DELETE.sh', 'app/antidpi.py', 'app/install.py', 'data/catalogue.json'):
         if not (source / relative).is_file():
             raise RuntimeError('Не найден обязательный файл Linux: ' + relative)
     source_version = json.loads((source / 'data/release.json').read_text(encoding='utf-8'))['version']
@@ -69,7 +69,7 @@ def main():
 
     excluded_dirs = {'.git', '.svn', '.venv', 'venv', 'node_modules', '__pycache__',
                      '.pytest_cache', 'dist', 'build', 'logs', '_state', 'engine'}
-    excluded_files = {'.DS_Store', 'Thumbs.db', 'desktop.ini', '.igareck-install.json'}
+    excluded_files = {'.DS_Store', 'Thumbs.db', 'desktop.ini', '.antidpi-install.json'}
 
     def collect(directory, prefix=''):
         for child in sorted(directory.iterdir(), key=lambda p: p.name.encode('utf-8')):
@@ -115,7 +115,7 @@ def main():
     if source.is_symlink():
         raise RuntimeError('Папка исходников не должна быть ссылкой.')
 
-    package_root = 'Igareck_AntiDPI_CLI_v' + args.version + '_Linux_x64'
+    package_root = 'AntiDPI_CLI_v' + args.version + '_Linux_x64'
     archive_name = package_root + '.tar.gz'
     checksum_name = 'SHA256SUMS_Linux_v' + args.version + '.txt'
     destinations = (output / archive_name, output / checksum_name)

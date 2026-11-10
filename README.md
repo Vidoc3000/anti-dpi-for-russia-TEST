@@ -14,13 +14,13 @@
 
 <div align="center">
 
-<img src="assets/Igareck_AntiDPI_CLI_v1_UI.jpg" width="860"/>
+<img src="assets/AntiDPI_CLI_v1_UI.jpg" width="860"/>
 
 </div>
 
 ```diff
 + Программа изначально разработана с целью восстановления работы публичных подписок VPN/Tor!
-- Работоспособность Youtube, Discord, Facebook, Linkedin, X (Twitter) с Igareck AntiDPI,
+- Работоспособность Youtube, Discord, Facebook, Linkedin, X (Twitter) с AntiDPI,
 - на некоторых Golden-стратегиях без VPN - это приятный бонус, но не текущая цель проекта.
 ```
 
@@ -30,20 +30,20 @@
 
 **Если у вас не пингуется вообще ничего или всего 1-2 конфигурации из большого списка - попробуйте данное ПО.** 
 
-Для работы с VPN Черных Списков или Tor-мостов, сначала запустите **Igareck AntiDPI** и включайте каждую стратегию поочередно, затем пингуйте подписки/мосты в вашем клиенте!
+Для работы с VPN Черных Списков или Tor-мостов, сначала запустите **AntiDPI** и включайте каждую стратегию поочередно, затем пингуйте подписки/мосты в вашем клиенте!
 На одних стратегиях может быть больше живых VPN-конфигураций, на других меньше. Выяснить, какие работают лучше, может только сам пользователь методом подбора. Начинайте с Golden-стратегий.
 
-Tor-мосты после запуска **Igareck AntiDPI**, например, подключаются быстрее, а Obfs4-мосты, в частности, работают там, где не работали раньше.
+Tor-мосты после запуска **AntiDPI**, например, подключаются быстрее, а Obfs4-мосты, в частности, работают там, где не работали раньше.
 
-### **`Как понять, что Igareck AntiDPI работает?`**
+### **`Как понять, что AntiDPI работает?`**
 
-1. Сначала пингуйте подписки ЧС **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** без **Igareck AntiDPI** из открытой сети.
-2. Затем включите **Igareck AntiDPI** и одну из стратегий, начиная с **Golden**.
+1. Сначала пингуйте подписки ЧС **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** без **AntiDPI** из открытой сети.
+2. Затем включите **AntiDPI** и одну из стратегий, начиная с **Golden**.
 3. Включите проверку задержки в VPN-клиенте еще раз.
 4. Сравните прирост числа живых конфигураций.
 5. **Профит!**
 
-### **`С какими VPN/Tor-клиентами совместим Igareck AntiDPI?`**
+### **`С какими VPN/Tor-клиентами совместим AntiDPI?`**
 
 **С любыми:** **[Karing](https://github.com/KaringX/karing/releases), [v2rayN](https://github.com/2dust/v2rayN/releases), [Throne](https://github.com/throneproj/Throne/releases), [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev/releases), [OnionHop V3](https://github.com/center2055/OnionHop/releases), [OnionFruit](https://github.com/dragonfruitnetwork/onionfruit/releases/latest)** и прочими. 
 
@@ -59,11 +59,11 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 Стратегии Golden могут лучше обходить фильтры ТСПУ и для VPN/Tor/YouTube потенциально сильнее, чем Silver.
 
-### **`Через Igareck AntiDPI программу можно смотреть YouTube на ПК без использования VPN?`**
+### **`Через AntiDPI программу можно смотреть YouTube на ПК без использования VPN?`**
 
 Да, для работы с YouTube запустите автоматическую проверку стратегий на доступ к YouTube в меню, где будет выбор между вводом `номера стратегии` и вводом слова `YouTube`. Стратегии, давшие ответ `PASS`, должны открыть YouTube в браузере без VPN.
 
-**Первоочередная цель `Igareck AntiDPI` - это восстановление работы VPN/Tor, а прямой доступ YouTube - это приятный бонусный эффект.** На некоторых Golden-стратегиях могут также открываться Discord/Linkedin/Facebook/Threads/X.com и частично сайт Tor Project.
+**Первоочередная цель `AntiDPI` - это восстановление работы VPN/Tor, а прямой доступ YouTube - это приятный бонусный эффект.** На некоторых Golden-стратегиях могут также открываться Discord/Linkedin/Facebook/Threads/X.com и частично сайт Tor Project.
 
 ### **`Означает ли успешность проверки Youtube, что стратегия пингует/заводит больше VPN-конфигураций в подписках?`**
    
@@ -75,7 +75,7 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 Программа разработана на базе движка [Zapret2](https://github.com/bol-van/zapret2) разработчика [Bol-Van](https://github.com/bol-van).
 
-**Igareck AntiDPI** уже содержит готовые стратегии обхода фильтрации ТСПУ, где от пользователя требуется лишь подобрать лучшую из рабочих, а не искать с нуля.
+**AntiDPI** уже содержит готовые стратегии обхода фильтрации ТСПУ, где от пользователя требуется лишь подобрать лучшую из рабочих, а не искать с нуля.
 
 Программа со стратегиями протестирована в российских мобильных/кабельных сетях и подойдет пользователям публичных подписок VPN/Tor + Youtube в России.
 
@@ -108,25 +108,25 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 **[УСТАНОВКА ЧЕРЕЗ EXE](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe)**
 
-Двойным кликом запустите файл **Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe**.
+Двойным кликом запустите скачанный Windows EXE-файл.
 Подтвердите запуск от имени Администратора.
 
 **[УСТАНОВКА ЧЕРЕЗ АРХИВ ZIP](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip)**
 
-Извлеките архив **Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip**, откройте папку **Igareck_AntiDPI_CLI_v1.0_Windows_x64** и запустите **УСТАНОВКА.cmd**.
+Извлеките скачанный ZIP-архив, откройте извлечённую папку и запустите **УСТАНОВКА.cmd**.
 Подтвердите запуск от имени Администратора.
 
 ### **2. Ознакомьтесь с абзацами `ВНИМАНИЕ` и `ЗАМЕТКИ`, нажмите для продолжения клавишу Enter.**
 
 ### **3. Выберите путь установки.**
 
-Просто нажмите **Enter** для установки программы в **`C:\Igareck_AntiDPI`** по умолчанию.
+Просто нажмите **Enter** для установки программы в **`C:\AntiDPI`** по умолчанию.
 
 Либо введите другой адрес для установки.
 
 ### **4. Выберите версию движка (введите цифру).**
 
-1 — максимально совместимая версия Zapret2 с закреплённым коммитом, на базе которой проводилось тестирование последней версии **Igareck AntiDPI**.
+1 — максимально совместимая версия Zapret2 с закреплённым коммитом, на базе которой проводилось тестирование последней версии **AntiDPI**.
 
 2 — последняя версия Zapret2 официальной ветки master.
 
@@ -139,12 +139,12 @@ Tor-мосты после запуска **Igareck AntiDPI**, например, 
 
 *РАБОТА ПРОГРАММЫ НАЧИНАЕТСЯ СРАЗУ ПОСЛЕ ЗАВЕРШЕНИЯ УСТАНОВКИ.*
 
-*ЗАПУСК УСТАНОВЛЕННОЙ ПРОГРАММЫ ВОЗМОЖЕН ЧЕРЕЗ ЯРЛЫК `START_Igareck_AntiDPI` НА РАБОЧЕМ СТОЛЕ (ПАПКА `Igareck_AntiDPI`) ИЛИ ЧЕРЕЗ `ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd` В КОРНЕВОЙ ПАПКЕ.*
+*ЗАПУСК УСТАНОВЛЕННОЙ ПРОГРАММЫ ВОЗМОЖЕН ЧЕРЕЗ ЯРЛЫК `START_AntiDPI` НА РАБОЧЕМ СТОЛЕ (ПАПКА `AntiDPI`) ИЛИ ЧЕРЕЗ `ЗАПУСК_AntiDPI_Zapret2.cmd` В КОРНЕВОЙ ПАПКЕ.*
 
 ---
 ---
 
-### **7. Введите номер активного Интернет-адаптера для работы AntiDPI Стратегий.**
+### **7. Введите номер активного Интернет-адаптера для работы AntiDPI-стратегий.**
 
 Программа сама предложит существующий физический адаптер, который подключен к сети интернет.
 
@@ -223,9 +223,9 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 
 ### **11. Далее, после запуска стратегии, проверьте количество успешно работающих конфигураций в VPN-клиенте, пропинговав их и запустив (базовая рекомендация - Karing), либо проверьте загрузку Youtube в браузере без использования VPN.**
 
-Конфигурации VPN, которые работают только с программой **Igareck AntiDPI**, а без нее даже не пингуются, могут дать трафик не моментально, а в течение 5-20 секунд после подключения, так что после включения конфигурации с успешным пингом, запаситесь терпением и подождите 5-20 секунд перед тем, как трафик пойдет.
+Конфигурации VPN, которые работают только с программой **AntiDPI**, а без нее даже не пингуются, могут дать трафик не моментально, а в течение 5-20 секунд после подключения, так что после включения конфигурации с успешным пингом, запаситесь терпением и подождите 5-20 секунд перед тем, как трафик пойдет.
 
-Вместе с программой **Igareck AntiDPI** используйте **подписки Черных Списков** **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
+Вместе с программой **AntiDPI** используйте **подписки Черных Списков** **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
 
 ### **12. Опции выбора во время работы программы.**
 
@@ -253,13 +253,13 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 
 **Запуск:**
 
-1. Ярлык **START_Igareck_AntiDPI** в папке **Igareck_AntiDPI** на Рабочем Столе.
-2. **ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd** в корневой папке.
+1. Ярлык **START_AntiDPI** в папке **AntiDPI** на Рабочем Столе.
+2. **ЗАПУСК_AntiDPI_Zapret2.cmd** в корневой папке.
 
 **Удаление:**
 
-1. Ярлык **DELETE_Igareck_AntiDPI** в папке **Igareck_AntiDPI** на Рабочем столе.
-2. **УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd** в корневой папке.
+1. Ярлык **DELETE_AntiDPI** в папке **AntiDPI** на Рабочем столе.
+2. **УДАЛИТЬ_AntiDPI_Zapret2.cmd** в корневой папке.
 
 ---
 ---
@@ -280,8 +280,10 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 Откройте терминал в папке со скачанным архивом и выполните:
 
 ```bash
-tar -xzf Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
-cd Igareck_AntiDPI_CLI_v1.1_Linux_x64
+archive="$(find . -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+tar -xzf "$archive"
+folder="$(tar -tzf "$archive" | head -n1 | cut -d/ -f1)"
+cd "$folder"
 bash INSTALL.sh
 ```
 
@@ -289,13 +291,13 @@ bash INSTALL.sh
 
 ### **3. Выберите путь установки.**
 
-Просто нажмите **Enter** для установки программы в **`/opt/igareck-antidpi`** по умолчанию.
+Просто нажмите **Enter** для установки программы в **`/opt/antidpi`** по умолчанию.
 
 Либо введите другой адрес для установки.
 
 ### **4. Выберите версию движка (введите цифру).**
 
-1 — максимально совместимая версия Zapret2 с закреплённым коммитом, на базе которой проводилось тестирование последней версии **Igareck AntiDPI**;
+1 — максимально совместимая версия Zapret2 с закреплённым коммитом, на базе которой проводилось тестирование последней версии **AntiDPI**;
 
 2 — последняя версия Zapret2 официальной ветки master.
 
@@ -308,12 +310,12 @@ bash INSTALL.sh
 
 *РАБОТА ПРОГРАММЫ НАЧИНАЕТСЯ СРАЗУ ПОСЛЕ ЗАВЕРШЕНИЯ УСТАНОВКИ.*
 
-*ЗАПУСК УСТАНОВЛЕННОЙ ПРОГРАММЫ ВОЗМОЖЕН ЧЕРЕЗ ЯРЛЫК `START_Igareck_AntiDPI` НА РАБОЧЕМ СТОЛЕ (ПАПКА `Igareck_AntiDPI`), ЧЕРЕЗ МЕНЮ УСТАНОВЛЕННЫХ ПРОГРАММ, ЧЕРЕЗ `START.sh` В КОРНЕВОЙ ПАПКЕ ИЛИ ЧЕРЕЗ ГЛОБАЛЬНУЮ КОМАНДУ ТЕРМИНАЛА `igareck-antidpi`.*
+*ЗАПУСК УСТАНОВЛЕННОЙ ПРОГРАММЫ ВОЗМОЖЕН ЧЕРЕЗ ЯРЛЫК `START_AntiDPI` НА РАБОЧЕМ СТОЛЕ (ПАПКА `AntiDPI`), ЧЕРЕЗ МЕНЮ УСТАНОВЛЕННЫХ ПРОГРАММ, ЧЕРЕЗ `START.sh` В КОРНЕВОЙ ПАПКЕ ИЛИ ЧЕРЕЗ ГЛОБАЛЬНУЮ КОМАНДУ ТЕРМИНАЛА `antidpi`.*
 
 ---
 ---
 
-### **7. Введите номер активного Интернет-адаптера для работы AntiDPI Стратегий.**
+### **7. Введите номер активного Интернет-адаптера для работы AntiDPI-стратегий.**
 
 Программа сама предложит существующий физический адаптер, который подключен к сети интернет.
 
@@ -407,9 +409,9 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 
 ### **11. Далее, после запуска стратегии, проверьте количество успешно работающих конфигураций в VPN-клиенте, пропинговав их и запустив (базовая рекомендация - Karing), либо проверьте загрузку Youtube в браузере без использования VPN.**
 
-Конфигурации VPN, которые работают только с программой **Igareck AntiDPI**, а без нее даже не пингуются, могут дать трафик не моментально, а в течение 5-20 секунд после подключения, так что после включения конфигурации с успешным пингом, запаситесь терпением и подождите 5-20 секунд перед тем, как трафик пойдет.
+Конфигурации VPN, которые работают только с программой **AntiDPI**, а без нее даже не пингуются, могут дать трафик не моментально, а в течение 5-20 секунд после подключения, так что после включения конфигурации с успешным пингом, запаситесь терпением и подождите 5-20 секунд перед тем, как трафик пойдет.
 
-Вместе с программой **Igareck AntiDPI** используйте **подписки Черных Списков** **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
+Вместе с программой **AntiDPI** используйте **подписки Черных Списков** **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** или **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** или **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
 
 ### **12. Опции выбора во время работы программы.**
 
@@ -437,10 +439,10 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 
 **Запуск:**
 
-1. Ярлык **START_Igareck_AntiDPI** в папке **Igareck_AntiDPI** на Рабочем Столе.
-2. Ярлык **Igareck_AntiDPI** в главном меню программ.
+1. Ярлык **START_AntiDPI** в папке **AntiDPI** на Рабочем Столе.
+2. Ярлык **AntiDPI** в главном меню программ.
 3. Запуск файла **START.sh** в корневой папке.
-4. Глобальная команда в терминале **`igareck-antidpi`**.
+4. Глобальная команда в терминале **`antidpi`**.
 
 **Удаление:**
 
@@ -449,17 +451,17 @@ Golden для VPN/Tor/YouTube могут работать лучше, чем Sil
 Либо команда в терминале:
 
 ```bash
-sudo bash /opt/igareck-antidpi/DELETE.sh
+sudo bash /opt/antidpi/DELETE.sh
 ```
-Либо через Ярлык **DELETE_Igareck_AntiDPI** в папке **Igareck_AntiDPI** на Рабочем столе.
+Либо через Ярлык **DELETE_AntiDPI** в папке **AntiDPI** на Рабочем столе.
 
 2. **Полное удаление вместе с папкой установки.**
 
 ```bash
-sudo bash /opt/igareck-antidpi/DELETE.sh --purge
+sudo bash /opt/antidpi/DELETE.sh --purge
 ```
 
-Если установили в другую папку, замените `/opt/igareck-antidpi` своим путём.
+Если установили в другую папку, замените `/opt/antidpi` своим путём.
 
 </details>
 

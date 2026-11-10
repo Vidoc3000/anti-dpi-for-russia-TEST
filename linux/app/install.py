@@ -155,7 +155,7 @@ def installation_summary(prefix, shortcuts, global_command=None):
     print()
     print(color('Запуск:', '92')+' sudo bash '+shlex.quote(str(prefix/'START.sh')))
     if global_command:
-        print(color('Запуск из любой папки:', '92')+' igareck-antidpi')
+        print(color('Запуск из любой папки:', '92')+' antidpi')
     print(color('Стандартное удаление (не удаляет логи и измененные файлы):', '91')+
           ' sudo bash '+shlex.quote(str(prefix/'DELETE.sh')))
     print(color('Полное удаление (вместе с корневой папкой и логами):', '91')+
@@ -165,8 +165,8 @@ def installation_summary(prefix, shortcuts, global_command=None):
 
 def choose_prefix(value):
     while True:
-        answer = value or (input('Папка установки [/opt/igareck-antidpi]: ').strip() if sys.stdin.isatty() else '')
-        path = Path(answer or '/opt/igareck-antidpi').expanduser().resolve()
+        answer = value or (input('Папка установки [/opt/antidpi]: ').strip() if sys.stdin.isatty() else '')
+        path = Path(answer or '/opt/antidpi').expanduser().resolve()
         if path == Path('/') or (path.exists() and (not path.is_dir() or any(path.iterdir()))):
             print('Папка уже занята, выберите другую папку или удалите текущую!')
             if value or not sys.stdin.isatty(): raise RuntimeError('Укажите новую пустую папку через --prefix.')
@@ -186,7 +186,7 @@ def install(args):
     with ExitStack() as rollback:
         install_id=uuid.uuid4().hex
         show_intro(SOURCE, installing=True)
-        print(color('Нажмите Enter для установки в /opt/igareck-antidpi по умолчанию или укажите новую пустую папку.', '94'))
+        print(color('Нажмите Enter для установки в /opt/antidpi по умолчанию или укажите новую пустую папку.', '94'))
         prefix = choose_prefix(args.prefix)
         selection = choose_engine(args.engine)
         desktop_user = graphical_user()
@@ -232,7 +232,7 @@ def install(args):
             shutil.copytree(upstream/'lua', engine/'lua')
             license_file = upstream/'docs/LICENSE.txt'
             shutil.copy2(license_file, engine/'LICENSE_Bol-Van.txt')
-            from igareck import load_catalogue, engine_arguments
+            from antidpi import load_catalogue, engine_arguments
             for path in stage.rglob('*'):
                 if path == unpacked or unpacked in path.parents: continue
                 if path.is_dir(): path.chmod(0o755)
@@ -256,7 +256,7 @@ def install(args):
             (stage/'_state').mkdir(mode=0o700); (stage/'logs').mkdir(mode=0o700)
             for name in ('build.log','parameters-check.log','source-download.log','engine-environment.json'):
                 shutil.move(stage/name, stage/'logs'/name)
-            identity = {'schema':'igareck.zapret2.linux.install.v1','version':'1.1','prefix':str(prefix),
+            identity = {'schema':'antidpi.zapret2.linux.install.v1','version':'1.1','prefix':str(prefix),
                         'id':install_id,'upstream_commit':meta['commit'],'upstream_selection':selection,'shortcuts':None,'global_command':None,
                         'files':{p.relative_to(stage).as_posix():digest(p) for p in stage.rglob('*') if p.is_file() and p.relative_to(stage).parts[0] not in ('logs','_state','__pycache__')}}
             (stage/'installation.json').write_text(json.dumps(identity,ensure_ascii=False,indent=2)+'\n')
@@ -292,7 +292,7 @@ def install(args):
             installation_summary(prefix, identity['shortcuts'], identity['global_command'])
         finally:
             if not complete:
-                saved = Path('/var/log/igareck-zapret2')/('install_failed_'+time.strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:8])
+                saved = Path('/var/log/antidpi-zapret2')/('install_failed_'+time.strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:8])
                 try:
                     saved.mkdir(parents=True)
                     for name in ('build.log','parameters-check.log','source-download.log','engine-environment.json'):
@@ -301,7 +301,7 @@ def install(args):
                 finally:
                     shutil.rmtree(stage, ignore_errors=True)
         if not args.no_launch and sys.stdin.isatty():
-            subprocess.run([sys.executable,str(prefix/'igareck.py'),'--skip-intro'], check=False)
+            subprocess.run([sys.executable,str(prefix/'antidpi.py'),'--skip-intro'], check=False)
 
 
 def uninstall(args):
@@ -318,7 +318,7 @@ if __name__ == '__main__':
         raise KeyboardInterrupt
     signal.signal(signal.SIGHUP, terminate)
     signal.signal(signal.SIGTERM, terminate)
-    parser=argparse.ArgumentParser(description='Установка/удаление Igareck CLI Linux 1.1')
+    parser=argparse.ArgumentParser(description='Установка/удаление AntiDPI CLI Linux 1.1')
     parser.add_argument('action', nargs='?', choices=('install','uninstall'),default='install')
     parser.add_argument('--prefix')
     parser.add_argument('--engine', choices=('compatible','latest'), help='Версия официального Zapret2; без аргумента предлагается выбор')
@@ -338,7 +338,7 @@ if __name__ == '__main__':
     except Exception as error:
         from diagnostics import report_exception
         report_exception(SOURCE, error, 'installer'); exit_code = 1
-    if (os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty() and
+    if (os.environ.get('AntiDPI_TERMINAL_WINDOW') == '1' and sys.stdin.isatty() and
             (args.no_launch or exit_code not in (0,130)) and exit_code != 130):
         try:input('\nНажмите Enter, чтобы закрыть окно.\n')
         except (EOFError, KeyboardInterrupt):pass

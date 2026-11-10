@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-IGARECK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-IGARECK_BOOTSTRAP="$IGARECK_DIR/app/terminal_bootstrap.py"
-if [ ! -f "$IGARECK_BOOTSTRAP" ]; then
-    IGARECK_BOOTSTRAP="$IGARECK_DIR/terminal_bootstrap.py"
+AntiDPI_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AntiDPI_BOOTSTRAP="$AntiDPI_DIR/app/terminal_bootstrap.py"
+if [ ! -f "$AntiDPI_BOOTSTRAP" ]; then
+    AntiDPI_BOOTSTRAP="$AntiDPI_DIR/terminal_bootstrap.py"
 fi
-exec /usr/bin/python3 "$IGARECK_BOOTSTRAP" install "$@"
+exec /usr/bin/python3 "$AntiDPI_BOOTSTRAP" install "$@"

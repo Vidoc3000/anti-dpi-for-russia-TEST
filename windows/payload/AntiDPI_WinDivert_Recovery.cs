@@ -11,7 +11,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Igareck.Public10
+namespace AntiDPI.Public10
 {
     // An uninstall request must remain visible even after its files are removed.
     // The kernel event outlives directory deletion and prevents the watchdog from
@@ -23,7 +23,7 @@ namespace Igareck.Public10
         {
             string root = Path.GetDirectoryName(Path.GetFullPath(bundle).TrimEnd(Path.DirectorySeparatorChar)).ToUpperInvariant();
             using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
-                return @"Global\Igareck_AntiDPI_Stop_" + BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(root))).Replace("-", "");
+                return @"Global\AntiDPI_Stop_" + BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(root))).Replace("-", "");
         }
         public WinDivertLifecycle(string bundle)
         {
@@ -197,7 +197,7 @@ namespace Igareck.Public10
         {
             Mutex mutex = null; bool held = false;
             try {
-                mutex = new Mutex(false, @"Global\Igareck_AntiDPI_WinDivert_Recovery");
+                mutex = new Mutex(false, @"Global\AntiDPI_WinDivert_Recovery");
                 try { held = mutex.WaitOne(3000); } catch (AbandonedMutexException) { held = true; }
                 if (!held) return new WinDivertRepairResult { Reason = "Восстановление уже выполняется другим экземпляром программы." };
                 return RepairWithBackend(new NativeWinDivertBackend(bundle), log, reason, attempt);
@@ -248,10 +248,10 @@ namespace Igareck.Public10
             bundle = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
             root = Path.GetDirectoryName(bundle);
             driver = Path.Combine(bundle, "WinDivert64.sys"); dll = Path.Combine(bundle, "WinDivert.dll");
-            string marker = Path.Combine(root, ".igareck-install.json");
+            string marker = Path.Combine(root, ".antidpi-install.json");
             if (File.Exists(marker)) {
                 string json = File.ReadAllText(marker);
-                Match schema = Regex.Match(json, "\"Schema\"\\s*:\\s*\"igareck[.]zapret[.]install[.]v1\"");
+                Match schema = Regex.Match(json, "\"Schema\"\\s*:\\s*\"antidpi[.]zapret[.]install[.]v1\"");
                 Match path = Regex.Match(json, "\"InstallRoot\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
                 installation = schema.Success && path.Success && String.Equals(Path.GetFullPath(Regex.Unescape(path.Groups[1].Value)).TrimEnd('\\'), root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
             }

@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Igareck.Public10
+namespace AntiDPI.Public10
 {
     public sealed class BundleTransferResult
     {
@@ -55,7 +55,7 @@ namespace Igareck.Public10
             destination = path; estimate = Math.Max(1, expectedBytes);
             requireZip = zipOnly; maximumBytes = Math.Max(0, byteLimit);
             request = (HttpWebRequest)WebRequest.Create(url);
-            request.UserAgent = "Igareck-AntiDPI-CLI/1.0";
+            request.UserAgent = "AntiDPI-CLI/1.0";
             request.AllowAutoRedirect = true;
             request.AutomaticDecompression = DecompressionMethods.None;
             request.KeepAlive = false;
@@ -802,7 +802,7 @@ namespace Igareck.Public10
         {
             ReaderError = "";
             if (keyboardAvailable) {
-                reader = new Thread(ReadKeys); reader.IsBackground = true; reader.Name = "Igareck YouTube keys"; reader.Start();
+                reader = new Thread(ReadKeys); reader.IsBackground = true; reader.Name = "AntiDPI YouTube keys"; reader.Start();
             }
         }
         void ReadKeys()

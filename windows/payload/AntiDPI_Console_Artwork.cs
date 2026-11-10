@@ -5,7 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Igareck {
+namespace AntiDPI {
     public static class ConsoleArtworkCLI {
         [StructLayout(LayoutKind.Sequential)] public struct Coord {
             public short X,Y;public Coord(short x,short y){X=x;Y=y;}
@@ -40,7 +40,7 @@ namespace Igareck {
         [DllImport("gdi32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] static extern IntPtr CreateFontW(int height,int width,int escape,int orientation,int weight,uint italic,uint underline,uint strike,uint charset,uint precision,uint clipping,uint quality,uint pitch,string face);
         [DllImport("gdi32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] static extern uint GetGlyphIndicesW(IntPtr dc,string text,int count,[Out] ushort[] glyphs,uint flags);
         [DllImport("gdi32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] static extern int GetTextFaceW(IntPtr dc,int count,StringBuilder face);
-        const string Family="Igareck Art CLI2";
+        const string Family="AntiDPI Art CLI2";
         static FontInfo originalFont;static bool haveOriginal;
         static string addedFont,temporaryDirectory;
         static IntPtr Output {get{return GetStdHandle(-11);}}
@@ -71,9 +71,9 @@ namespace Igareck {
             if(!GetCurrentConsoleFontEx(Output,false,ref current))return false;
             originalFont=current;haveOriginal=true;
             if(!File.Exists(path))return false;
-            temporaryDirectory=Path.Combine(Path.GetTempPath(),"IgareckArtwork_"+Guid.NewGuid().ToString("N"));
+            temporaryDirectory=Path.Combine(Path.GetTempPath(),"AntiDPIArtwork_"+Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temporaryDirectory);
-            string copy=Path.Combine(temporaryDirectory,"IgareckArtCLI.ttf");File.Copy(path,copy,false);
+            string copy=Path.Combine(temporaryDirectory,"AntiDPIArtCLI.ttf");File.Copy(path,copy,false);
             if(AddFontResourceExW(copy,0,IntPtr.Zero)<1){ReleaseFont();return false;}
             addedFont=copy;RefreshFonts();
             FontInfo chosen=current;chosen.Cell=new Coord(0,(short)Math.Max(16,(int)current.Cell.Y));

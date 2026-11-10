@@ -15,7 +15,7 @@ logs/
 _state/
 /windows/**/zapret-winws/
 /linux/**/engine/
-.igareck-install.json
+.antidpi-install.json
 
 # Local configuration, editor files and temporary output.
 .env

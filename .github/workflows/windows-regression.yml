@@ -43,7 +43,7 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force
           $bundle = Join-Path $unpack ('zapret-win-bundle-' + $meta.commit + '\zapret-winws')
           if (-not (Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf)) { throw 'Pinned winws2.exe missing from verified bundle.' }
-          [IO.File]::AppendAllText($env:GITHUB_ENV, ('IGARECK_WINWS2_DIR=' + $bundle + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+          [IO.File]::AppendAllText($env:GITHUB_ENV, ('AntiDPI_WINWS2_DIR=' + $bundle + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
 
       - name: Parse scripts and run Windows regression checks
         shell: powershell

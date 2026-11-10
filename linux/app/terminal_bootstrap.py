@@ -20,8 +20,8 @@ import xml.etree.ElementTree as ET
 from app_paths import resource_path
 
 ROOT = Path(__file__).resolve().parent
-FONT = 'IgareckArtLinux16.ttf'
-READY = 'IGARECK_ARTWORK_RENDERER'
+FONT = 'AntiDPIArtLinux16.ttf'
+READY = 'AntiDPI_ARTWORK_RENDERER'
 RENDERER = 'fresh-gnome-fontconfig-v1'
 TERMINAL_UNAVAILABLE = 77  # Used only before the application command starts.
 
@@ -34,7 +34,7 @@ def program_command(role, arguments):
     if role == 'install':
         return [sys.executable, str(ROOT/'install.py'), 'install']+arguments
     if role == 'run':
-        return [sys.executable, str(ROOT/'igareck.py')]+arguments
+        return [sys.executable, str(ROOT/'antidpi.py')]+arguments
     if role == 'uninstall':
         return [sys.executable, str(ROOT/'remove_installation.py')]+arguments
     raise RuntimeError('Неизвестный режим запуска.')
@@ -145,9 +145,9 @@ def artwork_session(role, arguments):
     env = dict(os.environ, HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name)
     env.setdefault('XDG_RUNTIME_DIR', '/run/user/'+str(account.pw_uid))
     env.setdefault('DBUS_SESSION_BUS_ADDRESS', 'unix:path='+env['XDG_RUNTIME_DIR']+'/bus')
-    app_id = 'io.github.igareck.Zapret2.Terminal.t'+os.urandom(8).hex()
+    app_id = 'io.github.antidpi.Zapret2.Terminal.t'+os.urandom(8).hex()
     server = client = None
-    with tempfile.TemporaryDirectory(prefix='igareck-artwork-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='antidpi-artwork-') as temporary:
         folder = Path(temporary)
         try:
             env['FONTCONFIG_FILE'] = str(fontconfig_file(folder, env))
@@ -165,9 +165,9 @@ def artwork_session(role, arguments):
                         details = (folder/'terminal-errors.log').read_text(errors='replace')[-1500:]
                         raise RuntimeError('Не удалось открыть отдельный процесс терминала: '+details)
                     time.sleep(0.05)
-                size = env.get('IGARECK_TERMINAL_GEOMETRY', '110x40')
+                size = env.get('AntiDPI_TERMINAL_GEOMETRY', '110x40')
                 command = [client_path, '--app-id='+app_id, '--wait', '--window',
-                           '--geometry='+size, '--working-directory='+env.get('IGARECK_TERMINAL_CWD', str(ROOT)),
+                           '--geometry='+size, '--working-directory='+env.get('AntiDPI_TERMINAL_CWD', str(ROOT)),
                            '--', 'sudo', '--', sys.executable,
                            str(ROOT/'terminal_bootstrap.py'), '--inside', role]+arguments
                 client = subprocess.Popen(command, env=env)
@@ -255,12 +255,12 @@ def launch(role, arguments):
         env = dict(os.environ, HOME=user['home'], USER=user['username'], LOGNAME=user['username'])
         env.pop('PYTHONPATH', None)
         env.pop(READY, None)
-        env['IGARECK_TERMINAL_CWD'] = os.getcwd()
+        env['AntiDPI_TERMINAL_CWD'] = os.getcwd()
         try:
             size = os.get_terminal_size(sys.stdout.fileno())
-            env['IGARECK_TERMINAL_GEOMETRY'] = str(max(110, size.columns))+'x'+str(max(40, size.lines))
+            env['AntiDPI_TERMINAL_GEOMETRY'] = str(max(110, size.columns))+'x'+str(max(40, size.lines))
         except (OSError, AttributeError):
-            env['IGARECK_TERMINAL_GEOMETRY'] = '110x40'
+            env['AntiDPI_TERMINAL_GEOMETRY'] = '110x40'
         env.setdefault('XDG_RUNTIME_DIR','/run/user/'+str(user['uid']))
         env.setdefault('DBUS_SESSION_BUS_ADDRESS','unix:path='+env['XDG_RUNTIME_DIR']+'/bus')
         def lower_privileges():
@@ -293,7 +293,7 @@ def main():
             env[READY] = RENDERER
         else:
             env.pop(READY, None)
-        env['IGARECK_TERMINAL_WINDOW'] = '1'
+        env['AntiDPI_TERMINAL_WINDOW'] = '1'
         command = program_command(role, rest)
         if os.geteuid() != 0:
             raise RuntimeError('Команда программы должна запускаться через sudo.')

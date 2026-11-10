@@ -1,4 +1,4 @@
-Igareck Artwork 16
+AntiDPI Artwork 16
 Copyright Igor Krauch (github.com/igareck).
 Color-tile font generated from the supplied ascii-art-new-1147-25102026.txt.
 

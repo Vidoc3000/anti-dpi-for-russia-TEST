@@ -4,7 +4,7 @@ Copyright Igor Krauch (github.com/igareck).
 """
 from pathlib import Path
 
-FILE_LAYOUT = {'igareck.py': 'app/igareck.py',
+FILE_LAYOUT = {'antidpi.py': 'app/antidpi.py',
  'diagnostics.py': 'app/diagnostics.py',
  'dependencies.py': 'app/dependencies.py',
  'engine_environment.py': 'app/engine_environment.py',
@@ -31,14 +31,14 @@ FILE_LAYOUT = {'igareck.py': 'app/igareck.py',
  'upstream.json': 'data/upstream.json',
  'actual_tls_guard.lua': 'data/actual_tls_guard.lua',
  'lists/ips-exclude.txt': 'data/lists/ips-exclude.txt',
- 'IgareckArtLinux16.ttf': 'assets/fonts/IgareckArtLinux16.ttf',
- 'IgareckArt_OFL.txt': 'assets/fonts/IgareckArt_OFL.txt',
+ 'AntiDPIArtLinux16.ttf': 'assets/fonts/AntiDPIArtLinux16.ttf',
+ 'AntiDPIArt_OFL.txt': 'assets/fonts/AntiDPIArt_OFL.txt',
  'artwork.json': 'assets/logo/artwork.json',
  'ascii-art-new-1147-25102026.txt': 'assets/logo/ascii-art-new-1147-25102026.txt',
- 'igareck-zapret2.png': 'assets/icons/igareck-zapret2.png',
- 'Igareck_Zapret2_start.jpg': 'assets/icons/Igareck_Zapret2_start.jpg',
- 'Igareck_Zapret2_delete.jpg': 'assets/icons/Igareck_Zapret2_delete.jpg',
- 'io.github.igareck.Zapret2.metainfo.xml': 'packaging/io.github.igareck.Zapret2.metainfo.xml'}
+ 'antidpi-zapret2.png': 'assets/icons/antidpi-zapret2.png',
+ 'AntiDPI_Zapret2_start.jpg': 'assets/icons/AntiDPI_Zapret2_start.jpg',
+ 'AntiDPI_Zapret2_delete.jpg': 'assets/icons/AntiDPI_Zapret2_delete.jpg',
+ 'io.github.antidpi.Zapret2.metainfo.xml': 'packaging/io.github.antidpi.Zapret2.metainfo.xml'}
 
 
 def resource_path(root, name):

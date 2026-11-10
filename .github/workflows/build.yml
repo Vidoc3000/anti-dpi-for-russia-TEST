@@ -1,5 +1,5 @@
 name: Build release files
-run-name: Build Igareck AntiDPI CLI (${{ inputs.platform }})
+run-name: Build AntiDPI CLI (${{ inputs.platform }})
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
     name: Windows x64 ZIP and EXE
     if: inputs.platform == 'windows' || inputs.platform == 'all'
     env:
-      IGARECK_VERSION: ${{ inputs.windows_version }}
+      AntiDPI_VERSION: ${{ inputs.windows_version }}
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -52,16 +52,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Get-Content -LiteralPath '.\windows\Igareck_Manager.ps1' -Raw
+          $source = Get-Content -LiteralPath '.\windows\AntiDPI_Manager.ps1' -Raw
           if ($source -notmatch "DisplayVersion='CLI Version ([0-9.]+)'") { throw 'Windows source version not found.' }
-          if ($Matches[1] -ne $env:IGARECK_VERSION) { throw 'Windows package version does not match the sources.' }
-          & .\packaging\windows\build.ps1 -Version $env:IGARECK_VERSION
+          if ($Matches[1] -ne $env:AntiDPI_VERSION) { throw 'Windows package version does not match the sources.' }
+          & .\packaging\windows\build.ps1 -Version $env:AntiDPI_VERSION
 
       - name: Verify SHA-256
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $sums = Join-Path 'dist' ('SHA256SUMS_Windows_v' + $env:IGARECK_VERSION + '.txt')
+          $sums = Join-Path 'dist' ('SHA256SUMS_Windows_v' + $env:AntiDPI_VERSION + '.txt')
           foreach ($line in Get-Content -LiteralPath $sums) {
               if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Invalid checksum line.' }
               $expected = $Matches[1]
@@ -74,10 +74,10 @@ jobs:
       - name: Upload Windows build files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Igareck-Windows-x64-v${{ inputs.windows_version }}
+          name: AntiDPI-Windows-x64-v${{ inputs.windows_version }}
           path: |
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.zip
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.exe
+            dist/AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.zip
+            dist/AntiDPI_CLI_v${{ inputs.windows_version }}_Windows_x64.exe
             dist/SHA256SUMS_Windows_v${{ inputs.windows_version }}.txt
           if-no-files-found: error
           retention-days: 14
@@ -87,7 +87,7 @@ jobs:
     name: Linux x64 tar.gz
     if: inputs.platform == 'linux' || inputs.platform == 'all'
     env:
-      IGARECK_VERSION: ${{ inputs.linux_version }}
+      AntiDPI_VERSION: ${{ inputs.linux_version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -109,20 +109,20 @@ jobs:
 
       - name: Build Linux release files
         shell: bash
-        run: bash packaging/linux/build.sh --version "$IGARECK_VERSION"
+        run: bash packaging/linux/build.sh --version "$AntiDPI_VERSION"
 
       - name: Verify SHA-256
         shell: bash
         run: |
           cd dist
-          sha256sum -c "SHA256SUMS_Linux_v${IGARECK_VERSION}.txt"
+          sha256sum -c "SHA256SUMS_Linux_v${AntiDPI_VERSION}.txt"
 
       - name: Upload Linux build files
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Igareck-Linux-x64-v${{ inputs.linux_version }}
+          name: AntiDPI-Linux-x64-v${{ inputs.linux_version }}
           path: |
-            dist/Igareck_AntiDPI_CLI_v${{ inputs.linux_version }}_Linux_x64.tar.gz
+            dist/AntiDPI_CLI_v${{ inputs.linux_version }}_Linux_x64.tar.gz
             dist/SHA256SUMS_Linux_v${{ inputs.linux_version }}.txt
           if-no-files-found: error
           retention-days: 14

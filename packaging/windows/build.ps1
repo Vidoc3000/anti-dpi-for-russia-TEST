@@ -15,12 +15,12 @@ Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression
 
 function Resolve-PlatformSource([string]$Directory) {
-    if (Test-Path -LiteralPath (Join-Path $Directory 'Igareck_Manager.ps1') -PathType Leaf) {
+    if (Test-Path -LiteralPath (Join-Path $Directory 'AntiDPI_Manager.ps1') -PathType Leaf) {
         return [IO.Path]::GetFullPath($Directory)
     }
     $candidates = @(Get-ChildItem -LiteralPath $Directory -Directory -ErrorAction Stop | Where-Object {
-        $_.Name -match '^Igareck_AntiDPI_CLI_v[0-9.]+_Windows_x64$' -and
-        (Test-Path -LiteralPath (Join-Path $_.FullName 'Igareck_Manager.ps1') -PathType Leaf)
+        $_.Name -match '^AntiDPI_CLI_v[0-9.]+_Windows_x64$' -and
+        (Test-Path -LiteralPath (Join-Path $_.FullName 'AntiDPI_Manager.ps1') -PathType Leaf)
     })
     if ($candidates.Count -eq 1) { return $candidates[0].FullName }
     throw 'В windows/ не найден исходный комплект. Поместите туда содержимое папки из Windows ZIP.'
@@ -31,7 +31,7 @@ function Get-SourceFiles([string]$Directory,[string]$Relative = '') {
         'dist','build','logs','_state','zapret-winws')
     foreach ($item in @(Get-ChildItem -LiteralPath $Directory -Force | Sort-Object Name)) {
         if ($item.PSIsContainer -and $item.Name.ToLowerInvariant() -in $excludedDirectories) { continue }
-        if (-not $item.PSIsContainer -and ($item.Name -in @('.DS_Store','Thumbs.db','desktop.ini','.igareck-install.json') -or
+        if (-not $item.PSIsContainer -and ($item.Name -in @('.DS_Store','Thumbs.db','desktop.ini','.antidpi-install.json') -or
             $item.Name -match '\.(pyc|pyo|log|tmp)$|^SHA256SUMS|^Verification_')) { continue }
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw ('Ссылки и junction в исходном комплекте не поддерживаются: ' + $item.FullName)
@@ -104,19 +104,19 @@ function Invoke-SetupCompiler([string]$Compiler,[string]$Framework,[string]$Sour
     $infoPath = Join-Path $Workspace 'BuildInfo.g.cs'
     $info = @(
         'using System.Reflection;',
-        '[assembly: AssemblyTitle("Igareck AntiDPI CLI Setup")]',
-        '[assembly: AssemblyDescription("Igareck AntiDPI CLI for Windows 10/11 x64")]',
+        '[assembly: AssemblyTitle("AntiDPI CLI Setup")]',
+        '[assembly: AssemblyDescription("AntiDPI CLI for Windows 10/11 x64")]',
         '[assembly: AssemblyCompany("Igor Krauch (github.com/igareck)")]',
-        '[assembly: AssemblyProduct("Igareck AntiDPI CLI")]',
+        '[assembly: AssemblyProduct("AntiDPI CLI")]',
         '[assembly: AssemblyCopyright("Igor Krauch (github.com/igareck)")]',
         ('[assembly: AssemblyVersion("' + $assemblyVersion + '")]'),
         ('[assembly: AssemblyFileVersion("' + $assemblyVersion + '")]'),
         ('[assembly: AssemblyInformationalVersion("' + $ProductVersion + '")]'),
-        'namespace Igareck.Setup { internal static class BuildInfo {',
+        'namespace AntiDPI.Setup { internal static class BuildInfo {',
         ('internal const string Version = "' + $ProductVersion + '";'),
         ('internal const string PayloadRoot = "' + $RootName + '";'),
         ('internal const string PayloadSha256 = "' + $hash + '";'),
-        'internal const string ResourceName = "Igareck.Payload.Zip";',
+        'internal const string ResourceName = "AntiDPI.Payload.Zip";',
         '} }'
     ) -join "`r`n"
     [IO.File]::WriteAllText($infoPath,$info,[Text.UTF8Encoding]::new($true))
@@ -128,7 +128,7 @@ function Invoke-SetupCompiler([string]$Compiler,[string]$Framework,[string]$Sour
     $compilerArguments = @('/nologo','/target:winexe','/platform:x64','/optimize+','/checked+',
         '/utf8output','/codepage:65001','/langversion:5',('/out:' + $ExePath),
         ('/win32manifest:' + $manifestPath),('/win32icon:' + $Icon),
-        ('/resource:' + $ZipPath + ',Igareck.Payload.Zip'),
+        ('/resource:' + $ZipPath + ',AntiDPI.Payload.Zip'),
         ('/reference:' + (Join-Path $Framework 'System.dll')),
         ('/reference:' + (Join-Path $Framework 'System.Core.dll')),
         ('/reference:' + (Join-Path $Framework 'System.IO.Compression.dll')),
@@ -140,8 +140,8 @@ function Invoke-SetupCompiler([string]$Compiler,[string]$Framework,[string]$Sour
     # Load bytes, not a path: verification must not lock the generated EXE.
     $assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($ExePath))
     $resourceNames = @($assembly.GetManifestResourceNames())
-    if ($resourceNames.Count -ne 1 -or $resourceNames[0] -ne 'Igareck.Payload.Zip') { throw 'Некорректный ресурс EXE.' }
-    $resource = $assembly.GetManifestResourceStream('Igareck.Payload.Zip');$sha = [Security.Cryptography.SHA256]::Create()
+    if ($resourceNames.Count -ne 1 -or $resourceNames[0] -ne 'AntiDPI.Payload.Zip') { throw 'Некорректный ресурс EXE.' }
+    $resource = $assembly.GetManifestResourceStream('AntiDPI.Payload.Zip');$sha = [Security.Cryptography.SHA256]::Create()
     try { $actual = [BitConverter]::ToString($sha.ComputeHash($resource)).Replace('-','').ToLowerInvariant() }
     finally { $resource.Dispose();$sha.Dispose() }
     if ($actual -ne $hash) { throw 'Встроенный ZIP не совпадает с отдельным ZIP.' }
@@ -164,7 +164,7 @@ $resolvedRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 $platformDirectory = Join-Path $resolvedRoot 'windows'
 if (-not (Test-Path -LiteralPath $platformDirectory -PathType Container)) { throw ('Не найдена папка: ' + $platformDirectory) }
 $sourceRoot = Resolve-PlatformSource $platformDirectory
-foreach ($relative in @('УСТАНОВКА.cmd','payload/Igareck_Zapret2.ico','payload/Igareck_Launcher_Core_20261023_public_v1.ps1')) {
+foreach ($relative in @('УСТАНОВКА.cmd','payload/AntiDPI_Zapret2.ico','payload/AntiDPI_Launcher_Core_20261023_public_v1.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $relative) -PathType Leaf)) { throw ('Не найден обязательный файл: ' + $relative) }
 }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $resolvedRoot 'dist' }
@@ -216,7 +216,7 @@ if (-not $ZipOnly) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw ('Не найден компонент .NET Framework для сборки: ' + $required) }
     }
 }
-$rootName = 'Igareck_AntiDPI_CLI_v' + $Version + '_Windows_x64'
+$rootName = 'AntiDPI_CLI_v' + $Version + '_Windows_x64'
 $zipName = $rootName + '.zip';$exeName = $rootName + '.exe'
 $sumsName = if ($ZipOnly) { 'SHA256SUMS_Windows_ZIP_v' + $Version + '.txt' } else { 'SHA256SUMS_Windows_v' + $Version + '.txt' }
 $selectedNames = @($zipName,$sumsName)
@@ -232,7 +232,7 @@ try {
     Write-PackageZip $packageFiles $rootName $zipPath $SourceDateEpoch
     $artifacts = @($zipName)
     if (-not $ZipOnly) {
-        Invoke-SetupCompiler $compiler $framework $PSScriptRoot $workspace $zipPath (Join-Path $workspace $exeName) $rootName $Version (Join-Path $sourceRoot 'payload/Igareck_Zapret2.ico')
+        Invoke-SetupCompiler $compiler $framework $PSScriptRoot $workspace $zipPath (Join-Path $workspace $exeName) $rootName $Version (Join-Path $sourceRoot 'payload/AntiDPI_Zapret2.ico')
         $artifacts += $exeName
     }
     $lines = @($artifacts | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $workspace $_) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_ })

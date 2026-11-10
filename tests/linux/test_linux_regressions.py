@@ -18,7 +18,7 @@ import dependencies
 import desktop_integration as desktop
 import diagnostics
 import engine_environment as environment
-import igareck
+import antidpi
 import terminal_bootstrap as terminal
 import remove_installation
 import target_probe
@@ -30,32 +30,32 @@ def state(mapping='0 0 4294967295', groups='allow', caps='ffffffffffffffff'):
 
 class ScopeDiagnosticTests(unittest.TestCase):
     def test_all_ports_explains_coverage_and_potential_overhead(self):
-        text=' '.join(igareck.scope_guidance('all'))
+        text=' '.join(antidpi.scope_guidance('all'))
         self.assertIn('IPv4 TCP',text)
         self.assertIn('IPv6, UDP и QUIC/HTTP/3',text)
         self.assertIn('нагрузка/задержка',text)
         self.assertIn('динамические порты',text)
 
     def test_narrow_scope_reports_selected_port_count(self):
-        text=' '.join(igareck.scope_guidance('443,1000-1002'))
+        text=' '.join(antidpi.scope_guidance('443,1000-1002'))
         self.assertIn('всего 4 TCP-портов',text)
         self.assertIn('остальных портах не перехватываются',text)
         self.assertNotIn('охват максимальный',text)
 
     def test_queue_drop_metrics_are_explained_and_flagged(self):
         with redirect_stdout(StringIO()) as output:
-            igareck.show_queue_metrics(12,{'id_sequence':500,'kernel_drops':2,'userspace_drops':1})
+            antidpi.show_queue_metrics(12,{'id_sequence':500,'kernel_drops':2,'userspace_drops':1})
         self.assertIn('последний ID пакета 500',output.getvalue())
         self.assertIn('потери ядра 2, userspace 1',output.getvalue())
         self.assertIn('Есть потери в NFQUEUE',output.getvalue())
 
     def test_nfqueue_progress_uses_packet_sequence_changes_not_monotonic_counts(self):
-        self.assertTrue(igareck.queue_progressed({'id_sequence':0xffffffff},{'id_sequence':0}))
-        self.assertFalse(igareck.queue_progressed({'id_sequence':7},{'id_sequence':7}))
-        self.assertFalse(igareck.queue_progressed({},{}))
+        self.assertTrue(antidpi.queue_progressed({'id_sequence':0xffffffff},{'id_sequence':0}))
+        self.assertFalse(antidpi.queue_progressed({'id_sequence':7},{'id_sequence':7}))
+        self.assertFalse(antidpi.queue_progressed({},{}))
 
     def test_windows_prompt_discloses_protocol_limits_and_all_port_cost(self):
-        source=(REPO/'windows/payload/Igareck_Launcher_Core_20261023_public_v1.ps1').read_text(encoding='utf-8')
+        source=(REPO/'windows/payload/AntiDPI_Launcher_Core_20261023_public_v1.ps1').read_text(encoding='utf-8')
         self.assertIn('IPv6, UDP и QUIC/HTTP/3 не перехватываются',source)
         self.assertIn('увеличить нагрузку',source)
         self.assertIn('могут требовать all',source)
@@ -108,10 +108,10 @@ class ContainerTests(unittest.TestCase):
         self.assertNotIn('несовместима', text)
 
     def test_engine_identity_is_consistent_for_all_recipes(self):
-        with patch.object(igareck.os, 'geteuid', return_value=0), \
+        with patch.object(antidpi.os, 'geteuid', return_value=0), \
              patch.object(environment, 'snapshot', return_value=state('0 100000 65536')):
-            for row in igareck.load_catalogue()['ProfileRows']:
-                args = igareck.engine_arguments(Path('/opt/igareck-antidpi'), row)
+            for row in antidpi.load_catalogue()['ProfileRows']:
+                args = antidpi.engine_arguments(Path('/opt/antidpi'), row)
                 self.assertEqual(args.count('--uid=65534:65534'), 1)
                 self.assertEqual(args[-len(row['Args']):], row['Args'])
 
@@ -184,7 +184,7 @@ class TerminalTests(unittest.TestCase):
                 terminal.main()
             env = execute.call_args.args[2]
             self.assertNotIn(terminal.READY, env)
-            self.assertEqual(env['IGARECK_TERMINAL_WINDOW'], '1')
+            self.assertEqual(env['AntiDPI_TERMINAL_WINDOW'], '1')
 
     def test_font_setup_failure_happens_before_starting_application(self):
         with patch.object(terminal, 'find_terminal', return_value=('gnome', 'server')), \
@@ -268,8 +268,8 @@ class EndpointProbeTests(unittest.TestCase):
 
     def test_cli_target_argument_requires_explicit_tcp_port(self):
         with self.assertRaises(ValueError):
-            igareck.parse_target_argument('vpn.example.org')
-        target=igareck.parse_target_argument('vpn.example.org:2053','front.example.org')
+            antidpi.parse_target_argument('vpn.example.org')
+        target=antidpi.parse_target_argument('vpn.example.org:2053','front.example.org')
         self.assertEqual((target['host'],target['port'],target['sni']),
                          ('vpn.example.org',2053,'front.example.org'))
 
@@ -279,16 +279,16 @@ class EndpointProbeTests(unittest.TestCase):
             {'number':2,'successes':2,'success_rate':1.0,'median_seconds':.5},
             {'number':1,'successes':2,'success_rate':1.0,'median_seconds':.2},
         ]
-        self.assertEqual([row['number'] for row in igareck.rank_endpoint_scores(scores)],[1,2,3])
+        self.assertEqual([row['number'] for row in antidpi.rank_endpoint_scores(scores)],[1,2,3])
 
     def test_new_syn_data_and_window_size_profiles_are_catalogued(self):
-        data=igareck.load_catalogue()
+        data=antidpi.load_catalogue()
         self.assertEqual(data['CatalogueInfo']['ProfileCount'],492)
         self.assertEqual(data['CatalogueInfo']['FamilyCount'],24)
         rows={row['Number']:row for row in data['ProfileRows']}
         self.assertEqual(set(range(485,493)),set(rows) - set(range(1,485)))
-        self.assertEqual(igareck.recipe_range('485-492'),list(range(485,493)))
-        with self.assertRaises(ValueError): igareck.recipe_range('493')
+        self.assertEqual(antidpi.recipe_range('485-492'),list(range(485,493)))
+        with self.assertRaises(ValueError): antidpi.recipe_range('493')
         self.assertEqual(rows[485]['Args'],['--lua-desync=syndata'])
         self.assertIn('--lua-desync=syndata:blob=fake_default_tls:tls_mod=rnd,dupsid,rndsni',rows[486]['Args'])
         self.assertIn('--lua-desync=wssize:wsize=1:scale=6',rows[489]['Args'])
@@ -298,14 +298,14 @@ class EndpointProbeTests(unittest.TestCase):
                             for row in rows.values() if row['Number'] >= 485))
 
     def test_adaptive_search_chooses_one_middle_profile_per_family_then_expands(self):
-        data=igareck.load_catalogue()
+        data=antidpi.load_catalogue()
         rows={row['Number']:row for row in data['ProfileRows']}
         selected=list(rows)
-        representatives=igareck.adaptive_representatives(rows,selected)
+        representatives=antidpi.adaptive_representatives(rows,selected)
         self.assertEqual(len(representatives),len(data['FamilyRows']))
         self.assertEqual(len({rows[number]['Family'] for number in representatives}),len(data['FamilyRows']))
         family=rows[representatives[0]]['Family']
-        remaining=igareck.adaptive_family_candidates(rows,selected,family,set(representatives))
+        remaining=antidpi.adaptive_family_candidates(rows,selected,family,set(representatives))
         self.assertEqual(len(remaining),data['FamilyRows'][family-1]['Count']-1)
         self.assertTrue(all(rows[number]['Family']==family for number in remaining))
 

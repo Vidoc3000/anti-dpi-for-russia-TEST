@@ -8,7 +8,7 @@ param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
 
 $CatalogueInfo = @'
 {
-  "Schema": "igareck.tls.catalogue.v1",
+  "Schema": "antidpi.tls.catalogue.v1",
   "Slug": "Golden_Silver",
   "Version": "20261023_public_v1",
   "ProfileCount": 492,
@@ -8970,5 +8970,5 @@ $ProfileRows = @'
   }
 ]
 '@ | ConvertFrom-Json
-$IgareckLibraryOnly=$false
-. (Join-Path $PSScriptRoot 'Igareck_Launcher_Core_20261023_public_v1.ps1')
+$AntiDPILibraryOnly=$false
+. (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')

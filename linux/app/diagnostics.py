@@ -25,11 +25,11 @@ def report_exception(root, error, context='application'):
     # Standard uninstall must not recreate the directory it just removed.
     candidates = [root/'logs'] if root.is_dir() else []
     if os.geteuid() == 0:
-        candidates.append(Path('/var/log/igareck-zapret2'))
+        candidates.append(Path('/var/log/antidpi-zapret2'))
     else:
         state = os.environ.get('XDG_STATE_HOME', '')
         state = Path(state) if state and Path(state).is_absolute() else Path.home()/'.local/state'
-        candidates.append(state/'igareck-antidpi/logs')
+        candidates.append(state/'antidpi/logs')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     for folder in candidates:
         try:

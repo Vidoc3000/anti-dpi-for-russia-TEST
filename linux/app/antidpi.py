@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Igareck Strategies + Bol-Van Zapret2, CLI Linux Version 1.1.
+"""AntiDPI Strategies + Bol-Van Zapret2, CLI Linux Version 1.1.
 Copyright Igor Krauch (github.com/igareck).
 """
 from __future__ import annotations
@@ -163,7 +163,7 @@ def engine_arguments(root, row, queue=20000, scope='all'):
 
 
 def nft_rules(table, interface, entries, networks, scope='all', replace=False):
-    if not re.fullmatch(r'igareck_z2_[0-9a-f]{12}', table) or not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,15}', interface):
+    if not re.fullmatch(r'antidpi_z2_[0-9a-f]{12}', table) or not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,15}', interface):
         raise ValueError('Некорректное имя таблицы или интерфейса.')
     nets = list(ipaddress.collapse_addresses(ipaddress.IPv4Network(x) for x in networks))
     scope=parse_ports(scope)
@@ -222,7 +222,7 @@ class Session:
             raise RuntimeError('Программа уже удалена. Для удаления сохранённых логов и папки используйте DELETE.sh --purge.')
         if not re.fullmatch(r'[0-9a-f]{32}', manifest['id']) or Path(manifest['prefix']) != root:
             raise RuntimeError('Неверный маркер установки. Запустите INSTALL.sh.')
-        self.table = 'igareck_z2_' + manifest['id'][:12]
+        self.table = 'antidpi_z2_' + manifest['id'][:12]
         self.journal = root / '_state/runtime.json'
         self.config = root / '_state/adapter.json'
         self.lock = None
@@ -240,13 +240,13 @@ class Session:
     def __enter__(self):
         if os.geteuid() != 0:
             raise RuntimeError('Запустите START.sh: для NFQUEUE нужны права root.')
-        fd = os.open('/run/lock/igareck-zapret2-public.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        fd = os.open('/run/lock/antidpi-zapret2-public.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         self.lock = os.fdopen(fd, 'w')
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             self.lock.close()
-            raise RuntimeError('Уже работает другая копия Linux-оболочки Igareck. Закройте её сначала.')
+            raise RuntimeError('Уже работает другая копия Linux-оболочки AntiDPI. Закройте её сначала.')
         try:
             self.recover()
         except BaseException:
@@ -425,7 +425,7 @@ def choose_interface(session, explicit=None):
     defaults.sort(key=lambda x: x.get('metric', 0))
     recommended = next((r['dev'] for r in defaults if any(i['name'] == r.get('dev') for i in items)), items[0]['name'])
     default = next(i for i in items if i['name'] == (previous if any(x['name'] == previous for x in items) else recommended))
-    print(cli_ui.color('\nВыберите активный Интернет-адаптер для работы AntiDPI Стратегий','96'))
+    print(cli_ui.color('\nВыберите активный Интернет-адаптер для работы AntiDPI-стратегий','96'))
     width = cli_ui.columns()
     adapter_width = min(35,max(12,(width-18)//3))
     description_width = max(12,(width-adapter_width-18)//2)
@@ -625,7 +625,7 @@ def endpoint_attempt(session, ports, number, attempt, stop, target):
     app_root=getattr(session,'root',ROOT)
     queue=next((x['queue'] for x in getattr(session,'entries',[]) if x['number']==number),None)
     before=queue_snapshot(queue) if queue is not None else {}
-    with tempfile.TemporaryDirectory(prefix='igareck-endpoint-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='antidpi-endpoint-') as temporary:
         request_path=Path(temporary)/'request.json'
         atomic_json(request_path,{'interface':session.interface,'ports':ports,'timeout':12,'target':target})
         argv=[sys.executable,str(app_root/'engine_guard.py'),str(os.getpid()),sys.executable,'-B',str(app_root/'target_probe.py'),str(request_path)]
@@ -831,7 +831,7 @@ def choose_benchmark_target(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Igareck + Zapret2 CLI 1.1 — Linux Ubuntu/Debian')
+    parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.1 — Linux Ubuntu/Debian')
     parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover'))
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--strategy', type=int)
@@ -918,7 +918,7 @@ if __name__ == '__main__':
     except Exception as error:
         from diagnostics import report_exception
         report_exception(ROOT, error, 'runtime')
-        if os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
+        if os.environ.get('AntiDPI_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
             try:
                 input('\nНажмите Enter, чтобы закрыть окно.\n')
             except (EOFError, KeyboardInterrupt):
