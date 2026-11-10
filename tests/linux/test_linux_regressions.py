@@ -32,14 +32,18 @@ class ScopeDiagnosticTests(unittest.TestCase):
     def test_all_ports_explains_coverage_and_potential_overhead(self):
         text=' '.join(antidpi.scope_guidance('all'))
         self.assertIn('IPv4 TCP',text)
-        self.assertIn('IPv6, UDP и QUIC/HTTP/3',text)
+        self.assertIn('IPv4 TCP/TLS',text)
+        self.assertIn('VPN/Tor-туннель, авторизация',text)
+        quic=' '.join(antidpi.scope_guidance('443','ipv6','udp-quic'))
+        self.assertIn('IPv6 UDP/QUIC',quic)
+        self.assertIn('QUIC Initial',quic)
         self.assertIn('нагрузка/задержка',text)
-        self.assertIn('динамические порты',text)
+        self.assertIn('Динамические порты',text)
 
     def test_narrow_scope_reports_selected_port_count(self):
         text=' '.join(antidpi.scope_guidance('443,1000-1002'))
         self.assertIn('всего 4 TCP-портов',text)
-        self.assertIn('остальных портах не перехватываются',text)
+        self.assertIn('остальные порты не перехватываются',text)
         self.assertNotIn('охват максимальный',text)
 
     def test_queue_drop_metrics_are_explained_and_flagged(self):
@@ -56,9 +60,45 @@ class ScopeDiagnosticTests(unittest.TestCase):
 
     def test_windows_prompt_discloses_protocol_limits_and_all_port_cost(self):
         source=(REPO/'windows/payload/AntiDPI_Launcher_Core_20261023_public_v1.ps1').read_text(encoding='utf-8')
-        self.assertIn('IPv6, UDP и QUIC/HTTP/3 не перехватываются',source)
-        self.assertIn('увеличить нагрузку',source)
+        self.assertIn("--wf-l3=$AddressFamily",source)
+        self.assertIn("--filter-$transport=$ports",source)
+        self.assertIn('нагрузку',source)
         self.assertIn('могут требовать all',source)
+
+
+class NetworkModeTests(unittest.TestCase):
+    def test_ipv6_quic_engine_args_use_correct_family_transport_and_recipe(self):
+        row=antidpi.QUIC_PROFILES['fake2']
+        args=antidpi.engine_arguments(Path('/opt/antidpi'),row,queue=20001,scope='443',
+                                      address_family='ipv6',protocol='udp-quic')
+        self.assertIn('--bind-fix6',args)
+        self.assertIn('--filter-udp=443',args)
+        self.assertIn('--filter-l7=quic',args)
+        self.assertIn('--ipset-exclude=/opt/antidpi/lists/ips6-exclude.txt',args)
+        self.assertIn('--payload=quic_initial',args)
+        self.assertIn('--lua-desync=fake:blob=fake_default_quic:repeats=2',args)
+        self.assertNotIn('--bind-fix4',args)
+        self.assertNotIn('--filter-tcp=443',args)
+
+    def test_ipv6_quic_nft_rules_match_udp_and_ipv6_only(self):
+        rules=antidpi.nft_rules('antidpi_z2_012345abcdef','eth0',
+            [{'queue':24000,'ports':None}],['::1/128','fc00::/7','fe80::/10','ff00::/8'],
+            '443',False,'ipv6','udp-quic')
+        self.assertIn('table ip6 antidpi_z2_012345abcdef',rules)
+        self.assertIn('type ipv6_addr',rules)
+        self.assertIn('ip6 daddr @excluded',rules)
+        self.assertIn('udp dport { 443 }',rules)
+        self.assertIn('udp sport { 443 }',rules)
+        self.assertIn('queue num 24000 bypass',rules)
+        self.assertNotIn('table ip ',rules)
+        self.assertNotIn('tcp dport',rules)
+
+    def test_ipv4_tls_keeps_tcp_specific_filters(self):
+        row=antidpi.load_catalogue()['ProfileRows'][0]
+        args=antidpi.engine_arguments(Path('/opt/antidpi'),row,scope='443')
+        self.assertIn('--bind-fix4',args)
+        self.assertIn('--filter-tcp=443',args)
+        self.assertIn('--filter-l7=tls',args)
 
 
 class ContainerTests(unittest.TestCase):
@@ -237,12 +277,17 @@ class EndpointProbeTests(unittest.TestCase):
         self.assertEqual(target['sni'],target['host'])
         self.assertTrue(target['verify_certificate'])
 
+    def test_ipv6_tls_endpoint_is_accepted_with_dns_sni(self):
+        target=target_probe.validate_target({'host':'2001:db8::1','port':443,'sni':'vpn.example.org'})
+        self.assertEqual(target['host'],'2001:db8::1')
+        self.assertEqual(target['sni'],'vpn.example.org')
+        self.assertEqual(antidpi.parse_target_argument('[2001:db8::1]:443','vpn.example.org')['host'],'2001:db8::1')
+
     def test_target_validation_rejects_bad_ports_and_names(self):
         for value in (
             {'host':'vpn.example.org','port':0},
             {'host':'vpn.example.org/path','port':443},
             {'host':'vpn.example.org','port':443,'sni':'192.0.2.1'},
-            {'host':'2001:db8::1','port':443,'sni':'vpn.example.org'},
         ):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 target_probe.validate_target(value)

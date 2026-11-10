@@ -61,6 +61,20 @@ $guiProfileJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver
 $guiProfiles = @($guiProfileJson | ConvertFrom-Json)
 if ($guiProfiles.Count -eq 1 -and $guiProfiles[0] -is [array]) { $guiProfiles = @($guiProfiles[0]) }
 Assert-Equal 492 $guiProfiles.Count 'GUI JSON profile list count'
+$quicJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -ListQuicProfilesJson | Out-String)
+$quicProfiles = @($quicJson | ConvertFrom-Json)
+if ($quicProfiles.Count -eq 1 -and $quicProfiles[0] -is [array]) { $quicProfiles = @($quicProfiles[0]) }
+Assert-Equal 2 $quicProfiles.Count 'QUIC profile count'
+Assert-Contains $quicProfiles[0].Args '--payload=quic_initial' 'QUIC Initial payload'
+Assert-Contains $quicProfiles[0].Args '--lua-desync=fake:blob=fake_default_quic:repeats=2' 'QUIC fake recipe'
+Assert-True ($guiText.Contains("Set-GuiProfileItems 'tls'")) 'GUI populates TCP profile selection'
+Assert-True ($guiText.Contains("Set-GuiProfileItems ([string]`$protocolBox.SelectedItem.Value)")) 'GUI switches profiles by transport'
+Assert-True ($guiText.Contains("Label='IPv6';Value='ipv6'")) 'GUI offers IPv6'
+Assert-True ($guiText.Contains("Label='UDP + QUIC Initial (HTTP/3)';Value='quic'")) 'GUI offers UDP/QUIC'
+Assert-True ($coreText.Contains('--wf-udp-out')) 'engine builder supports outbound UDP capture'
+Assert-True ($coreText.Contains('--filter-$transport=$ports')) 'engine builder chooses TCP or UDP filter'
+Assert-True ($managerText.Contains("'ips6-exclude.txt'")) 'installer packages IPv6 exclusions'
+Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot 'windows\payload\lists\ips6-exclude.txt')) 'IPv6 exclusions are shipped'
 Assert-True ($guiText.Contains('[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)')) 'GUI requests managed controller shutdown'
 Assert-True ($guiText.Contains('[AntiDPIConsoleWindow]::Hide()')) 'GUI hides only the console, not its form'
 Assert-True ($managerText.Contains("WindowStyle='Normal';PassThru=`$true")) 'restarted GUI process starts with a visible window style'
@@ -112,6 +126,20 @@ if ($env:AntiDPI_WINWS2_DIR) {
                 throw ("Windows engine rejected strategy {0} (exit {1}): {2}" -f $profile.Number, $exitCode, ($output -join "`n"))
             }
         }
+        foreach ($profile in $quicProfiles) {
+            $row = [pscustomobject]@{ Args = @($profile.Args); Init = $null; NeedsTimestamps = $false; StockTlsPattern = $false }
+            foreach ($family in @('ipv4','ipv6')) {
+                $engineArguments = @(Get-AntiDPIArguments -Row $row -Index 1 -PortScope '443' -AddressFamily $family -Protocol 'quic')
+                $handlers = @($row.Args | Where-Object { $_.StartsWith('--lua-desync=') } |
+                    ForEach-Object { ($_ -split ':', 2)[0].Substring('--lua-desync='.Length) } | Sort-Object -Unique)
+                $luaChecks = @($handlers | ForEach-Object { "assert(type($_)=='function','missing $_')" })
+                $engineArguments += '--intercept=0'
+                $engineArguments += '--lua-init=' + ($luaChecks -join ';')
+                $output = & $enginePath @engineArguments 2>&1
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -ne 0) { throw ("Windows engine rejected QUIC strategy {0} / {1} (exit {2}): {3}" -f $profile.Number,$family,$exitCode,($output -join "`n")) }
+            }
+        }
     } finally { Pop-Location }
 }
 
@@ -137,6 +165,17 @@ Assert-Contains $singlePort '--filter-l7=tls' 'TLS application filter'
 $allPorts = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope 'all')
 Assert-Contains $allPorts '--wf-tcp-out=0-65535' 'all TCP port scope'
 Assert-Contains $allPorts '--filter-tcp=0-65535' 'engine all-port scope'
+
+$quicRow = [pscustomobject]@{ Args = @('--payload=quic_initial','--lua-desync=fake:blob=fake_default_quic:repeats=2'); Init = $null }
+$ipv6Quic = @(Get-AntiDPIArguments -Row $quicRow -Index 12 -PortScope '443' -AddressFamily 'ipv6' -Protocol 'quic')
+Assert-Contains $ipv6Quic '--wf-l3=ipv6' 'IPv6 layer filter'
+Assert-Contains $ipv6Quic '--wf-udp-out=443' 'QUIC outbound UDP scope'
+Assert-Contains $ipv6Quic '--filter-udp=443' 'QUIC UDP scope'
+Assert-Contains $ipv6Quic '--filter-l7=quic' 'QUIC application filter'
+Assert-Contains $ipv6Quic '--payload=quic_initial' 'QUIC Initial payload'
+Assert-Contains $ipv6Quic ('--ipset-exclude=' + (Join-Path $PSScriptRoot '..\\..\\windows\\payload\\lists\\ips6-exclude.txt')) 'IPv6 exclusions selected'
+Assert-True ($ipv6Quic -cnotcontains '--wf-tcp-out=443' -and $ipv6Quic -cnotcontains '--filter-tcp=443') 'QUIC does not use TCP filters'
+Assert-Throws { Get-AntiDPIArguments -Row $quicRow -Index 12 -PortScope '443' -ProbePorts @(45001) -Protocol 'quic' } 'TLS probes cannot be combined with QUIC'
 
 $probeArgs = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope '443' -ProbePorts @(45001, 45002))
 $rawFilter = $probeArgs | Where-Object { $_ -like '--wf-raw-filter=*' }

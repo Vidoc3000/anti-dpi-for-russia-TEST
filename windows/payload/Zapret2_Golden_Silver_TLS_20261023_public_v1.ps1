@@ -1,9 +1,10 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
- [string]$Scope='all',
+ [string]$Scope='all',[ValidateSet('ipv4','ipv6')][string]$AddressFamily='ipv4',
+ [ValidateSet('tls','quic')][string]$Protocol='tls',
  [string]$ZapretDirectory=$PSScriptRoot,[string]$StateDirectory='',
- [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListProfilesJson,[switch]$ListInterfaces,
+ [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListProfilesJson,[switch]$ListQuicProfilesJson,[switch]$ListInterfaces,
  [switch]$ShowRecipe,[switch]$PrintArguments,[switch]$Check,[switch]$SkipTimestampSetup)
 
 $CatalogueInfo = @'
@@ -8970,5 +8971,11 @@ $ProfileRows = @'
   }
 ]
 '@ | ConvertFrom-Json
+$QuicRows=@(
+    [pscustomobject]@{Number=493;Name='QUIC fake (2 повтора)';Family=25;Variant=1;Processing='UDP';Chain='fake_default_quic x2';Init=$null;NeedsTimestamps=$false;StockTlsPattern=$false;Args=@('--payload=quic_initial','--lua-desync=fake:blob=fake_default_quic:repeats=2')},
+    [pscustomobject]@{Number=494;Name='QUIC fake (11 повторов)';Family=25;Variant=2;Processing='UDP';Chain='fake_default_quic x11';Init=$null;NeedsTimestamps=$false;StockTlsPattern=$false;Args=@('--payload=quic_initial','--lua-desync=fake:blob=fake_default_quic:repeats=11')}
+)
+$QuicRowsByNumber=@{}
+foreach($quicRow in $QuicRows){$QuicRowsByNumber[[int]$quicRow.Number]=$quicRow}
 $AntiDPILibraryOnly=$false
 . (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')

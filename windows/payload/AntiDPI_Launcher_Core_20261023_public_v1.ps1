@@ -14,13 +14,21 @@ $script:AntiDPILifecycle=$null
 function Test-AntiDPIStopRequested {
     return ($null -ne $script:AntiDPILifecycle -and $script:AntiDPILifecycle.StopRequested)
 }
-function Get-AntiDPIArguments($Row,[int]$Index,[string]$PortScope,[int[]]$ProbePorts=@()) {
+function Get-AntiDPIArguments($Row,[int]$Index,[string]$PortScope,[int[]]$ProbePorts=@(),[string]$AddressFamily='ipv4',[string]$Protocol='tls') {
     if($Index -le 0){throw 'Укажите положительный индекс физического адаптера.'}
+    if($AddressFamily -notin @('ipv4','ipv6')){throw 'Неподдерживаемое IP-семейство.'}
+    if($Protocol -notin @('tls','quic')){throw 'Неподдерживаемый транспорт.'}
+    if($ProbePorts.Count -and $Protocol -ne 'tls'){throw 'Проверочные порты TCP/TLS нельзя использовать с QUIC.'}
     $scope=ConvertTo-AntiDPIPortScope $PortScope
     $ports=if($scope -eq 'all'){'0-65535'}else{$scope}
+    $transport=if($Protocol -eq 'quic'){'udp'}else{'tcp'}
+    $layer7=if($Protocol -eq 'quic'){'quic'}else{'tls'}
+    $wf=if($Protocol -eq 'quic'){'--wf-udp-out'}else{'--wf-tcp-out'}
     $a=[Collections.Generic.List[string]]::new()
-    foreach($s in @('--wf-l3=ipv4',"--wf-iface=$Index","--wf-tcp-out=$ports",'--wf-tcp-empty=0','--lua-init=@lua\zapret-lib.lua','--lua-init=@lua\zapret-antidpi.lua')){$a.Add($s)}
+    foreach($s in @("--wf-l3=$AddressFamily","--wf-iface=$Index","$wf=$ports",'--lua-init=@lua\zapret-lib.lua','--lua-init=@lua\zapret-antidpi.lua')){$a.Add($s)}
+    if($Protocol -eq 'tls'){$a.Add('--wf-tcp-empty=0')}
     if($ProbePorts.Count){
+
         if(@($ProbePorts | Where-Object {$_ -lt 1 -or $_ -gt 65535}).Count){throw 'Некорректные порты проверки.'}
         $outbound=(@($ProbePorts | ForEach-Object {"tcp.SrcPort == $_"}) -join ' or ')
         $inbound=(@($ProbePorts | ForEach-Object {"tcp.DstPort == $_"}) -join ' or ')
@@ -33,10 +41,10 @@ function Get-AntiDPIArguments($Row,[int]$Index,[string]$PortScope,[int[]]$ProbeP
         $a.Add('--lua-init=@'+$guard)
     }
     if($Row.Init){$a.Add('--lua-init='+$Row.Init)}
-    $a.Add("--filter-tcp=$ports");$a.Add('--filter-l7=tls')
-    # Keep address exclusions; every real TLS SNI is eligible for the recipe.
+    $a.Add("--filter-$transport=$ports");$a.Add("--filter-l7=$layer7")
+    # Keep the address-family-appropriate exclusion list.
     foreach($list in @(
-        @{Name='ips-exclude.txt';Option='--ipset-exclude='}
+        @{Name=($(if($AddressFamily -eq 'ipv6'){'ips6-exclude.txt'}else{'ips-exclude.txt'}));Option='--ipset-exclude='}
     )){
         $path=Join-Path (Join-Path $PSScriptRoot 'lists') $list.Name
         if(-not (Test-Path -LiteralPath $path -PathType Leaf)){
@@ -101,22 +109,26 @@ function Test-AntiDPIScopePort([string]$PortScope,[int]$Port) {
     }
     return $false
 }
-function Read-AntiDPITcpPorts {
+function Read-AntiDPITcpPorts([string]$Protocol='tls') {
+    $transport=if($Protocol -eq 'quic'){'UDP'}else{'TCP'}
+    $default=if($Protocol -eq 'quic'){'443'}else{'all'}
     Write-Host '----------------------'
     Write-Host ''
-    Write-Host 'Выберите порты назначения TCP, трафик которых будет перехватываться Zapret2.' -ForegroundColor Cyan
-    Write-Host 'Охват: IPv4 TCP; стратегии применяются к TLS. IPv6, UDP и QUIC/HTTP/3 не перехватываются.' -ForegroundColor Yellow
-    Write-Host 'Все/all охватывает все TCP-порты: больше соединений может попасть в обработку и увеличить нагрузку.' -ForegroundColor Yellow
-    Write-Host 'Если порт узла известен, выберите его; динамические порты подписок VPN могут требовать all.'
-    Write-Host ''
-    Write-Host 'Либо определенный номер порта, например 443, 80 и т.д.'
-    Write-Host 'Либо диапазон, например 0–1023'
-    Write-Host 'Либо введите комбинацию: несколько диапазонов и/или одиночных портов через запятую, например: 53, 80, 443, 1000-2000, 3000-4000'
-    Write-Host 'Либо введите слово "все/all" (регистр неважен), чтобы перехватывать любые TCP-порты (нужно для подписок VPN).'
+    Write-Host ("Выберите порты назначения $transport, трафик которых будет перехватываться Zapret2.") -ForegroundColor Cyan
+    if($Protocol -eq 'quic'){
+        Write-Host 'Обрабатываются только распознанные QUIC Initial (UDP/QUIC); обычный UDP не изменяется.' -ForegroundColor Yellow
+        Write-Host 'Для снижения нагрузки по умолчанию выбран порт 443. Параметр all захватывает весь UDP и повышает нагрузку.' -ForegroundColor Yellow
+    }else{
+        Write-Host 'Обрабатываются только распознанные TLS ClientHello (TCP); IPv6 выбирается отдельно.' -ForegroundColor Yellow
+        Write-Host 'Динамические порты VPN могут требовать all; широкий охват увеличивает нагрузку.' -ForegroundColor Yellow
+    }
+    Write-Host 'Можно ввести порт, диапазон или комбинацию через запятую, например 53,80,443,1000-2000.'
+    Write-Host 'Слово все/all охватывает все порты соответствующего транспорта.'
     Write-Host ''
     while($true){
-        $answer=Read-AntiDPIChoice 'Ваш выбор [Нажатие Enter активирует все порты по умолчанию]'
-        try{return (ConvertTo-AntiDPIPortScope $answer)}catch{}
+        $answer=Read-AntiDPIChoice ("Ваш выбор [Enter = $default]")
+        if(-not $answer.Trim()){$answer=$default}
+        try{return (ConvertTo-AntiDPIPortScope $answer)}catch{Write-Host $_.Exception.Message -ForegroundColor Yellow}
     }
 }
 function Split-AntiDPICell([string]$Text,[int]$Width) {
@@ -230,19 +242,22 @@ function Show-AntiDPIArtwork([string]$Path,[switch]$Prepared) {
     }catch{Write-Warning ('Логотип: '+$_.Exception.Message)}
 }
 
-function Select-AntiDPIAdapter([int]$Requested=0,[switch]$Prompt) {
+function Select-AntiDPIAdapter([int]$Requested=0,[switch]$Prompt,[string]$AddressFamily='ipv4') {
+    if($AddressFamily -notin @('ipv4','ipv6')){throw 'Неподдерживаемое IP-семейство.'}
+    $family=if($AddressFamily -eq 'ipv6'){'IPv6'}else{'IPv4'}
     $active=@(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object {$_.Status -eq 'Up'})
-    $usable=@($active | Where-Object {@(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {$_.AddressState -eq 'Preferred' -and $_.IPAddress -notlike '169.254.*' -and -not $_.SkipAsSource}).Count})
-    if(-not $usable.Count){throw 'Не найден активный физический адаптер с IPv4.'}
+    $usable=@($active | Where-Object {@(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily $family -ErrorAction SilentlyContinue | Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'IPv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})}).Count})
+    if(-not $usable.Count){throw "Не найден активный физический адаптер с $family-адресом."}
     $previous=@($usable | Where-Object ifIndex -eq $Requested)
     if($Requested -and -not $Prompt){
         if($previous.Count -ne 1){throw "Адаптер $Requested недоступен. Выберите активный физический адаптер."}
         return $previous[0]
     }
-    Write-Host 'Выберите активный Интернет-адаптер для работы AntiDPI-стратегий' -ForegroundColor Cyan
+    Write-Host ("Выберите активный Интернет-адаптер для работы AntiDPI-стратегий ($family)") -ForegroundColor Cyan
     $indices=@(foreach($a in $usable){[int]$a.ifIndex})
-    $rank=@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object {$_.InterfaceIndex -in $indices} | ForEach-Object {
-        $route=$_;$ip=Get-NetIPInterface -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+    $prefix=if($family -eq 'IPv6'){'::/0'}else{'0.0.0.0/0'}
+    $rank=@(Get-NetRoute -AddressFamily $family -DestinationPrefix $prefix -ErrorAction SilentlyContinue | Where-Object {$_.InterfaceIndex -in $indices} | ForEach-Object {
+        $route=$_;$ip=Get-NetIPInterface -InterfaceIndex $route.InterfaceIndex -AddressFamily $family -ErrorAction SilentlyContinue | Select-Object -First 1
         $metric=[int]$route.RouteMetric;if($null -ne $ip){$metric+=[int]$ip.InterfaceMetric}
         [pscustomobject]@{Index=[int]$route.InterfaceIndex;Metric=$metric}
     } | Sort-Object Metric)
@@ -445,12 +460,12 @@ function Stop-AntiDPIOwnedProcess([Diagnostics.Process]$Process) {
         }
     }
 }
-function Save-AntiDPIAdapter([string]$StateDirectory,$Adapter) {
+function Save-AntiDPIAdapter([string]$StateDirectory,$Adapter,[string]$AddressFamily='ipv4') {
     [IO.Directory]::CreateDirectory($StateDirectory)|Out-Null
     $path=Join-Path $StateDirectory 'adapter.json'
     $temp=Join-Path $StateDirectory ('adapter.'+[guid]::NewGuid().ToString('N')+'.tmp')
     try{
-        $json=@{Index=[int]$Adapter.ifIndex;Guid=[string]$Adapter.InterfaceGuid;Name=[string]$Adapter.Name}|ConvertTo-Json
+        $json=@{Index=[int]$Adapter.ifIndex;Guid=[string]$Adapter.InterfaceGuid;Name=[string]$Adapter.Name;AddressFamily=$AddressFamily}|ConvertTo-Json
         [IO.File]::WriteAllText($temp,$json,[Text.UTF8Encoding]::new($false))
         if(Test-Path -LiteralPath $path -PathType Leaf){[IO.File]::Replace($temp,$path,[NullString]::Value)}
         else{[IO.File]::Move($temp,$path)}
@@ -514,9 +529,9 @@ function Wait-AntiDPIStartupRetry([int]$Attempt,[switch]$Cancellable) {
         Start-Sleep -Milliseconds 50
     }
 }
-function Test-AntiDPIEngineConfiguration($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$LogPath,[switch]$Cancellable) {
+function Test-AntiDPIEngineConfiguration($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$LogPath,[switch]$Cancellable,[string]$AddressFamily='ipv4',[string]$Protocol='tls') {
     Initialize-AntiDPIRuntime
-    $native=@(Get-AntiDPIArguments $Row $Index $PortScope)
+    $native=@(Get-AntiDPIArguments $Row $Index $PortScope -AddressFamily $AddressFamily -Protocol $Protocol)
     $verbs=@($Row.Args|Where-Object {$_.StartsWith('--lua-desync=')}|ForEach-Object {($_.Substring(13) -split ':')[0]}|Sort-Object -Unique)
     $assertions=@($verbs|ForEach-Object {"assert(type($_)=='function','missing $_')"})
     if($Row.StockTlsPattern){$assertions+="assert(type(fake_default_tls)=='string','missing TLS pattern')"}
@@ -548,10 +563,10 @@ function Test-AntiDPIEngineConfiguration($Row,[int]$Index,[string]$PortScope,[st
         }finally{$session.Dispose()}
     }
 }
-function Start-AntiDPIEngine($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$State,[string]$LogPath,[switch]$Cancellable) {
+function Start-AntiDPIEngine($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$State,[string]$LogPath,[switch]$Cancellable,[string]$AddressFamily='ipv4',[string]$Protocol='tls') {
     Test-AntiDPINoOtherEngine
     Initialize-AntiDPIRuntime
-    $native=@(Get-AntiDPIArguments $Row $Index $PortScope)
+    $native=@(Get-AntiDPIArguments $Row $Index $PortScope -AddressFamily $AddressFamily -Protocol $Protocol)
     $joined=(@($native|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')
     $record=Join-Path $State 'owned_process.json'
     for($attempt=1;$attempt -le [AntiDPI.Public10.EngineStartupPolicy]::MaxAttempts;$attempt++){
@@ -790,7 +805,14 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
     return ($script:AntiDPIScanSignal -eq 'Stop')
 }
 
-function Show-AntiDPISelectedStrategy($Row,$Adapter,[string]$PortScope,$Family) {
+function Show-AntiDPISelectedStrategy($Row,$Adapter,[string]$PortScope,$Family,[string]$AddressFamily='ipv4',[string]$Protocol='tls') {
+    $ipLabel=if($AddressFamily -eq 'ipv6'){'IPv6'}else{'IPv4'}
+    if($Protocol -eq 'quic'){
+        Write-Host ('QUIC #{0}: {1}' -f $Row.Number,$Row.Name)
+        Write-Host ('Физический адаптер {0}, индекс {1}; {2} UDP/QUIC, порты {3}.' -f $Adapter.Name,$Adapter.ifIndex,$ipLabel,$PortScope)
+        Write-Host 'Обрабатываются только распознанные QUIC Initial; это не проверка сайта, приложения или VPN/Tor-туннеля.'
+        return
+    }
     if($null -eq $Family -or [int]$Family.Number -ne [int]$Row.Family){throw 'Не найдено семейство выбранной стратегии.'}
     $set=[regex]::Match([string]$Family.Name,'^(Golden|Silver)\s*/')
     if(-not $set.Success){throw 'Не определён набор выбранной стратегии.'}
@@ -798,13 +820,24 @@ function Show-AntiDPISelectedStrategy($Row,$Adapter,[string]$PortScope,$Family) 
         ('{0} #{1}:' -f $set.Groups[1].Value,$Row.Number),
         ('Семейство {0}: {1}; вариант {2};' -f $Row.Family,$Family.Name,$Row.Variant),
         [string]$Row.Name,
-        ('Физический адаптер {0}, индекс {1}; IPv4 TLS/TCP, порты {2}' -f $Adapter.Name,$Adapter.ifIndex,$PortScope),
-        'IPv6, UDP и QUIC/HTTP/3 не перехватываются; all охватывает все TCP-порты и может увеличить нагрузку.'
+        ('Физический адаптер {0}, индекс {1}; {2} TLS/TCP, порты {3}' -f $Adapter.Name,$Adapter.ifIndex,$ipLabel,$PortScope),
+        'Стратегия применяется к TLS ClientHello; проверка авторизации/трафика стороннего VPN или Tor-клиента не выполняется.'
     )
-    foreach($part in $parts){
-        Write-Host $part
+    foreach($part in $parts){Write-Host $part}
+}
+
+
+function Read-AntiDPIQuicSelection([int]$StoppedNumber=0) {
+    Write-Host 'UDP/QUIC-профили: 493) fake_default_quic × 2; 494) fake_default_quic × 11; 0) выход.' -ForegroundColor Cyan
+    while($true){
+        $answer=Read-AntiDPIChoice 'Номер QUIC-профиля'
+        if($answer -eq '0'){return 0}
+        if($answer -in @('493','494')){return [int]$answer}
+        if($answer -in @('1','2')){return $(if($answer -eq '1'){493}else{494})}
+        Write-Host 'Введите 493, 494, 1, 2 или 0.' -ForegroundColor Yellow
     }
 }
+
 function Invoke-AntiDPICatalogue {
     $Scope=ConvertTo-AntiDPIPortScope $Scope
     $FamilyRows=@(Get-AntiDPIFlatRows -Rows $FamilyRows)
@@ -818,20 +851,20 @@ function Invoke-AntiDPICatalogue {
     }
     if($ListGroups){Show-AntiDPIFamilies;return}
     if($ListProfilesJson){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
+    if($ListQuicProfilesJson){$QuicRows|Select-Object Number,Family,Name,Processing,Chain,Args|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
     if($ListProfiles){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain|Format-Table -AutoSize|Out-Host;return}
     if($ListInterfaces){Get-NetAdapter|Select-Object ifIndex,Name,Status,HardwareInterface|Format-Table -AutoSize|Out-Host;return}
     $interactiveSelection=-not [bool]$ProfileNumber
     $selection=$ProfileNumber
-    if(-not $selection){Show-AntiDPIFamilies;$selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
+    if(-not $selection){if($Protocol -eq 'quic'){$selection=Read-AntiDPIQuicSelection}else{Show-AntiDPIFamilies;$selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}}
     if($selection -eq 0){return}
     if($selection -ne 'Youtube'){
-        if(-not $profilesByNumber.ContainsKey([int]$selection)){throw 'В каталоге нет такого номера стратегии.'}
-        $row=$profilesByNumber[[int]$selection]
+        if($Protocol -eq 'quic'){if(-not $QuicRowsByNumber.ContainsKey([int]$selection)){throw 'Выберите QUIC-профиль 493 или 494.'};$row=$QuicRowsByNumber[[int]$selection]}else{if(-not $profilesByNumber.ContainsKey([int]$selection)){throw 'В каталоге нет такого номера стратегии.'};$row=$profilesByNumber[[int]$selection]}
         if($ShowRecipe){$row|ConvertTo-Json -Depth 40|Write-Output;return}
-        if($PrintArguments){Get-AntiDPIArguments $row $InterfaceIndex $Scope;return}
+        if($PrintArguments){Get-AntiDPIArguments $row $InterfaceIndex $Scope -AddressFamily $AddressFamily -Protocol $Protocol;return}
     }
-    $adapter=Select-AntiDPIAdapter $InterfaceIndex
-    if($InterfaceIndex -le 0){$Scope=Read-AntiDPITcpPorts}
+    $adapter=Select-AntiDPIAdapter $InterfaceIndex -AddressFamily $AddressFamily
+    if($InterfaceIndex -le 0){$Scope=Read-AntiDPITcpPorts $Protocol}
     $bundle=Find-AntiDPIBundle $ZapretDirectory
     $state=if($StateDirectory){$StateDirectory}else{Join-Path $PSScriptRoot '_state'}
     [IO.Directory]::CreateDirectory($state)|Out-Null
@@ -849,25 +882,25 @@ function Invoke-AntiDPICatalogue {
             if($selection -eq 'Youtube'){
                 if(-not (Test-AntiDPIScopePort $Scope 443)){
                     Write-Host 'Для проверки YouTube в выбранные TCP-порты должен входить порт 443. Выберите порты для проверки.' -ForegroundColor Yellow
-                    $Scope=Read-AntiDPITcpPorts
+                    $Scope=Read-AntiDPITcpPorts $Protocol
                     continue
                 }
                 $range=Read-AntiDPIRecipeRange $profilesByNumber
                 $parallelism=Read-AntiDPIYoutubeParallelism
                 $stop=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter $Scope $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $parallelism
                 if($stop){return}
-                $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount
+                $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                 if($selection -eq 0){return}
                 continue
             }
             $ProfileNumber=[int]$selection
-            $row=$profilesByNumber[$ProfileNumber]
+            $row=if($Protocol -eq 'quic'){$QuicRowsByNumber[$ProfileNumber]}else{$profilesByNumber[$ProfileNumber]}
             $nativeLog=Join-Path $logs ('winws2_{0}_p{1}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'),$ProfileNumber)
-            try{Test-AntiDPIEngineConfiguration $row ([int]$adapter.ifIndex) $Scope $bundle $nativeLog}
+            try{Test-AntiDPIEngineConfiguration $row ([int]$adapter.ifIndex) $Scope $bundle $nativeLog -AddressFamily $AddressFamily -Protocol $Protocol}
             catch [AntiDPI.Public10.WinDivertEngineException]{
                 if(Invoke-AntiDPIAutomaticRecovery $bundle $_.Exception.DriverError){continue}
                 if(-not $interactiveSelection){throw}
-                $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount
+                $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                 if($selection -eq 0){return}
                 continue
             }
@@ -875,7 +908,7 @@ function Invoke-AntiDPICatalogue {
                 if(-not $interactiveSelection){throw}
                 Write-Host ('ОШИБКА: '+$_.Exception.Message) -ForegroundColor Red
                 Write-Host 'Стратегия не запущена. Можно повторить её номер или выбрать другую.' -ForegroundColor Yellow
-                $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount
+                $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                 if($selection -eq 0){return}
                 continue
             }
@@ -884,14 +917,14 @@ function Invoke-AntiDPICatalogue {
             if($row.NeedsTimestamps -and -not $SkipTimestampSetup){Enable-AntiDPITimestamps $state}
             $session=$null;$command='Exited'
             try{
-                $session=Start-AntiDPIEngine $row ([int]$adapter.ifIndex) $Scope $bundle $state $nativeLog
+                $session=Start-AntiDPIEngine $row ([int]$adapter.ifIndex) $Scope $bundle $state $nativeLog -AddressFamily $AddressFamily -Protocol $Protocol
                 if($script:AntiDPIRecoveryAwaitingStart){
                     Write-Host ('Автовосстановление: стратегия {0} снова запущена. Передача данных через VPN оценивается отдельно.' -f $ProfileNumber) -ForegroundColor Yellow
                     [AntiDPI.Public10.WinDivertRecovery]::Log((Get-AntiDPIRecoveryLog $bundle),('ENGINE_RESTARTED profile='+$ProfileNumber+'; pid='+$session.Process.Id+'; traffic_verified=false'))
                     $script:AntiDPIRecoveryAwaitingStart=$false
                 }
                 $family=$FamilyRows | Where-Object { [int]$_.Number -eq [int]$row.Family }
-                Show-AntiDPISelectedStrategy $row $adapter $Scope $family
+                Show-AntiDPISelectedStrategy $row $adapter $Scope $family $AddressFamily $Protocol
                 Write-Host ''
                 Write-Host ('СЕЙЧАС РАБОТАЕТ СТРАТЕГИЯ {0}!' -f $row.Number) -ForegroundColor Yellow
                 Write-Host ''
@@ -914,15 +947,15 @@ function Invoke-AntiDPICatalogue {
                 'Recover'{
                     if(Invoke-AntiDPIAutomaticRecovery $bundle $script:AntiDPIRecoveryReason){continue}
                     if(-not $interactiveSelection){throw 'Движок остановлен; автоматическое восстановление не выполнено.'}
-                    $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount
+                    $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                     if($selection -eq 0){return}
                 }
                 'StartupFailed'{
-                    $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount
+                    $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                     if($selection -eq 0){return}
                 }
                 'Switch'{
-                    $selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount $ProfileNumber
+                    if($Protocol -eq 'quic'){$selection=Read-AntiDPIQuicSelection $ProfileNumber}else{$selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount $ProfileNumber}
                     if($selection -eq 0){return}
                 }
                 'Restart'{
@@ -934,9 +967,9 @@ function Invoke-AntiDPICatalogue {
                     Write-Host ''
                     Write-Host ('СТРАТЕГИЯ {0} ОСТАНОВЛЕНА!' -f $ProfileNumber) -ForegroundColor Red
                     Write-Host ''
-                    $adapter=Select-AntiDPIAdapter -Requested ([int]$adapter.ifIndex) -Prompt
-                    Save-AntiDPIAdapter $state $adapter
-                    $Scope=Read-AntiDPITcpPorts
+                    $adapter=Select-AntiDPIAdapter -Requested ([int]$adapter.ifIndex) -Prompt -AddressFamily $AddressFamily
+                    Save-AntiDPIAdapter $state $adapter -AddressFamily $AddressFamily
+                    $Scope=Read-AntiDPITcpPorts $Protocol
                 }
                 default{return}
             }

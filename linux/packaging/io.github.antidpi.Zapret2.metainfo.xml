@@ -6,7 +6,7 @@
   <summary>Public TLS strategies and terminal shell for Bol-Van Zapret2</summary>
   <summary xml:lang="ru">Публичные TLS-стратегии и терминальная оболочка для Zapret2</summary>
   <description>
-    <p>Terminal application with 492 public Golden and Silver strategies for local IPv4 TCP traffic on Ubuntu and Debian.</p>
+    <p>Terminal application with 492 TLS/TCP strategies and separate UDP/QUIC profiles for IPv4 or IPv6 on Ubuntu and Debian.</p>
     <p>The official Bol-Van engine is downloaded and built during installation. Root privileges are required for NFQUEUE processing.</p>
   </description>
   <launchable type="desktop-id">antidpi-zapret2.desktop</launchable>

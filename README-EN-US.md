@@ -151,17 +151,15 @@ On a typical system with a single physical adapter, you can simply press **Enter
 
 If your system has multiple adapters and you are unsure which one to choose, check them under `Control Panel` → `Network and Internet` → `Network and Sharing Center` → `Change adapter settings`.
 
-### **8. Choose the destination TCP ports whose traffic Zapret2 will intercept.**
+### **8. Choose destination ports for the selected TCP/TLS or UDP/QUIC mode.**
 
-`For VPN subscriptions`, select all ports, since configurations in public subscriptions can use many different ports. For a single server, its known TCP port is enough.
+The selected IP family (IPv4 or IPv6) limits capture to that family. TCP/TLS profiles process recognized TLS ClientHello packets; separate UDP/QUIC profiles process recognized QUIC Initial packets, usually on UDP port 443. QUIC mode is not generic handling for arbitrary UDP traffic.
 
-`For a Tor bridge`, you can either select all ports or enter the port specified in the bridge configuration.
+Choose a single port, a range, a comma-separated combination, or `all` / `все`. For QUIC, port 443 is the recommended default; `all` captures all UDP ports and can increase load. For TCP/TLS, `all` may be needed for VPN configurations on dynamic ports.
 
-`For YouTube in a browser without a VPN`, port 443 is sufficient for the browser traffic covered here.
+None of these modes verifies a VPN/Tor tunnel, credentials, authorization, or third-party client connectivity. YouTube and benchmark checks remain TCP/TLS-specific.
 
-You can enter a single port, a range, a comma-separated combination, or `all` / `все`.
-
-Press **Enter** with the field blank to select all ports (`all` / `все`). Example: `80,443,1000-2000`.
+Press **Enter** with the field blank to accept the mode's default. Example: `80,443,1000-2000`.
 
 ### **9. The strategy table appears.**
 
@@ -238,7 +236,7 @@ Stops the current *winws2.exe* process and starts a new one with the same strate
 
 `TO CHANGE THE NETWORK ADAPTER OR PORTS, press F3`
 
-Stops the current *winws2.exe* process and displays the available active physical IPv4 adapters, including the recommended adapter.
+Stops the current *winws2.exe* process and allows selecting a physical adapter with the chosen IPv4 or IPv6 address family.
 
 You can then choose the TCP ports whose traffic Zapret2 will intercept.
 
@@ -338,17 +336,15 @@ or
 ip -br address
 ```
 
-### **8. Choose the destination TCP ports whose traffic Zapret2 will intercept.**
+### **8. Choose destination ports for the selected TCP/TLS or UDP/QUIC mode.**
 
-`For VPN subscriptions`, select all ports, since configurations in public subscriptions can use many different ports. For a single server, its known TCP port is enough.
+The selected IP family (IPv4 or IPv6) limits capture to that family. TCP/TLS profiles process recognized TLS ClientHello packets; separate UDP/QUIC profiles process recognized QUIC Initial packets, usually on UDP port 443. QUIC mode is not generic handling for arbitrary UDP traffic.
 
-`For a Tor bridge`, you can either select all ports or enter the port specified in the bridge configuration.
+Choose a single port, a range, a comma-separated combination, or `all` / `все`. For QUIC, port 443 is the recommended default; `all` captures all UDP ports and can increase load. For TCP/TLS, `all` may be needed for VPN configurations on dynamic ports.
 
-`For YouTube in a browser without a VPN`, port 443 is sufficient for the browser traffic covered here.
+None of these modes verifies a VPN/Tor tunnel, credentials, authorization, or third-party client connectivity. YouTube and benchmark checks remain TCP/TLS-specific.
 
-You can enter a single port, a range, a comma-separated combination, or `all` / `все`.
-
-Press **Enter** with the field blank to select all ports (`all` / `все`). Example: `80,443,1000-2000`.
+Press **Enter** with the field blank to accept the mode's default. Example: `80,443,1000-2000`.
 
 ### **9. The strategy table appears.**
 
@@ -424,7 +420,7 @@ Restarts the strategy by starting a new process with the same strategy and adapt
 
 `TO CHANGE THE NETWORK ADAPTER OR PORTS, press F3 (or i)`
 
-Displays the available active physical IPv4 adapters, including the recommended adapter.
+Displays the available active physical adapters for the selected IPv4 or IPv6 family.
 
 You can then choose the TCP ports whose traffic Zapret2 will intercept.
 
