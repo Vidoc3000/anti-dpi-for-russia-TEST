@@ -87,4 +87,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
+        run: |
+          set -euo pipefail
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" | \
+            jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | .id' | head -n 1)
+          if [[ -z "$release_id" ]]; then
+            echo "No draft release found for tag $RELEASE_TAG" >&2
+            exit 1
+          fi
+          for asset in release-assets/*; do
+            curl --fail --silent --show-error --retry 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$asset" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$(basename "$asset")"
+          done
