@@ -68,7 +68,18 @@ jobs:
 
       - name: Build preview APK
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon --stacktrace assembleDebug > "$RUNNER_TEMP/gradle-build.log" 2>&1
+          result=$?
+          if [[ $result -ne 0 ]]; then
+            grep -E 'error:|What went wrong|Execution failed|Could not|FAILURE:|Failed to|failed to' "$RUNNER_TEMP/gradle-build.log" | tail -n 30 | while IFS= read -r line; do
+              echo "::error title=Gradle build diagnostic::$line"
+            done
+            tail -n 40 "$RUNNER_TEMP/gradle-build.log"
+          fi
+          exit "$result"
 
       - name: Prepare APK and checksum
         run: |
