@@ -78,11 +78,12 @@ func TestTunnelStatsReportsRoutingCounters(t *testing.T) {
 	tun.tcpAttempts.Store(3)
 	tun.tcpConnected.Store(2)
 	tun.tcpFailed.Store(1)
+	tun.tcpEndpointFailed.Store(1)
 	tun.quicDropped.Store(7)
-	tun.setLastEvent("198.51.100.1:443 connect error: timeout")
+	tun.setLastEvent("TCP 198.51.100.1:443 upstream dial error: timeout")
 
 	stats := tun.Stats()
-	for _, expected := range []string{"TCP attempts=3", "connected=2", "failed=1", "UDP/443 dropped=7", "timeout"} {
+	for _, expected := range []string{"TCP attempts=3", "connected=2", "failed=1 (endpoint=1 upstream=0)", "UDP/443 dropped=7", "timeout"} {
 		if !strings.Contains(stats, expected) {
 			t.Fatalf("Stats() = %q; missing %q", stats, expected)
 		}

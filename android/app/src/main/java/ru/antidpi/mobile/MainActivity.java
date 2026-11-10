@@ -290,7 +290,7 @@ public final class MainActivity extends Activity {
         tunnelStatsText = text("Счётчики появятся при активном VPN.", 12, TEXT, false);
         tunnelStatsText.setLineSpacing(dp(2), 1.0f);
         diagnosticsCard.addView(tunnelStatsText, margins(matchWrap(), 0, dp(5), 0, 0));
-        TextView diagnosticsHelp = text("Откройте YouTube или сайт на несколько секунд, затем вернитесь сюда. TCP attempts=0 означает, что соединения не дошли до VPN; failed растёт при ошибках выхода через SOCKS. UDP/443 dropped показывает блокируемый QUIC.", 11, MUTED, false);
+        TextView diagnosticsHelp = text("Откройте YouTube или сайт на несколько секунд, затем вернитесь сюда. TCP endpoint — ошибки рукопожатия внутри TUN/gVisor до SOCKS; upstream — ошибки соединения через локальный SOCKS/ByeDPI. UDP/443 dropped показывает блокируемый QUIC.", 11, MUTED, false);
         diagnosticsHelp.setLineSpacing(dp(2), 1.0f);
         diagnosticsCard.addView(diagnosticsHelp, margins(matchWrap(), 0, dp(5), 0, 0));
         page.addView(diagnosticsCard, margins(matchWrap(), 0, 0, 0, dp(10)));

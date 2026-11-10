@@ -67,14 +67,16 @@ type Tunnel struct {
 
 	closeOnce sync.Once
 
-	tcpAttempts  atomic.Uint64
-	tcpConnected atomic.Uint64
-	tcpFailed    atomic.Uint64
-	udpFlows     atomic.Uint64
-	udpFailed    atomic.Uint64
-	quicDropped  atomic.Uint64
-	statsMu      sync.Mutex
-	lastEvent    string
+	tcpAttempts       atomic.Uint64
+	tcpConnected      atomic.Uint64
+	tcpFailed         atomic.Uint64
+	tcpEndpointFailed atomic.Uint64
+	tcpDialFailed     atomic.Uint64
+	udpFlows          atomic.Uint64
+	udpFailed         atomic.Uint64
+	quicDropped       atomic.Uint64
+	statsMu           sync.Mutex
+	lastEvent         string
 }
 
 // Start creates the stack and begins forwarding. It returns once the stack is
@@ -183,7 +185,8 @@ func (t *Tunnel) installTCP() {
 		ep, tcperr := r.CreateEndpoint(&wq)
 		if tcperr != nil {
 			t.tcpFailed.Add(1)
-			t.setLastEvent(dst + " endpoint error: " + fmt.Sprint(tcperr))
+			t.tcpEndpointFailed.Add(1)
+			t.setLastEvent("TCP " + dst + " endpoint error: " + fmt.Sprint(tcperr))
 			r.Complete(true)
 			return
 		}
@@ -196,7 +199,8 @@ func (t *Tunnel) installTCP() {
 			up, err := t.dialer.DialContext(dialCtx, "tcp", dst)
 			if err != nil {
 				t.tcpFailed.Add(1)
-				t.setLastEvent(dst + " connect error: " + err.Error())
+				t.tcpDialFailed.Add(1)
+				t.setLastEvent("TCP " + dst + " upstream dial error: " + err.Error())
 				t.log("tcp dial " + dst + ": " + err.Error())
 				local.Close()
 				return
@@ -306,8 +310,9 @@ func (t *Tunnel) Stats() string {
 	t.statsMu.Lock()
 	last := t.lastEvent
 	t.statsMu.Unlock()
-	return fmt.Sprintf("TCP attempts=%d connected=%d failed=%d; UDP flows=%d failed=%d; UDP/443 dropped=%d; last=%s",
+	return fmt.Sprintf("TCP attempts=%d connected=%d failed=%d (endpoint=%d upstream=%d); UDP flows=%d failed=%d; UDP/443 dropped=%d; last=%s",
 		t.tcpAttempts.Load(), t.tcpConnected.Load(), t.tcpFailed.Load(),
+		t.tcpEndpointFailed.Load(), t.tcpDialFailed.Load(),
 		t.udpFlows.Load(), t.udpFailed.Load(), t.quicDropped.Load(), last)
 }
 
