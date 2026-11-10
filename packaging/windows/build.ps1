@@ -164,7 +164,7 @@ $resolvedRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 $platformDirectory = Join-Path $resolvedRoot 'windows'
 if (-not (Test-Path -LiteralPath $platformDirectory -PathType Container)) { throw ('Не найдена папка: ' + $platformDirectory) }
 $sourceRoot = Resolve-PlatformSource $platformDirectory
-foreach ($relative in @('УСТАНОВКА.cmd','payload/AntiDPI_Zapret2.ico','payload/AntiDPI_Launcher_Core_20261023_public_v1.ps1')) {
+foreach ($relative in @('УСТАНОВКА.cmd','AntiDPI_Installer.ps1','payload/AntiDPI_Zapret2.ico','payload/AntiDPI_Launcher_Core_20261023_public_v1.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $relative) -PathType Leaf)) { throw ('Не найден обязательный файл: ' + $relative) }
 }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $resolvedRoot 'dist' }

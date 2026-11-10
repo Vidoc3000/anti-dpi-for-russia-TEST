@@ -1,6 +1,8 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([ValidateSet('Install','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader)
+param(
+ [ValidateSet('Install','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
+ [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $payload=if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'payload')){Join-Path $PSScriptRoot 'payload'}else{$PSScriptRoot}
 $AntiDPILibraryOnly=$true
@@ -9,6 +11,7 @@ $AntiDPILibraryOnly=$false
 $script:AntiDPITranscriptActive=$false
 $script:AntiDPITranscriptPath=''
 $script:AntiDPIInstalledRoot=''
+$script:AntiDPIInstallerNonInteractive=[bool]$NonInteractiveInstaller
 function Test-ChildPath([string]$Root,[string]$Candidate) {
     $r=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
     return [IO.Path]::GetFullPath($Candidate).StartsWith($r,[StringComparison]::OrdinalIgnoreCase)
@@ -150,21 +153,15 @@ function Read-AntiDPIInstallDirectory {
     }
 }
 function Show-AntiDPIAntivirusNotice([switch]$Installing) {
-    Write-Host 'ВНИМАНИЕ!' -ForegroundColor Yellow
-    if($Installing){
-        Write-Host '1. Перед началом установки отключите Антивирус!' -ForegroundColor Yellow
-        Write-Host '2. После установки не забудьте сделать 3 шага: добавить всю папку с AntiDPI/Zapret2, сам файл winws2.exe и процесс winws2.exe (из папки "zapret-winws") в исключения Антивируса!' -ForegroundColor Yellow
-        Write-Host '3. Добавьте в исключения антивируса процессы, отвечающие за работу VPN-клиентов. Например, в Karing это будут процессы karing.exe и karingService.exe.' -ForegroundColor Yellow
-        Write-Host '4. Если не помогает, то полностью отключите Антивирус!' -ForegroundColor Yellow
-    }else{
-        Write-Host '1. После установки и перед началом работы программы не забудьте сделать 3 шага: добавить всю папку AntiDPI/Zapret2, сам файл winws2.exe и процесс winws2.exe (из папки "zapret-winws") в исключения Антивируса!' -ForegroundColor Yellow
-        Write-Host '2. Добавьте в исключения антивируса процессы, отвечающие за работу VPN-клиентов. Например, в Karing это будут процессы karing.exe и karingService.exe.' -ForegroundColor Yellow
-        Write-Host '3. Если не помогает, то полностью отключите Антивирус!' -ForegroundColor Yellow
-    }
+    Write-Host 'БЕЗОПАСНОСТЬ УСТАНОВКИ' -ForegroundColor Yellow
+    Write-Host 'Установщик не отключает антивирус и не добавляет широкие исключения.' -ForegroundColor Yellow
+    Write-Host 'Если защитное ПО блокирует файл, проверьте сообщение и SHA-256 релизного архива; не продолжайте при сомнении.' -ForegroundColor Yellow
+    Write-Host 'Windows Firewall получает только узкое исходящее правило для проверенного winws2.exe этой установки.' -ForegroundColor Yellow
+    if(-not $Installing){Write-Host 'Исключения для VPN-клиентов, если они вообще нужны, настраиваются отдельно по рекомендациям их разработчика.' -ForegroundColor Yellow}
     Write-Host ''
     Write-Host '----------------------'
     Write-Host ''
-    Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить и прочитать ЗАМЕТКИ'
+    if(-not $script:AntiDPIInstallerNonInteractive){Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить и прочитать ЗАМЕТКИ'}
     $notes=@(
         'ЗАМЕТКИ:',
         '1. Программа с готовыми AntiDPI стратегиями разработана специально для восстановления работоспособности VPN-конфигураций Черных Списков, Tor и YouTube.',
@@ -183,8 +180,10 @@ function Show-AntiDPIAntivirusNotice([switch]$Installing) {
     Write-Host ''
     Write-Host '----------------------'
     Write-Host ''
-    if($Installing){Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить установку'}
-    else{Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить работу'}
+    if(-not $script:AntiDPIInstallerNonInteractive){
+        if($Installing){Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить установку'}
+        else{Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить работу'}
+    }
 }
 function Wait-AntiDPIEnter([string]$Message) {
     Initialize-AntiDPIRuntime
@@ -211,6 +210,7 @@ function Test-AntiDPIAntivirusBlock($Failure) {
     return $false
 }
 function Read-AntiDPIBundleRetry($Failure) {
+    if($script:AntiDPIInstallerNonInteractive){throw ('Установка остановлена без интерактивного повтора: '+$Failure.Exception.Message)}
     Write-Host ('ОШИБКА: '+$Failure.Exception.Message) -ForegroundColor Red
     Write-Host ''
     Write-Host 'Выберите 1 или 2.'
@@ -461,10 +461,24 @@ function Get-AntiDPIBolVanLicense([string]$Destination) {
 }
 function Install-AntiDPI {
     Show-AntiDPIAntivirusNotice -Installing
-    Write-Host 'Нажмите Enter для установки программы в C:\AntiDPI по умолчанию или укажите новую пустую папку.'
-    $finalRoot=Read-AntiDPIInstallDirectory
-    $selection=Read-AntiDPIBundleSelection
-    $createShortcut=Read-AntiDPIShortcutChoice
+    if($InstallPath){
+        $rawPath=([string]$InstallPath).Trim().Trim('"').Trim()
+        try{$finalRoot=[IO.Path]::GetFullPath($rawPath)}catch{throw ('Некорректный путь установки: '+$_.Exception.Message)}
+        if(-not [IO.Path]::IsPathRooted($rawPath) -or $finalRoot -eq [IO.Path]::GetPathRoot($finalRoot)){throw 'Укажите отдельную абсолютную папку установки.'}
+        if(Test-Path -LiteralPath $finalRoot){
+            if(-not (Test-Path -LiteralPath $finalRoot -PathType Container) -or @(Get-ChildItem -LiteralPath $finalRoot -Force -ErrorAction Stop).Count){throw 'Выбранная папка уже занята. Для установки выберите новую пустую папку.'}
+        }
+    }elseif($script:AntiDPIInstallerNonInteractive){throw 'Мастер установки не передал папку назначения.'}
+    else{
+        Write-Host 'Нажмите Enter для установки программы в C:\AntiDPI по умолчанию или укажите новую пустую папку.'
+        $finalRoot=Read-AntiDPIInstallDirectory
+    }
+    if($BundleSelection){if($BundleSelection -notin @('Compatible','Latest')){throw 'Выбран неизвестный вариант Zapret2.'};$selection=$BundleSelection}
+    elseif($script:AntiDPIInstallerNonInteractive){throw 'Не выбран вариант Zapret2 в мастере установки.'}
+    else{$selection=Read-AntiDPIBundleSelection}
+    if($CreateShortcutChoice){if($CreateShortcutChoice -notin @('Yes','No')){throw 'Некорректный выбор ярлыков.'};$createShortcut=($CreateShortcutChoice -eq 'Yes')}
+    elseif($script:AntiDPIInstallerNonInteractive){throw 'Не задан выбор создания ярлыков.'}
+    else{$createShortcut=Read-AntiDPIShortcutChoice}
     Write-Host '----------------------'
     $meta=Get-Content -LiteralPath (Join-Path $payload 'Official_Bundle_20261023_public_v1.json') -Raw -Encoding UTF8|ConvertFrom-Json
     if($meta.repo -cne 'bol-van/zapret-win-bundle' -or $meta.commit -notmatch '^[0-9a-f]{40}$' -or $meta.sha256 -notmatch '^[0-9a-f]{64}$'){throw 'Некорректные сведения об официальной сборке.'}
@@ -496,6 +510,7 @@ function Install-AntiDPI {
             }catch{$needsAnother=$true;$reason=$_.Exception.Message}
             if($needsAnother){
                 Write-AntiDPIBusyDirectory $reason
+                if($script:AntiDPIInstallerNonInteractive){throw ('Папка установки стала недоступна: '+$reason)}
                 $finalRoot=Read-AntiDPIInstallDirectory;continue
             }
             $retry=$false;$retryDownload=$false
@@ -894,6 +909,10 @@ if($needsElevation -or $needsSta){
     $arguments=@('-NoLogo','-NoProfile')
     if($Action -eq 'GUI'){$arguments+='-STA'}
     $arguments+=@('-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action',$Action)
+    if($InstallPath){$arguments+=@('-InstallPath',$InstallPath)}
+    if($BundleSelection){$arguments+=@('-BundleSelection',$BundleSelection)}
+    if($CreateShortcutChoice){$arguments+=@('-CreateShortcutChoice',$CreateShortcutChoice)}
+    if($NonInteractiveInstaller){$arguments+='-NonInteractiveInstaller'}
     if($SkipHeader -or $Action -eq 'GUI'){$arguments+='-SkipHeader'}
     $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $joined=(ConvertTo-WindowsArgument $powershell)+' '+(@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ')

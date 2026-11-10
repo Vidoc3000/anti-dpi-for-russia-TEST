@@ -12,7 +12,7 @@ $script:analysisWorker=$null
 $script:analysisResultPath=''
 $script:analysisCancelFile=''
 $script:guiSettingsPath=Join-Path $state 'gui-settings.json'
-$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443'}
+$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';RememberAdapter=$true}
 $guiLog=Join-Path $state 'gui\startup.log'
 function Write-GuiLog([string]$Message) {
     try {
@@ -26,6 +26,11 @@ if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){
         if([string]$saved.AddressFamily -in @('ipv4','ipv6')){$script:guiSettings.AddressFamily=[string]$saved.AddressFamily}
         if([string]$saved.Protocol -in @('tls','quic')){$script:guiSettings.Protocol=[string]$saved.Protocol}
         if($saved.Ports){$script:guiSettings.Ports=ConvertTo-AntiDPIPortScope ([string]$saved.Ports)}
+        if($saved.PSObject.Properties['AnalysisRange']){
+            $savedRange=[regex]::Match([string]$saved.AnalysisRange,'^([0-9]+)(?:\s*-\s*([0-9]+))?$')
+            if($savedRange.Success){$a=[int]$savedRange.Groups[1].Value;$z=if($savedRange.Groups[2].Success){[int]$savedRange.Groups[2].Value}else{$a};if($a -ge 1 -and $z -ge $a -and $z -le 492){$script:guiSettings.AnalysisRange=('{0}-{1}' -f $a,$z)}}
+        }
+        if($saved.PSObject.Properties['RememberAdapter']){$script:guiSettings.RememberAdapter=[bool]$saved.RememberAdapter}
     }catch{Write-GuiLog ('Ignoring invalid GUI settings: '+$_.Exception.Message)}
 }
 Write-GuiLog 'GUI script entry'
@@ -103,7 +108,7 @@ function Start-GuiStrategy {
         $protocol=[string]$protocolBox.SelectedItem.Value
         $scope=ConvertTo-AntiDPIPortScope $portsBox.Text
         if($scope -eq 'all' -and [System.Windows.Forms.MessageBox]::Show(('Будут перехватываться все '+$(if($protocol -eq 'quic'){'UDP'}else{'TCP'})+'-порты выбранного IP-семейства. Это может заметно увеличить нагрузку. Продолжить?'),'Широкий охват',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning) -ne [System.Windows.Forms.DialogResult]::Yes){return}
-        Save-AntiDPIAdapter $state $selectedAdapter -AddressFamily $addressFamily
+        if($script:guiSettings.RememberAdapter){Save-AntiDPIAdapter $state $selectedAdapter -AddressFamily $addressFamily}
         $logs=Get-AntiDPILogDirectory $bundle
         $stamp=Get-Date -Format 'yyyyMMdd_HHmmss_fff'
         $stdout=Join-Path $logs ('gui_'+$stamp+'.out.log')
@@ -137,7 +142,7 @@ function Request-GuiStop {
 function Refresh-GuiAdapters {
     $savedGuid=''
     $config=Join-Path $state 'adapter.json'
-    if(Test-Path -LiteralPath $config){try{$savedGuid=[string](Get-Content -LiteralPath $config -Raw -Encoding UTF8|ConvertFrom-Json).Guid}catch{}}
+    if($script:guiSettings.RememberAdapter -and (Test-Path -LiteralPath $config)){try{$savedGuid=[string](Get-Content -LiteralPath $config -Raw -Encoding UTF8|ConvertFrom-Json).Guid}catch{}}
     $adapterBox.Items.Clear()
     $addressFamily=[string]$addressFamilyBox.SelectedItem.Value
     $adapters=@(Get-GuiAdapters $addressFamily)
@@ -179,41 +184,58 @@ function Set-GuiProfileItems([string]$Protocol) {
 
 
 function Set-GuiAnalysisResults([string]$Path) {
-    if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){return $false}
-    try{$data=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop}catch{throw ('Не удалось прочитать результаты анализа: '+$_.Exception.Message)}
-    $analysisGrid.Rows.Clear()
+    if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){return 0}
+    try{$data=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop}catch{return 0}
     $results=@($data.Results)
     if($results.Count -eq 1 -and $null -eq $results[0]){$results=@()}
+    $rowByNumber=@{}
+    for($i=0;$i -lt $analysisGrid.Rows.Count;$i++){
+        $row=$analysisGrid.Rows[$i]
+        if($null -ne $row.Cells['Number'].Value){$rowByNumber[[int]$row.Cells['Number'].Value]=$row}
+    }
     foreach($result in $results){
         $number=[int]$result.Number
-        $profile=@($profileRows|Where-Object {[int]$_.Number -eq $number}|Select-Object -First 1)
-        $name=if($profile.Count){[string]$profile[0].Name}else{('Стратегия '+$number)}
+        if($rowByNumber.ContainsKey($number)){$row=$rowByNumber[$number]}
+        else{
+            $profile=@($profileRows|Where-Object {[int]$_.Number -eq $number}|Select-Object -First 1)
+            $name=if($profile.Count){[string]$profile[0].Name}else{('Стратегия '+$number)}
+            $null=$analysisGrid.Rows.Add([object[]]@($number,$name,'Проверка…',''))
+            $row=$analysisGrid.Rows[$analysisGrid.Rows.Count-1]
+            $rowByNumber[$number]=$row
+        }
         $status=[string]$result.Status
         $recommendation=switch($status){
             'PASS' {'Рекомендуется для YouTube'}
             'UNSTABLE' {'Нестабильно — повторите тест'}
             'FAIL' {'Не прошла тест YouTube'}
-            default {'Техническая ошибка'}
+            'ERROR' {'Ошибка проверки'}
+            'CANCELLED' {'Остановлено до завершения'}
+            default {'Проверка выполняется'}
         }
-        $null=$analysisGrid.Rows.Add([object[]]@($number,$name,$status,$recommendation))
-        $row=$analysisGrid.Rows[$analysisGrid.Rows.Count-1]
+        $row.Cells['Status'].Value=$status
+        $row.Cells['Recommendation'].Value=$recommendation
         if($status -eq 'PASS'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(225,245,233)}
         elseif($status -eq 'UNSTABLE'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(255,247,214)}
-        elseif($status -eq 'FAIL'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(252,231,231)}
+        elseif($status -eq 'FAIL' -or $status -eq 'ERROR'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(252,231,231)}
+        elseif($status -eq 'CANCELLED'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(235,235,235)}
     }
     $passed=@($results|Where-Object {$_.Status -eq 'PASS'}).Count
     $unstable=@($results|Where-Object {$_.Status -eq 'UNSTABLE'}).Count
     $failed=@($results|Where-Object {$_.Status -eq 'FAIL'}).Count
     $errors=@($results|Where-Object {$_.Status -eq 'ERROR'}).Count
     $when=if($data.CreatedUtc){([DateTime]::Parse([string]$data.CreatedUtc).ToLocalTime().ToString('g'))}else{'—'}
-    $analysisStatusLabel.Text=('Последний тест: {0} | PASS: {1} | нестабильно: {2} | FAIL: {3} | ошибки: {4}' -f $when,$passed,$unstable,$failed,$errors)
-    return $true
+    $total=[int]$data.LastProfile-[int]$data.FirstProfile+1
+    $current=0;if($data.PSObject.Properties['CurrentProfile']){$current=[int]$data.CurrentProfile}
+    if($current -gt 0){$analysisStatusLabel.Text=('YouTube: проверено {0}/{1}; сейчас стратегия {2} | PASS: {3} | нестабильно: {4} | FAIL: {5} | ошибки: {6}' -f $results.Count,$total,$current,$passed,$unstable,$failed,$errors)}
+    else{$analysisStatusLabel.Text=('Результаты YouTube от {0} | проверено: {1}/{2} | PASS: {3} | нестабильно: {4} | FAIL: {5} | ошибки: {6}' -f $when,$results.Count,$total,$passed,$unstable,$failed,$errors)}
+    return $results.Count
 }
 function Start-GuiAnalysis {
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){return}
     try{
         if($null -eq $adapterBox.SelectedItem){throw 'Для анализа выберите доступный физический адаптер.'}
         $selectedAdapter=$adapterBox.SelectedItem
+        if($script:guiSettings.RememberAdapter){Save-AntiDPIAdapter $state $selectedAdapter -AddressFamily 'ipv4'}
         $ipv4=@(Get-NetIPAddress -InterfaceIndex ([int]$selectedAdapter.ifIndex) -AddressFamily IPv4 -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and $_.IPAddress -notlike '169.254.*' -and -not $_.SkipAsSource})
         if(-not $ipv4.Count){throw 'Анализ YouTube требует IPv4 на выбранном физическом адаптере. Выберите адаптер с IPv4.'}
         $rangeMatch=[regex]::Match($analysisRangeBox.Text.Trim(),'^([0-9]+)(?:\s*-\s*([0-9]+))?$')
@@ -221,13 +243,15 @@ function Start-GuiAnalysis {
         $first=[int]$rangeMatch.Groups[1].Value
         $last=if($rangeMatch.Groups[2].Success){[int]$rangeMatch.Groups[2].Value}else{$first}
         if($first -lt 1 -or $last -lt $first -or $last -gt 492){throw 'Диапазон стратегий должен находиться в пределах 1-492.'}
-        $parallelism=[int]$analysisParallelBox.SelectedItem
+        $parallelism=1
         $logs=Get-AntiDPILogDirectory $bundle
         $stamp=Get-Date -Format 'yyyyMMdd_HHmmss_fff'
         $resultDirectory=Join-Path $state 'gui\analysis'
         [IO.Directory]::CreateDirectory($resultDirectory)|Out-Null
         $script:analysisResultPath=Join-Path $resultDirectory ('analysis_'+$stamp+'.json')
         $script:analysisCancelFile=Join-Path $resultDirectory ('cancel_'+$stamp+'.request')
+        $analysisGrid.Rows.Clear()
+        $analysisStatusLabel.Text=('Подготовка последовательного YouTube-анализа: стратегии {0}-{1}…' -f $first,$last)
         $stdout=Join-Path $logs ('analysis_'+$stamp+'.out.log')
         $stderr=Join-Path $logs ('analysis_'+$stamp+'.err.log')
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -235,8 +259,8 @@ function Start-GuiAnalysis {
         $joined=(@($arguments|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
         $script:analysisWorker=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
         $analysisButton.Enabled=$false;$analysisCancelButton.Enabled=$true;$startButton.Enabled=$false;$settingsSaveButton.Enabled=$false
-        $analysisRangeBox.Enabled=$false;$analysisParallelBox.Enabled=$false
-        $analysisStatusLabel.Text=('Анализ YouTube по IPv4/TCP/TLS: стратегии {0}-{1}. Можно безопасно остановить.' -f $first,$last)
+        $analysisRangeBox.Enabled=$false
+        $analysisStatusLabel.Text=('Анализ YouTube по IPv4/TCP/TLS по одной стратегии: {0}-{1}. Результаты появятся по мере проверки.' -f $first,$last)
     }catch{Show-GuiError $_.Exception.Message}
 }
 function Request-GuiAnalysisCancel {
@@ -251,7 +275,13 @@ function Save-GuiSettings {
     $family=[string]$settingsFamilyBox.SelectedItem.Value
     $protocol=[string]$settingsProtocolBox.SelectedItem.Value
     $ports=ConvertTo-AntiDPIPortScope $settingsPortsBox.Text
-    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports}
+    $rangeText=$settingsAnalysisRangeBox.Text.Trim()
+    $rangeMatch=[regex]::Match($rangeText,'^([0-9]+)(?:\s*-\s*([0-9]+))?$')
+    if(-not $rangeMatch.Success){throw 'Диапазон анализа должен выглядеть как 1-45.'}
+    $rangeFirst=[int]$rangeMatch.Groups[1].Value;$rangeLast=if($rangeMatch.Groups[2].Success){[int]$rangeMatch.Groups[2].Value}else{$rangeFirst}
+    if($rangeFirst -lt 1 -or $rangeLast -lt $rangeFirst -or $rangeLast -gt 492){throw 'Диапазон анализа должен находиться в пределах 1-492.'}
+    $rangeText=('{0}-{1}' -f $rangeFirst,$rangeLast)
+    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked}
     [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null
     $temporary=$script:guiSettingsPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     try{
@@ -259,6 +289,8 @@ function Save-GuiSettings {
         if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){[IO.File]::Replace($temporary,$script:guiSettingsPath,[NullString]::Value)}else{[IO.File]::Move($temporary,$script:guiSettingsPath)}
     }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
     $script:guiSettings=$settings
+    if($script:guiSettings.RememberAdapter -and $null -ne $adapterBox.SelectedItem){Save-AntiDPIAdapter $state $adapterBox.SelectedItem -AddressFamily $family}
+    $analysisRangeBox.Text=$rangeText
     $addressFamilyBox.SelectedIndex=if($family -eq 'ipv6'){1}else{0}
     $protocolBox.SelectedIndex=if($protocol -eq 'quic'){1}else{0}
     $portsBox.Text=$ports
@@ -282,16 +314,20 @@ try{
     $form=New-Object System.Windows.Forms.Form
     $form.Text='AntiDPI — управление стратегиями'
     $form.StartPosition='CenterScreen'
-    $form.Size=[System.Drawing.Size]::new(800,700)
-    $form.MinimumSize=[System.Drawing.Size]::new(780,680)
+    $workingArea=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $form.Size=[System.Drawing.Size]::new([Math]::Min(900,[Math]::Max(640,$workingArea.Width-32)),[Math]::Min(760,[Math]::Max(520,$workingArea.Height-32)))
+    $form.MinimumSize=[System.Drawing.Size]::new([Math]::Min(640,$workingArea.Width),[Math]::Min(520,$workingArea.Height))
+    $form.AutoScaleMode=[System.Windows.Forms.AutoScaleMode]::Dpi
+    $form.Padding=[System.Windows.Forms.Padding]::new(12)
     $form.Font=[System.Drawing.Font]::new('Segoe UI',10)
     $form.BackColor=[System.Drawing.Color]::FromArgb(247,249,252)
     $form.ForeColor=[System.Drawing.Color]::FromArgb(31,41,55)
     $tabs=New-Object System.Windows.Forms.TabControl
-    $tabs.Location=[System.Drawing.Point]::new(16,16);$tabs.Size=[System.Drawing.Size]::new(752,650);$tabs.Anchor='Top,Bottom,Left,Right'
+    $tabs.Dock=[System.Windows.Forms.DockStyle]::Fill
     $strategyTab=[System.Windows.Forms.TabPage]::new('Стратегии')
     $analysisTab=[System.Windows.Forms.TabPage]::new('Анализ')
     $settingsTab=[System.Windows.Forms.TabPage]::new('Настройки')
+    foreach($page in @($strategyTab,$analysisTab,$settingsTab)){$page.AutoScroll=$true;$page.AutoScrollMinSize=[System.Drawing.Size]::new(740,600)}
     $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$settingsTab))
     $form.Controls.Add($tabs)
 
@@ -325,6 +361,7 @@ try{
     $strategyTab.Controls.Add($profileLabel)
     $profileBox=New-Object System.Windows.Forms.ComboBox
     $profileBox.DropDownStyle='DropDown';$profileBox.AutoCompleteMode='SuggestAppend';$profileBox.AutoCompleteSource='CustomSource'
+    $profileBox.MaxDropDownItems=12;$profileBox.IntegralHeight=$false;$profileBox.DropDownHeight=[Math]::Max(160,[Math]::Min(320,$workingArea.Height-220));$profileBox.DropDownWidth=[Math]::Min(700,[Math]::Max(420,$workingArea.Width-80))
     $profileBox.Location=[System.Drawing.Point]::new(30,206);$profileBox.Size=[System.Drawing.Size]::new(680,32)
     $profileBox.Anchor='Top,Left,Right';$profileBox.DisplayMember='Label'
     $profileBox.AutoCompleteCustomSource=[System.Windows.Forms.AutoCompleteStringCollection]::new()
@@ -380,15 +417,11 @@ try{
     $analysisRangeLabel.Text='Номера стратегий (например, 1-45)';$analysisRangeLabel.Location=[System.Drawing.Point]::new(22,82);$analysisRangeLabel.Size=[System.Drawing.Size]::new(300,24)
     $analysisTab.Controls.Add($analysisRangeLabel)
     $analysisRangeBox=New-Object System.Windows.Forms.TextBox
-    $analysisRangeBox.Text='1-45';$analysisRangeBox.Location=[System.Drawing.Point]::new(22,110);$analysisRangeBox.Size=[System.Drawing.Size]::new(180,30)
+    $analysisRangeBox.Text=[string]$script:guiSettings.AnalysisRange;$analysisRangeBox.Location=[System.Drawing.Point]::new(22,110);$analysisRangeBox.Size=[System.Drawing.Size]::new(180,30)
     $analysisTab.Controls.Add($analysisRangeBox)
     $analysisParallelLabel=New-Object System.Windows.Forms.Label
-    $analysisParallelLabel.Text='Одновременно';$analysisParallelLabel.Location=[System.Drawing.Point]::new(222,82);$analysisParallelLabel.Size=[System.Drawing.Size]::new(140,24)
+    $analysisParallelLabel.Text='Проверка по одной';$analysisParallelLabel.Location=[System.Drawing.Point]::new(222,110);$analysisParallelLabel.Size=[System.Drawing.Size]::new(120,30)
     $analysisTab.Controls.Add($analysisParallelLabel)
-    $analysisParallelBox=New-Object System.Windows.Forms.ComboBox
-    $analysisParallelBox.DropDownStyle='DropDownList';$analysisParallelBox.Location=[System.Drawing.Point]::new(222,110);$analysisParallelBox.Size=[System.Drawing.Size]::new(110,30)
-    foreach($n in 1..5){$null=$analysisParallelBox.Items.Add([string]$n)}
-    $analysisParallelBox.SelectedItem='2';$analysisTab.Controls.Add($analysisParallelBox)
     $analysisButton=New-Object System.Windows.Forms.Button
     $analysisButton.Text='Начать анализ';$analysisButton.Location=[System.Drawing.Point]::new(354,108);$analysisButton.Size=[System.Drawing.Size]::new(160,36);$analysisButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$analysisButton.ForeColor=[System.Drawing.Color]::White
     $analysisTab.Controls.Add($analysisButton)
@@ -439,11 +472,24 @@ try{
     $settingsPortsBox=New-Object System.Windows.Forms.TextBox
     $settingsPortsBox.Text=[string]$script:guiSettings.Ports;$settingsPortsBox.Location=[System.Drawing.Point]::new(28,206);$settingsPortsBox.Size=[System.Drawing.Size]::new(420,30)
     $settingsTab.Controls.Add($settingsPortsBox)
+    $settingsRememberAdapterCheck=New-Object System.Windows.Forms.CheckBox
+    $settingsRememberAdapterCheck.Text='Запоминать последний выбранный физический адаптер'
+    $settingsRememberAdapterCheck.Checked=[bool]$script:guiSettings.RememberAdapter
+    $settingsRememberAdapterCheck.Location=[System.Drawing.Point]::new(28,254);$settingsRememberAdapterCheck.Size=[System.Drawing.Size]::new(500,28)
+    $settingsTab.Controls.Add($settingsRememberAdapterCheck)
+    $settingsAnalysisRangeLabel=New-Object System.Windows.Forms.Label
+    $settingsAnalysisRangeLabel.Text='Диапазон YouTube-анализа по умолчанию (1-492)'
+    $settingsAnalysisRangeLabel.Location=[System.Drawing.Point]::new(28,298);$settingsAnalysisRangeLabel.Size=[System.Drawing.Size]::new(500,24)
+    $settingsTab.Controls.Add($settingsAnalysisRangeLabel)
+    $settingsAnalysisRangeBox=New-Object System.Windows.Forms.TextBox
+    $settingsAnalysisRangeBox.Text=[string]$script:guiSettings.AnalysisRange
+    $settingsAnalysisRangeBox.Location=[System.Drawing.Point]::new(28,326);$settingsAnalysisRangeBox.Size=[System.Drawing.Size]::new(220,30)
+    $settingsTab.Controls.Add($settingsAnalysisRangeBox)
     $settingsSaveButton=New-Object System.Windows.Forms.Button
-    $settingsSaveButton.Text='Сохранить настройки';$settingsSaveButton.Location=[System.Drawing.Point]::new(28,256);$settingsSaveButton.Size=[System.Drawing.Size]::new(210,40);$settingsSaveButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$settingsSaveButton.ForeColor=[System.Drawing.Color]::White
+    $settingsSaveButton.Text='Сохранить настройки';$settingsSaveButton.Location=[System.Drawing.Point]::new(28,382);$settingsSaveButton.Size=[System.Drawing.Size]::new(210,40);$settingsSaveButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$settingsSaveButton.ForeColor=[System.Drawing.Color]::White
     $settingsTab.Controls.Add($settingsSaveButton)
     $settingsStatusLabel=New-Object System.Windows.Forms.Label
-    $settingsStatusLabel.Text='';$settingsStatusLabel.Location=[System.Drawing.Point]::new(28,312);$settingsStatusLabel.Size=[System.Drawing.Size]::new(650,32)
+    $settingsStatusLabel.Text='';$settingsStatusLabel.Location=[System.Drawing.Point]::new(28,438);$settingsStatusLabel.Size=[System.Drawing.Size]::new(650,32)
     $settingsTab.Controls.Add($settingsStatusLabel)
     $settingsSaveButton.Add_Click({try{Save-GuiSettings}catch{Show-GuiError $_.Exception.Message}})
     $analysisButton.Add_Click({Start-GuiAnalysis})
@@ -465,7 +511,7 @@ try{
     Refresh-GuiAdapters
     Load-GuiAnalysisHistory
     $timer=New-Object System.Windows.Forms.Timer
-    $timer.Interval=800
+    $timer.Interval=350
     $timer.Add_Tick({
         if($null -ne $script:worker -and $script:worker.HasExited){
             $code=$script:worker.ExitCode
@@ -483,10 +529,13 @@ try{
                 try{$owned=Get-Content -LiteralPath $ownedRecord -Raw|ConvertFrom-Json;$engine=Get-Process -Id ([int]$owned.PID) -ErrorAction Stop;if($engine.Path -ieq [string]$owned.Exe -and $engine.StartTime.ToUniversalTime().ToString('o') -ceq [string]$owned.StartUTC){Set-GuiStatus ('Работает стратегия {0} на выбранном адаптере.' -f [int]$script:runningProfile) ([System.Drawing.Color]::DarkGreen)}}catch{}
             }
         }
+        if($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited -and (Test-Path -LiteralPath $script:analysisResultPath -PathType Leaf)){
+            try{$null=Set-GuiAnalysisResults $script:analysisResultPath}catch{}
+        }
         if($null -ne $script:analysisWorker -and $script:analysisWorker.HasExited){
             $code=$script:analysisWorker.ExitCode
             $script:analysisWorker.Dispose();$script:analysisWorker=$null
-            $analysisButton.Enabled=$true;$analysisCancelButton.Enabled=$false;$analysisRangeBox.Enabled=$true;$analysisParallelBox.Enabled=$true
+            $analysisButton.Enabled=$true;$analysisCancelButton.Enabled=$false;$analysisRangeBox.Enabled=$true
             $startButton.Enabled=$true;$settingsSaveButton.Enabled=$true
             if(Test-Path -LiteralPath $script:analysisCancelFile){Remove-Item -LiteralPath $script:analysisCancelFile -Force -ErrorAction SilentlyContinue}
             if(Test-Path -LiteralPath $script:analysisResultPath -PathType Leaf){

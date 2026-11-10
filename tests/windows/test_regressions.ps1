@@ -51,6 +51,9 @@ $managerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Mana
 $coreText = [IO.File]::ReadAllText($corePath)
 $catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'))
 $guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
+$installerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Installer.ps1'))
+$setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setup.cs'))
+$installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
 $launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
@@ -75,6 +78,16 @@ Assert-True ($guiText.Contains("::new('Стратегии')") -and $guiText.Cont
 Assert-True ($guiText.Contains('Save-GuiSettings') -and $guiText.Contains("'gui-settings.json'")) 'GUI persists settings'
 Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiText.Contains('$adapterBox.Items.Add($item)')) 'adapter dropdown displays a name-only wrapper'
 Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
+Assert-True ($guiText.Contains('MaxDropDownItems=12') -and $guiText.Contains('DropDownHeight=') -and $guiText.Contains('AutoScroll=$true')) 'GUI clips strategy list to the screen and scrolls on compact displays'
+Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
+Assert-True ($guiText.Contains('$parallelism=1') -and $guiText.Contains('Проверка по одной')) 'GUI analysis runs strategy numbers sequentially'
+Assert-True ($guiText.Contains('(?:\s*-\s*([0-9]+))?')) 'GUI accepts a single strategy number or an inclusive numeric range'
+Assert-True ($coreText.Contains('Write-AntiDPIAnalysisSnapshot') -and $coreText.Contains('Get-AntiDPIAnalysisRow')) 'YouTube results are written after each strategy without parsing diagnostic Event fields'
+Assert-True (-not $coreText.Contains('ReadAllLines($log') -and -not $coreText.Contains('$entry.Event -eq')) 'YouTube result export ignores diagnostic records without Event fields'
+Assert-True ($installerText.Contains('мастер установки') -and $installerText.Contains('-NonInteractiveInstaller') -and $installerText.Contains('Start-Process')) 'Windows uses a graphical installer with explicit options and progress logs'
+Assert-True ($setupText.Contains('AntiDPI_Installer.ps1') -and $installerCommand.Contains('AntiDPI_Installer.ps1')) 'EXE and ZIP entry points both launch the new Windows installer UI'
+Assert-True ($managerText.Contains('$NonInteractiveInstaller') -and $managerText.Contains('$CreateShortcutChoice') -and $managerText.Contains('$BundleSelection')) 'installer backend accepts the GUI-selected setup options'
+Assert-True (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'assets'))) 'Removed unused root assets directory'
 Assert-True ($coreText.Contains('if($Analyze)') -and $coreText.Contains('strategy-analysis.v1')) 'analysis uses measured YouTube results'
 Assert-True ($catalogueText.Contains('[switch]$Analyze')) 'catalogue provides GUI analysis mode'
 Assert-True ($coreText.Contains('--wf-udp-out')) 'engine builder supports outbound UDP capture'
