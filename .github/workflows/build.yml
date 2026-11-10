@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.2'
+        default: '1.3'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.1'
+        default: '1.2'
         type: string
       publish_release:
         description: 'Publish a GitHub release from this build (requires platform=all)'
