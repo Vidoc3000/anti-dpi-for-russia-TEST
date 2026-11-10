@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AntiDPI Strategies + Bol-Van Zapret2, CLI Linux Version 1.3.
+"""AntiDPI Strategies + Bol-Van Zapret2, CLI Linux Version 1.4.
 Copyright Igor Krauch (github.com/igareck).
 """
 from __future__ import annotations

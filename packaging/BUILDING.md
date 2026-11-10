@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.3**, **Windows 1.2**. Исправления одной платформы не повышают версию другой. Тег `v1.3` включает исправление запуска Windows GUI; версии платформ: **Windows 1.2** и **Linux 1.3** соответственно.
+Текущие версии исходников: **Linux 1.4**, **Windows 1.3**. Исправления одной платформы не повышают версию другой. Релиз `v1.4` включает поддержку IPv6 и UDP/QUIC для Linux и Windows.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.2_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.2_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.2.txt`
+- `dist/AntiDPI_CLI_v1.3_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.3_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.3.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.3_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.3.txt`
+- `dist/AntiDPI_CLI_v1.4_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.4.txt`
 
 Для пересборки:
 
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.2_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.2_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.2.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.3_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.3_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.3.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.3.txt)
-tar -tzf dist/AntiDPI_CLI_v1.3_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.4.txt)
+tar -tzf dist/AntiDPI_CLI_v1.4_Linux_x64.tar.gz
 ```
 
 
