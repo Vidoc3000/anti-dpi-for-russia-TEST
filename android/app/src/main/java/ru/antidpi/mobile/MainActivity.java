@@ -35,6 +35,8 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -76,6 +78,7 @@ public final class MainActivity extends Activity {
     private TextView testProfileText;
     private TextView tunnelStatsText;
     private CheckBox blockQuicCheckBox;
+    private CheckBox blockIPv6CheckBox;
     private TextView appRoutingSummary;
     private Button vpnButton;
     private Button testButton;
@@ -290,13 +293,13 @@ public final class MainActivity extends Activity {
         tunnelStatsText = text("Счётчики появятся при активном VPN.", 12, TEXT, false);
         tunnelStatsText.setLineSpacing(dp(2), 1.0f);
         diagnosticsCard.addView(tunnelStatsText, margins(matchWrap(), 0, dp(5), 0, 0));
-        TextView diagnosticsHelp = text("Откройте YouTube или сайт на несколько секунд, затем вернитесь сюда. TCP endpoint — ошибки рукопожатия внутри TUN/gVisor до SOCKS; upstream — ошибки соединения через локальный SOCKS/ByeDPI. UDP/443 dropped показывает блокируемый QUIC.", 11, MUTED, false);
+        TextView diagnosticsHelp = text("Откройте YouTube или сайт на несколько секунд, затем вернитесь сюда. TCP endpoint — ошибки рукопожатия внутри TUN/gVisor до SOCKS; upstream — ошибки соединения через локальный SOCKS/ByeDPI. UDP/443 dropped показывает блокируемый QUIC, IPv6 blocked — соединения IPv6, остановленные безопасным IPv4-only режимом.", 11, MUTED, false);
         diagnosticsHelp.setLineSpacing(dp(2), 1.0f);
         diagnosticsCard.addView(diagnosticsHelp, margins(matchWrap(), 0, dp(5), 0, 0));
         page.addView(diagnosticsCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
         TextView explanation = text(
-                "HTTPS 204 проверяет локальный SOCKS-прокси напрямую и не проходит через TUN как трафик браузера или YouTube. Для диагностики маршрута откройте сайт в другом приложении, вернитесь сюда и посмотрите счётчики TUN ниже. Успех 204 не гарантирует загрузку видео или обход блокировки.",
+                "HTTPS 204 проверяет локальный SOCKS-прокси напрямую и не проходит через TUN как трафик браузера или YouTube. Для диагностики маршрута откройте сайт в другом приложении, вернитесь сюда и посмотрите счётчики TUN ниже. Успех 204 не гарантирует загрузку видео или обход блокировки. При SSL-ошибке показана причина; проверка сертификата не отключается.",
                 13, MUTED, false);
         explanation.setLineSpacing(dp(2), 1.0f);
         page.addView(explanation, margins(matchWrap(), 0, 0, 0, dp(10)));
@@ -339,12 +342,29 @@ public final class MainActivity extends Activity {
                 12, MUTED, false);
         quicHelp.setLineSpacing(dp(2), 1.0f);
         networkCard.addView(quicHelp, margins(matchWrap(), 0, dp(2), 0, 0));
+
+        blockIPv6CheckBox = new CheckBox(this);
+        blockIPv6CheckBox.setText("Режим IPv4-only: блокировать IPv6 в VPN");
+        blockIPv6CheckBox.setTextColor(TEXT);
+        blockIPv6CheckBox.setTextSize(14);
+        blockIPv6CheckBox.setButtonTintList(android.content.res.ColorStateList.valueOf(CYAN));
+        blockIPv6CheckBox.setChecked(settingsPreferences().getBoolean("block_ipv6", false));
+        blockIPv6CheckBox.setOnCheckedChangeListener((button, checked) -> {
+            settingsPreferences().edit().putBoolean("block_ipv6", checked).apply();
+            if (AntiDpiVpnService.isRunning(this)) restartVpnForCurrentSelection("IPv6 режим изменён");
+        });
+        networkCard.addView(blockIPv6CheckBox, margins(matchWrap(), -dp(8), dp(5), 0, 0));
+        TextView ipv6Help = text("IPv6 остаётся направлен в VPN, но блокируется внутри туннеля и не выходит напрямую. Приложения могут повторить подключение по IPv4.",
+                12, MUTED, false);
+        ipv6Help.setLineSpacing(dp(2), 1.0f);
+        networkCard.addView(ipv6Help, margins(matchWrap(), 0, dp(2), 0, 0));
         page.addView(networkCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
         LinearLayout routeCard = card();
         routeCard.addView(text("DNS и размер пакета", 15, CYAN, true), matchWrap());
         routeCard.addView(text("DNS внутри VPN", 12, MUTED, false), margins(matchWrap(), 0, dp(7), 0, dp(3)));
-        String[] dnsLabels = {"Cloudflare · 1.1.1.1", "Google · 8.8.8.8", "Quad9 · 9.9.9.9"};
+        String[] dnsLabels = {"Cloudflare · 1.1.1.1", "Google · 8.8.8.8", "Quad9 · 9.9.9.9",
+                "AdGuard · 94.140.14.14", "Свои DNS-серверы"};
         int dnsChoice = settingsPreferences().getInt("dns_provider", 0);
         if (dnsChoice < 0 || dnsChoice >= dnsLabels.length) dnsChoice = 0;
         Spinner dnsSpinner = settingsSpinner(dnsLabels, dnsChoice);
@@ -352,13 +372,26 @@ public final class MainActivity extends Activity {
         dnsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position == previousDns[0]) return;
+                if (position == 4) {
+                    if (isIpLiteral(settingsPreferences().getString("custom_dns_primary", ""))) {
+                        previousDns[0] = position;
+                        settingsPreferences().edit().putInt("dns_provider", position).apply();
+                        restartVpnForCurrentSelection("DNS изменён");
+                    } else {
+                        showCustomDnsDialog(dnsSpinner, previousDns);
+                    }
+                    return;
+                }
                 previousDns[0] = position;
                 settingsPreferences().edit().putInt("dns_provider", position).apply();
                 restartVpnForCurrentSelection("DNS изменён");
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
-        routeCard.addView(dnsSpinner, margins(matchWrap(), 0, 0, 0, dp(7)));
+        routeCard.addView(dnsSpinner, margins(matchWrap(), 0, 0, 0, dp(5)));
+        Button customDnsButton = button("Настроить свои DNS-серверы", false);
+        customDnsButton.setOnClickListener(v -> showCustomDnsDialog(dnsSpinner, previousDns));
+        routeCard.addView(customDnsButton, margins(matchWrap(), 0, 0, 0, dp(7)));
 
         routeCard.addView(text("MTU туннеля", 12, MUTED, false), margins(matchWrap(), 0, dp(2), 0, dp(3)));
         String[] mtuLabels = {"1280 · совместимость IPv6", "1400 · сбалансированный", "1500 · стандартный"};
@@ -426,8 +459,85 @@ public final class MainActivity extends Activity {
         switch (settingsPreferences().getInt("dns_provider", 0)) {
             case 1: return new String[]{"8.8.8.8", "8.8.4.4"};
             case 2: return new String[]{"9.9.9.9", "149.112.112.112"};
+            case 3: return new String[]{"94.140.14.14", "94.140.15.15"};
+            case 4:
+                String primary = settingsPreferences().getString("custom_dns_primary", "").trim();
+                String secondary = settingsPreferences().getString("custom_dns_secondary", "").trim();
+                if (isIpLiteral(primary)) {
+                    return isIpLiteral(secondary) ? new String[]{primary, secondary} : new String[]{primary};
+                }
+                return new String[]{"1.1.1.1", "1.0.0.1"};
             default: return new String[]{"1.1.1.1", "1.0.0.1"};
         }
+    }
+
+    private boolean isIpLiteral(String value) {
+        if (value == null) return false;
+        String address = value.trim();
+        if (address.isEmpty()) return false;
+        if (address.indexOf(':') >= 0) {
+            try {
+                return InetAddress.getByName(address) instanceof Inet6Address;
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        String[] octets = address.split("\\.", -1);
+        if (octets.length != 4) return false;
+        for (String octet : octets) {
+            try {
+                int number = Integer.parseInt(octet);
+                if (number < 0 || number > 255 || octet.isEmpty()) return false;
+            } catch (NumberFormatException error) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void showCustomDnsDialog(Spinner spinner, int[] previousDns) {
+        LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(dp(20), dp(8), dp(20), 0);
+        EditText primary = new EditText(this);
+        primary.setSingleLine(true);
+        primary.setHint("Основной DNS, например 1.1.1.1");
+        primary.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        primary.setText(settingsPreferences().getString("custom_dns_primary", ""));
+        fields.addView(primary, matchWrap());
+        EditText secondary = new EditText(this);
+        secondary.setSingleLine(true);
+        secondary.setHint("Резервный DNS (необязательно)");
+        secondary.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        secondary.setText(settingsPreferences().getString("custom_dns_secondary", ""));
+        fields.addView(secondary, matchWrap());
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Свои DNS-серверы")
+                .setView(fields)
+                .setNegativeButton("Отмена", (d, which) -> spinner.setSelection(previousDns[0]))
+                .setPositiveButton("Применить", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String primaryValue = primary.getText().toString().trim();
+            String secondaryValue = secondary.getText().toString().trim();
+            if (!isIpLiteral(primaryValue) || (!secondaryValue.isEmpty() && !isIpLiteral(secondaryValue))) {
+                Toast.makeText(this, "Введите корректные IPv4 или IPv6 адреса DNS.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            settingsPreferences().edit()
+                    .putString("custom_dns_primary", primaryValue)
+                    .putString("custom_dns_secondary", secondaryValue)
+                    .putInt("dns_provider", 4)
+                    .apply();
+            previousDns[0] = 4;
+            spinner.setSelection(4);
+            restartVpnForCurrentSelection("DNS изменён");
+            dialog.dismiss();
+        }));
+        dialog.show();
     }
 
     private String[] configuredAllowedApps() {
@@ -608,6 +718,11 @@ public final class MainActivity extends Activity {
                 : getPreferences(MODE_PRIVATE).getBoolean("block_quic", true);
     }
 
+    private boolean blockIPv6Enabled() {
+        return blockIPv6CheckBox != null ? blockIPv6CheckBox.isChecked()
+                : settingsPreferences().getBoolean("block_ipv6", false);
+    }
+
     private void restartVpnForCurrentSelection(String reason) {
         if (!AntiDpiVpnService.isRunning(this) && !AntiDpiVpnService.isStarting(this)) return;
         vpnStatusText.setText(reason + " · перезапуск VPN…");
@@ -624,6 +739,7 @@ public final class MainActivity extends Activity {
                 .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, selectedStrategy())
                 .putExtra(AntiDpiVpnService.EXTRA_PROFILE_ARGS, selected == null ? "[]" : selected.argsJson)
                 .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuicEnabled())
+                .putExtra(AntiDpiVpnService.EXTRA_BLOCK_IPV6, blockIPv6Enabled())
                 .putExtra(AntiDpiVpnService.EXTRA_MTU, configuredMtu())
                 .putExtra(AntiDpiVpnService.EXTRA_DNS_SERVERS, configuredDnsServers())
                 .putExtra(AntiDpiVpnService.EXTRA_ALLOWED_APPS, configuredAllowedApps())
@@ -639,13 +755,15 @@ public final class MainActivity extends Activity {
         final TextView runningResultView = testResultText;
         final boolean throughVpn = AntiDpiVpnService.isRunning(this);
         final int profileNumber = selected == null ? 1 : selected.number;
-        String route = throughVpn ? "через активный VPN" : "напрямую (VPN выключен)";
+        String route = throughVpn ? "через локальный ByeDPI SOCKS (прямой тест, не TUN)"
+                : "напрямую (VPN выключен)";
         runningTestButton.setEnabled(false);
         runningResultView.setText("Проверяю HTTPS " + route + "…");
         executor.execute(() -> {
             String youtube = probe("https://www.youtube.com/generate_204", throughVpn);
             String google = probe("https://www.google.com/generate_204", throughVpn);
-            String path = throughVpn ? "через VPN · профиль #" + profileNumber : "напрямую";
+            String path = throughVpn ? "локальный SOCKS · профиль #" + profileNumber + " · не TUN"
+                    : "напрямую";
             String result = "Путь: " + path + "\n" +
                     "YouTube: " + youtube + "\n" +
                     "Google: " + google + "\n\n" +
@@ -674,10 +792,25 @@ public final class MainActivity extends Activity {
             int code = connection.getResponseCode();
             return "HTTP " + code;
         } catch (Exception error) {
-            return "ошибка " + error.getClass().getSimpleName();
+            return "ошибка " + exceptionSummary(error);
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private String exceptionSummary(Throwable error) {
+        Throwable detail = error;
+        for (int i = 0; i < 4 && detail.getCause() != null && detail.getCause() != detail; i++) {
+            detail = detail.getCause();
+        }
+        String message = detail.getMessage();
+        if (message == null || message.trim().isEmpty()) message = error.getMessage();
+        if (message == null || message.trim().isEmpty()) return error.getClass().getSimpleName();
+        message = message.replace('\n', ' ').replace('\r', ' ').trim();
+        if (message.length() > 160) message = message.substring(0, 157) + "...";
+        String type = detail == error ? error.getClass().getSimpleName()
+                : error.getClass().getSimpleName() + " → " + detail.getClass().getSimpleName();
+        return type + ": " + message;
     }
 
     private void updateTestSummary() {

@@ -98,19 +98,19 @@ func (e *Engine) StartTunnel(fd int, mtu int, strategy string, blockQUIC bool) e
 	if err != nil {
 		return err
 	}
-	return e.startTunnel(fd, mtu, st, blockQUIC, "")
+	return e.startTunnel(fd, mtu, st, blockQUIC, false, "")
 }
 
 // StartTunnelViaProxy forwards TCP flows through a local native SOCKS5 engine,
 // allowing it to apply socket-level desynchronization methods before egress.
-func (e *Engine) StartTunnelViaProxy(fd int, mtu int, socks5Addr string, blockQUIC bool) error {
+func (e *Engine) StartTunnelViaProxy(fd int, mtu int, socks5Addr string, blockQUIC bool, blockIPv6 bool) error {
 	if socks5Addr == "" {
 		return errors.New("local SOCKS5 strategy proxy address is required")
 	}
-	return e.startTunnel(fd, mtu, desync.Strategy{}, blockQUIC, socks5Addr)
+	return e.startTunnel(fd, mtu, desync.Strategy{}, blockQUIC, blockIPv6, socks5Addr)
 }
 
-func (e *Engine) startTunnel(fd int, mtu int, st desync.Strategy, blockQUIC bool, socks5Addr string) error {
+func (e *Engine) startTunnel(fd int, mtu int, st desync.Strategy, blockQUIC bool, blockIPv6 bool, socks5Addr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.tun != nil {
@@ -127,6 +127,7 @@ func (e *Engine) startTunnel(fd int, mtu int, st desync.Strategy, blockQUIC bool
 		Protector:  prot,
 		SOCKS5Addr: socks5Addr,
 		BlockQUIC:  blockQUIC,
+		BlockIPv6:  blockIPv6,
 		Log:        e.logf,
 	})
 	if err != nil {
