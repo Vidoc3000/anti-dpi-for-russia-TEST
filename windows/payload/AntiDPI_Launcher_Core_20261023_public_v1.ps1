@@ -7,6 +7,7 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 Set-StrictMode -Version Latest
 $script:AntiDPIScanControl=$null
+$script:AntiDPIScanCancelFile=$null
 $script:AntiDPIRecoveryBudget=$null
 $script:AntiDPIRecoveryReason=""
 $script:AntiDPIRecoveryAwaitingStart=$false
@@ -501,6 +502,7 @@ function Test-AntiDPINoOtherEngine {
     }
 }
 function Test-AntiDPIScanCancellation {
+    if($script:AntiDPIScanCancelFile -and (Test-Path -LiteralPath $script:AntiDPIScanCancelFile -PathType Leaf)){$script:AntiDPIScanSignal='Stop';throw [OperationCanceledException]::new('Пользователь остановил анализ.')}
     if(Test-AntiDPIStopRequested){$script:AntiDPIScanSignal='Stop';throw [OperationCanceledException]::new('Установка завершает работу.')}
     if($null -ne $script:AntiDPIScanControl){
         $signal=[string]$script:AntiDPIScanControl.Signal
@@ -678,7 +680,7 @@ function Receive-AntiDPIYoutubeJob($Job,[string]$Log,[switch]$RetryRequired) {
     Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=$result.CompletedUtc.ToString('o');Profile=$Job.Number;Slot=$Job.Slot;Event='RESULT';Status=$status;Successes=$result.Successes})
     if($result.Successes -gt 0){return ('{0} ({1})' -f $Job.Number,$status)}
 }
-function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]$PortScope,[string]$Bundle,[string]$State,[string]$Logs,[switch]$SkipTimestamps,[Parameter(Mandatory=$true)][ValidateRange(1,5)][int]$Parallelism) {
+function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]$PortScope,[string]$Bundle,[string]$State,[string]$Logs,[switch]$SkipTimestamps,[Parameter(Mandatory=$true)][ValidateRange(1,5)][int]$Parallelism,[string]$AnalysisResultPath='') {
     Test-AntiDPINoOtherEngine
     Initialize-AntiDPIRuntime
     $tag=(Get-Date -Format 'yyyyMMdd_HHmmss_fff')+'_'+[guid]::NewGuid().ToString('N').Substring(0,8)
@@ -802,6 +804,26 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             if(-not @(Get-ChildItem -LiteralPath $scanState -Force).Count){Remove-Item -LiteralPath $scanState -Force}
         }
     }
+    if($AnalysisResultPath){
+        $resultByNumber=@{}
+        foreach($line in [IO.File]::ReadAllLines($log,[Text.Encoding]::UTF8)){
+            try{$entry=$line|ConvertFrom-Json -ErrorAction Stop}catch{continue}
+            if($entry.Event -eq 'RESULT'){
+                $resultByNumber[[int]$entry.Profile]=[pscustomobject]@{Number=[int]$entry.Profile;Status=[string]$entry.Status;Successes=[int]$entry.Successes;Details=''}
+            }elseif($entry.Event -eq 'TECHNICAL_ERROR'){
+                $resultByNumber[[int]$entry.Profile]=[pscustomobject]@{Number=[int]$entry.Profile;Status='ERROR';Successes=[int]$entry.Successes;Details=[string]$entry.Error}
+            }
+        }
+        $resultRows=@($resultByNumber.Values|Sort-Object Number)
+        $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;Results=$resultRows}
+        $resultParent=Split-Path -Parent $AnalysisResultPath
+        [IO.Directory]::CreateDirectory($resultParent)|Out-Null
+        $temporary=$AnalysisResultPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+        try{
+            [IO.File]::WriteAllText($temporary,($document|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+            if(Test-Path -LiteralPath $AnalysisResultPath -PathType Leaf){[IO.File]::Replace($temporary,$AnalysisResultPath,[NullString]::Value)}else{[IO.File]::Move($temporary,$AnalysisResultPath)}
+        }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
+    }
     return ($script:AntiDPIScanSignal -eq 'Stop')
 }
 
@@ -854,6 +876,38 @@ function Invoke-AntiDPICatalogue {
     if($ListQuicProfilesJson){$QuicRows|Select-Object Number,Family,Name,Processing,Chain,Args|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
     if($ListProfiles){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain|Format-Table -AutoSize|Out-Host;return}
     if($ListInterfaces){Get-NetAdapter|Select-Object ifIndex,Name,Status,HardwareInterface|Format-Table -AutoSize|Out-Host;return}
+    if($Analyze){
+        if($Protocol -ne 'tls' -or $AddressFamily -ne 'ipv4'){throw 'Анализ YouTube поддерживает только IPv4/TCP/TLS и не проверяет VPN/Tor-клиент.'}
+        if($FirstProfile -lt 1 -or $LastProfile -lt $FirstProfile -or $LastProfile -gt $CatalogueInfo.ProfileCount){throw 'Укажите диапазон стратегий от 1 до 492.'}
+        if($Parallelism -lt 1 -or $Parallelism -gt 5){throw 'Параллельность анализа должна быть от 1 до 5.'}
+        if(-not (Test-AntiDPIScopePort $Scope 443)){throw 'Для YouTube-анализа используется TCP-порт 443.'}
+        if($InterfaceIndex -le 0){throw 'Для анализа выберите физический адаптер.'}
+        if(-not $AnalysisResultPath){throw 'Не указан файл для результатов анализа.'}
+        $adapter=Select-AntiDPIAdapter $InterfaceIndex -AddressFamily ipv4
+        $bundle=Find-AntiDPIBundle $ZapretDirectory
+        $state=if($StateDirectory){$StateDirectory}else{Join-Path $PSScriptRoot '_state'}
+        [IO.Directory]::CreateDirectory($state)|Out-Null
+        $logs=Get-AntiDPILogDirectory $bundle
+        Test-AntiDPINoOtherEngine
+        Initialize-AntiDPIRuntime
+        $lifecycle=[AntiDPI.Public10.WinDivertLifecycle]::new($bundle)
+        $script:AntiDPILifecycle=$lifecycle
+        $locationPushed=$false
+        $script:AntiDPIScanCancelFile=$AnalysisCancelFile
+        try{
+            Initialize-AntiDPIDriverControl $bundle
+            Push-Location -LiteralPath $bundle
+            $locationPushed=$true
+            $range=[pscustomobject]@{First=$FirstProfile;Last=$LastProfile}
+            $null=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter '443' $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $Parallelism -AnalysisResultPath $AnalysisResultPath
+            return
+        }finally{
+            $script:AntiDPIScanCancelFile=$null
+            if($locationPushed){Pop-Location}
+            $lifecycle.Dispose()
+            $script:AntiDPILifecycle=$null
+        }
+    }
     $interactiveSelection=-not [bool]$ProfileNumber
     $selection=$ProfileNumber
     if(-not $selection){if($Protocol -eq 'quic'){$selection=Read-AntiDPIQuicSelection}else{Show-AntiDPIFamilies;$selection=Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}}
