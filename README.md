@@ -4,19 +4,6 @@
 ### Разработана специально для восстановления работоспособности VPN-конфигураций Черных Списков и Tor-мостов (+ YouTube) в России. Адаптирована под массового пользователя.
 ### Для обхода фильтров ТСПУ Роскомнадзора.
 
-<div align="center">
-
-[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/igareck/anti-dpi-for-russia/releases)
-
-
-</div>
-
-<div align="center">
-
-<img src="assets/AntiDPI_CLI_v1_UI.jpg" width="860"/>
-
-</div>
-
 ```diff
 + Программа изначально разработана с целью восстановления работы публичных подписок VPN/Tor!
 - Работоспособность Youtube, Discord, Facebook, Linkedin, X (Twitter) с AntiDPI,
