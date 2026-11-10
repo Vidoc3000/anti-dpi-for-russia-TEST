@@ -103,9 +103,28 @@ def parse_ports(value):
     return ','.join(str(a) if a==b else f'{a}-{b}' for a,b in ranges)
 
 
+def scope_guidance(scope):
+    scope=parse_ports(scope)
+    lines=['Область действия: только IPv4 TCP; стратегия применяется к распознанному TLS.',
+           'IPv6, UDP и QUIC/HTTP/3 этим перехватом не обрабатываются.',
+           f'nftables направляет в NFQUEUE первые до {PACKETS} пакетов новых TCP-соединений на выбранных портах; остальной трафик и незашифрованные/не-TLS протоколы не подвергаются TLS-стратегии.']
+    if scope=='all':
+        lines.append('Выбраны все TCP-порты: охват максимальный, в очередь может попасть больше новых соединений и вырасти нагрузка/задержка. Это нужно, когда VPN-подписка использует динамические порты; для известного порта выберите узкий диапазон.')
+    else:
+        count=sum(last-first+1 for first,last in port_ranges(scope))
+        lines.append(f'Выбран набор {scope}: всего {count} TCP-портов; соединения на остальных портах не перехватываются. Узкий диапазон обычно уменьшает число соединений, попадающих в NFQUEUE.')
+    return lines
+
+
+def show_scope_guidance(scope):
+    cli_ui.paragraphs(scope_guidance(scope),'93')
+
+
 def choose_ports(session,explicit=None):
     if explicit is not None:
-        session.scope=parse_ports(explicit);return session.scope
+        session.scope=parse_ports(explicit)
+        show_scope_guidance(session.scope)
+        return session.scope
     print('\n----------------------\n')
     print(cli_ui.color('Выберите порты назначения TCP, трафик которых будет перехватываться Zapret2.','96'))
     cli_ui.paragraphs(['','Либо определенный номер порта, например 443, 80 и т.д.',
@@ -114,7 +133,10 @@ def choose_ports(session,explicit=None):
         'Либо введите слово "все/all" (регистр неважен), чтобы перехватывать любые TCP-порты (нужно для подписок VPN).',''])
     while True:
         answer=input('Ваш выбор [Нажатие Enter активирует все порты по умолчанию]: ')
-        try:session.scope=parse_ports(answer);print();return session.scope
+        try:
+            session.scope=parse_ports(answer)
+            print();show_scope_guidance(session.scope)
+            return session.scope
         except ValueError as error:print(error)
 
 
@@ -458,7 +480,7 @@ def activate(session, row):
     queue = session.start(row)
     try:
         print(f'\n{"Golden" if row["Number"] <= 45 else "Silver"} #{row["Number"]}: {row["Name"]}')
-        print('Интерфейс: '+session.interface+'; IPv4 TLS/TCP; порты '+session.scope)
+        print('Интерфейс: '+session.interface+'; только IPv4 TCP/TLS; порты '+session.scope+' (IPv6/UDP/QUIC не перехватываются)')
         print(colored(f'\nСЕЙЧАС РАБОТАЕТ СТРАТЕГИЯ {row["Number"]}!\n\n'
                       'ЧТОБЫ СМЕНИТЬ СТРАТЕГИЮ — нажмите F1 (или s)\n'
                       'ЧТОБЫ ПЕРЕЗАГРУЗИТЬ ТЕКУЩУЮ СТРАТЕГИЮ — нажмите F2 (или r)\n'
@@ -472,7 +494,11 @@ def activate(session, row):
                 if key in ('switch', 'restart', 'adapter', 'quit'):
                     return key
     finally:
-        session.stop(queue)
+        stats=queue_snapshot(queue)
+        try:
+            session.stop(queue)
+        finally:
+            show_queue_metrics(row['Number'],stats)
 
 
 def final_headers(raw, initial):
@@ -498,10 +524,26 @@ def queue_snapshot(queue):
         for line in Path('/proc/net/netfilter/nfnetlink_queue').read_text().splitlines():
             fields=line.split()
             if fields and int(fields[0])==queue:
-                return {'raw':fields,'packets_total':int(fields[7]),'kernel_drops':int(fields[5]),'userspace_drops':int(fields[6])}
+                return {'raw':fields,'id_sequence':int(fields[7]),'kernel_drops':int(fields[5]),'userspace_drops':int(fields[6])}
     except (OSError,ValueError,IndexError):
         pass
     return {}
+
+
+def queue_progressed(before,after):
+    return bool(before and after and before.get('id_sequence') is not None and
+                after.get('id_sequence') is not None and before['id_sequence']!=after['id_sequence'])
+
+
+def show_queue_metrics(number,stats):
+    if not stats:
+        return
+    sequence=stats.get('id_sequence',0)
+    kernel=stats.get('kernel_drops',0)
+    userspace=stats.get('userspace_drops',0)
+    print(f'Очередь NFQUEUE стратегии {number}: последний ID пакета {sequence}; потери ядра {kernel}, userspace {userspace}. ID и потери очереди не измеряют объём всего сетевого трафика.')
+    if kernel or userspace:
+        print('Есть потери в NFQUEUE: они могут влиять на соединения. Проверьте загрузку системы; если возможно, сузьте порты и повторите тест.')
 
 
 def youtube_attempt(session, ports, number, attempt, stop):
@@ -539,7 +581,7 @@ def youtube_attempt(session, ports, number, attempt, stop):
             if process.stdout is not None:process.stdout.close()
     result.update(number=number,attempt=attempt,ports=list(ports),queue=queue,queue_before=before,
                   queue_after=queue_snapshot(queue) if queue is not None else {})
-    if result.get('source_port') and before and result['queue_after'] and result['queue_after'].get('packets_total',0)<=before.get('packets_total',0):
+    if result.get('source_port') and before and result['queue_after'] and not queue_progressed(before,result['queue_after']):
         result.update(technical=True,reason='TRAFFIC_NOT_INTERCEPTED',error='TCP-запрос не попал в назначенную NFQUEUE. Проверьте интерфейс и маршрутизацию.')
     atomic_json(result_path,result)
     if result.get('technical'):
@@ -609,7 +651,7 @@ def endpoint_attempt(session, ports, number, attempt, stop, target):
     result.pop('error',None);result.pop('remote_ip',None);result.pop('host',None);result.pop('sni',None)
     result.update(number=number,attempt=attempt,target_id=target_key,ports=list(ports),queue=queue,
                   queue_before=before,queue_after=queue_snapshot(queue) if queue is not None else {})
-    if result.get('source_port') and before and result['queue_after'] and result['queue_after'].get('packets_total',0)<=before.get('packets_total',0):
+    if result.get('source_port') and before and result['queue_after'] and not queue_progressed(before,result['queue_after']):
         result.update(technical=True,reason='TRAFFIC_NOT_INTERCEPTED')
     atomic_json(result_path,result)
     if result.get('technical'):
@@ -647,6 +689,7 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
         target=target_probe.validate_target(target)
         target['report_id']=uuid.uuid4().hex[:10]
         session.scope=str(target['port'])
+        show_scope_guidance(session.scope)
         if not target['verify_certificate']:
             print('ВНИМАНИЕ: проверка сертификата отключена; успешный результат не подтверждает подлинность сервера.')
     adaptive=bool(adaptive and target)
