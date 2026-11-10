@@ -1,6 +1,6 @@
 AntiDPI Artwork 16
 Copyright Igor Krauch (github.com/igareck).
-Color-tile font generated from the supplied ascii-art-new-1147-25102026.txt.
+Color-tile font for the packaged terminal artwork data.
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 -----------------------------------------------------------

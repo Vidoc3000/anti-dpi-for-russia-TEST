@@ -523,7 +523,7 @@ function Install-AntiDPI {
                     Copy-Item -LiteralPath $file.FullName -Destination $ready -Recurse -Force
                 }
                 $installed=Join-Path $ready 'AntiDPI';[IO.Directory]::CreateDirectory($installed)|Out-Null
-                foreach($name in @('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Artwork_CLI.json','AntiDPI_Console_Artwork.cs','ascii-art-new-1147-25102026.txt','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico','AntiDPIArtCLI.ttf','AntiDPIArtCLI_OFL.txt')){
+                foreach($name in @('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')){
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
                 foreach($name in @('README_Установка_Windows_v1.5.txt','README_Стратегии_Windows_v1.5.txt','LICENSE.txt')){
@@ -692,8 +692,6 @@ function Uninstall-AntiDPI {
     if(-not @(Get-ChildItem -LiteralPath $root -Force).Count){Remove-Item -LiteralPath $root -Force;Write-Host 'Zapret2 этой установки полностью удалён.'}else{Write-Host "Собственные неизменённые файлы удалены. Посторонние или изменённые файлы оставлены в $root."}
 }
 function Show-AntiDPIHeader {
-    # Establish the final font/window size BEFORE printing any text: no later header reflow.
-    $prepared=Set-AntiDPIArtworkLayout 100 32 (Join-Path $payload 'AntiDPIArtCLI.ttf')
     $lines=@(
         '===============================================================================',
         '  AntiDPI Strategies + Bol-Van Zapret2',
@@ -715,7 +713,6 @@ function Show-AntiDPIHeader {
     )
     Write-Host ($lines -join [Environment]::NewLine) -ForegroundColor Cyan
     Write-Host ''
-    if($prepared){Show-AntiDPIArtwork (Join-Path $payload 'AntiDPI_Artwork_CLI.json') -Prepared}
 }
 function Start-AntiDPISessionLog {
     if($script:AntiDPITranscriptActive){return}
@@ -935,4 +932,4 @@ try{
 }
 catch [OperationCanceledException]{Write-Host ''}
 catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
-finally{Close-AntiDPIArtworkConsole;Complete-AntiDPISessionLog}
+finally{Complete-AntiDPISessionLog}

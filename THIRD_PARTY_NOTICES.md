@@ -142,27 +142,12 @@ zlib используется при сборке движка Zapret2. В Linux
 `4a33055448ce5f4e7acc704e1fbe0d8a8a6aa08d`.
 Они не являются перелицензированием соответствующего кода от имени автора проекта.
 
-## 8. Шрифт Windows: AntiDPIArtCLI
-
-- Файл в Windows-поставке: `payload/AntiDPIArtCLI.ttf`.
-- Исходное уведомление: `Copyright (c) 2019 - Present, Microsoft Corporation,
-  with Reserved Font Name Cascadia Code.`
-- Исходный проект Cascadia Code: <https://github.com/microsoft/cascadia-code>.
-- Лицензия: **SIL Open Font License 1.1**.
-- Копия исходного сопровождающего файла:
-  [`licenses/AntiDPIArtCLI_OFL.txt`](licenses/AntiDPIArtCLI_OFL.txt).
-
-Модифицированный шрифт распространяется в файле `AntiDPIArtCLI.ttf`.
-Уведомления Microsoft, условия OFL и сведения о Reserved Font Name
-сохраняются. Лицензия собственного программного кода AntiDPI
-не заменяет OFL для этого шрифтового файла.
-
-## 9. Шрифт Linux: AntiDPI Artwork 16
+## 8. Шрифт Linux: AntiDPI Artwork 16
 
 - Файл в Linux-поставке: `assets/fonts/AntiDPIArtLinux16.ttf`.
 - Уведомление: `Copyright Igor Krauch (github.com/igareck).`
-- Шрифт цветовых элементов создан для отображения предоставленного
-  ASCII-изображения в терминале.
+- Шрифт цветовых элементов обеспечивает отображение пакетированных
+  тайловых данных логотипа в терминале.
 - Лицензия: **SIL Open Font License 1.1**, уже указанная в поставке.
 - Копия сопровождающего файла:
   [`licenses/AntiDPIArt_OFL.txt`](licenses/AntiDPIArt_OFL.txt).
@@ -170,7 +155,7 @@ zlib используется при сборке движка Zapret2. В Linux
 Это авторский шрифт Igor Krauch (github.com/igareck), распространяемый отдельно
 на условиях самостоятельной лицензии OFL.
 
-## 10. Системные зависимости Linux и Windows
+## 9. Системные зависимости Linux и Windows
 
 Linux-установщик получает системные зависимости из репозиториев
 Ubuntu/Debian через `apt`: Python, curl, nftables, iproute2, kmod,
@@ -185,7 +170,7 @@ Windows-компоненты операционной системы и сред
 используются на условиях их соответствующих правообладателей.
 Их дистрибутивы не включены в установщик AntiDPI.
 
-## 11. Сохранение исходных условий
+## 10. Сохранение исходных условий
 
 Копии лицензий следует хранить в репозитории и соответствующей сборке/версии
 вместе с необходимыми уведомлениями компонентов. Наличие файлов в
