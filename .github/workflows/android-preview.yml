@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ANDROID_PREVIEW_VERSION: '0.2.0-preview'
+
 jobs:
   build:
     if: >-
@@ -84,17 +87,17 @@ jobs:
       - name: Prepare APK and checksum
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/AntiDPI-Android-v0.1.0-preview.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/AntiDPI-Android-v${ANDROID_PREVIEW_VERSION}.apk"
           cd dist
-          sha256sum AntiDPI-Android-v0.1.0-preview.apk > SHA256SUMS_Android_v0.1.0-preview.txt
+          sha256sum "AntiDPI-Android-v${ANDROID_PREVIEW_VERSION}.apk" > "SHA256SUMS_Android_v${ANDROID_PREVIEW_VERSION}.txt"
 
       - name: Upload preview APK artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: AntiDPI-Android-v0.1.0-preview
+          name: AntiDPI-Android-v${{ env.ANDROID_PREVIEW_VERSION }}
           path: |
-            dist/AntiDPI-Android-v0.1.0-preview.apk
-            dist/SHA256SUMS_Android_v0.1.0-preview.txt
+            dist/AntiDPI-Android-v${{ env.ANDROID_PREVIEW_VERSION }}.apk
+            dist/SHA256SUMS_Android_v${{ env.ANDROID_PREVIEW_VERSION }}.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -111,7 +114,7 @@ jobs:
       - name: Download built APK
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: AntiDPI-Android-v0.1.0-preview
+          name: AntiDPI-Android-v${{ env.ANDROID_PREVIEW_VERSION }}
           path: release-assets
 
       - name: Attach APK and checksum to draft release
