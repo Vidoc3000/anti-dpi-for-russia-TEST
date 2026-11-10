@@ -62,12 +62,12 @@ local function actual_tls_template_usable(s)
     return true
 end
 
-igareck_actual_tls_template_usable = actual_tls_template_usable
+antidpi_actual_tls_template_usable = actual_tls_template_usable
 
-if not igareck_actual_tls_guard_v9 then
-    assert(type(fake) == "function", "Igareck ActualTLS: missing stock fake")
-    assert(type(fake_default_tls) == "string", "Igareck ActualTLS: missing stock TLS template")
-    assert(actual_tls_template_usable(fake_default_tls), "Igareck ActualTLS: stock TLS template is unusable")
+if not antidpi_actual_tls_guard_v9 then
+    assert(type(fake) == "function", "AntiDPI ActualTLS: missing stock fake")
+    assert(type(fake_default_tls) == "string", "AntiDPI ActualTLS: missing stock TLS template")
+    assert(actual_tls_template_usable(fake_default_tls), "AntiDPI ActualTLS: stock TLS template is unusable")
     local stock_fake = fake
     function fake(ctx, desync)
         local arg = desync.arg
@@ -80,7 +80,7 @@ if not igareck_actual_tls_guard_v9 then
                 local fallback_arg = {}
                 for k, v in pairs(arg) do fallback_arg[k] = v end
                 fallback_arg.blob = "fake_default_tls"
-                if b_debug then DLOG("Igareck ActualTLS: stock fake fallback: " .. reason) end
+                if b_debug then DLOG("AntiDPI ActualTLS: stock fake fallback: " .. reason) end
                 desync.arg = fallback_arg
                 local ok, verdict = pcall(stock_fake, ctx, desync)
                 desync.arg = arg
@@ -90,5 +90,5 @@ if not igareck_actual_tls_guard_v9 then
         end
         return stock_fake(ctx, desync)
     end
-    igareck_actual_tls_guard_v9 = true
+    antidpi_actual_tls_guard_v9 = true
 end

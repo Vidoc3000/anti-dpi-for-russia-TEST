@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity version="1.0.0.0" processorArchitecture="amd64"
-                    name="Igareck.AntiDPI.CLI.Setup" type="win32" />
-  <description>Igareck AntiDPI CLI for Windows 10/11 x64</description>
+                    name="AntiDPI.AntiDPI.CLI.Setup" type="win32" />
+  <description>AntiDPI CLI for Windows 10/11 x64</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security><requestedPrivileges>
       <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />

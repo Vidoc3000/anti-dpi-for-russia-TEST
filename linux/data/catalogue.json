@@ -1,6 +1,6 @@
 {
   "CatalogueInfo": {
-    "Schema": "igareck.tls.catalogue.v1",
+    "Schema": "antidpi.tls.catalogue.v1",
     "Slug": "Golden_Silver",
     "Version": "20261023_public_v1",
     "ProfileCount": 492,

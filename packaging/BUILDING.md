@@ -1,4 +1,4 @@
-# Сборка выпусков Igareck AntiDPI CLI
+# Сборка выпусков AntiDPI CLI
 
 Эта папка содержит скрипты создания Windows ZIP/EXE и Linux tar.gz из файлов репозитория.
 
@@ -8,7 +8,7 @@
 
 | Путь | Содержимое |
 | --- | --- |
-| `windows/` | Содержимое корневой папки из финального Windows ZIP: `Igareck_Manager.ps1`, `УСТАНОВКА.cmd`, `payload/` и остальные файлы сборки |
+| `windows/` | Содержимое корневой папки из финального Windows ZIP: `AntiDPI_Manager.ps1`, `УСТАНОВКА.cmd`, `payload/` и остальные файлы сборки |
 | `linux/` | Содержимое корневой папки из финального Linux tar.gz: `INSTALL.sh`, `START.sh`, `DELETE.sh`, `app/`, `assets/`, `data/` и остальные файлы сборки |
 | `LICENSE` | Основная лицензия проекта |
 | `THIRD_PARTY_NOTICES.md` | Сведения о сторонних лицензиях |
@@ -53,8 +53,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip`
-- `dist/Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe`
+- `dist/AntiDPI_CLI_v1.0_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.0_Windows_x64.exe`
 - `dist/SHA256SUMS_Windows_v1.0.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
@@ -79,7 +79,7 @@ ZIP содержит одну корневую папку программы. EX
 - `windows/app.manifest` — манифест Windows с запросом прав администратора.
 - `windows/build.ps1` — упаковка ZIP, генерация сведений о версии и компиляция EXE.
 
-EXE проверяет SHA-256 встроенного ZIP, проверяет пути его элементов, распаковывает файлы во временную папку и запускает штатный Windows PowerShell через `conhost.exe`. Запускается тот же `Igareck_Manager.ps1 -Action Install`, который используется комплектом программы. После завершения установщика удаляется только временная папка для запуска.
+EXE проверяет SHA-256 встроенного ZIP, проверяет пути его элементов, распаковывает файлы во временную папку и запускает штатный Windows PowerShell через `conhost.exe`. Запускается тот же `AntiDPI_Manager.ps1 -Action Install`, который используется комплектом программы. После завершения установщика удаляется только временная папка для запуска.
 
 ## Linux tar.gz
 
@@ -98,7 +98,7 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz`
+- `dist/AntiDPI_CLI_v1.1_Linux_x64.tar.gz`
 - `dist/SHA256SUMS_Linux_v1.1.txt`
 
 Для пересборки:
@@ -123,11 +123,11 @@ bash packaging/linux/build.sh --force
 ### Дополнительные параметры
 
 ```powershell
-& .\packaging\windows\build.ps1 -RepositoryRoot 'C:\Projects\anti-dpi-for-russia' -OutputDirectory 'C:\Builds\Igareck' -Version '1.0'
+& .\packaging\windows\build.ps1 -RepositoryRoot 'C:\Projects\anti-dpi-for-russia' -OutputDirectory 'C:\Builds\AntiDPI' -Version '1.0'
 ```
 
 ```bash
-bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/Igareck" --version 1.1
+bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.1
 ```
 
 `Version`/`--version` задаёт имена выходных файлов и метаданные EXE. Параметр не меняет текст версии внутри самой программы: его необходимо обновлять в исходниках отдельно. Linux-сборщик сверяет версию с `linux/data/release.json` и отклоняет несовпадение.
@@ -139,8 +139,8 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.0_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.0_Windows_x64.exe -Algorithm SHA256
 Get-Content .\dist\SHA256SUMS_Windows_v1.0.txt
 ```
 
@@ -148,7 +148,7 @@ Linux:
 
 ```bash
 (cd dist && sha256sum -c SHA256SUMS_Linux_v1.1.txt)
-tar -tzf dist/Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
+tar -tzf dist/AntiDPI_CLI_v1.1_Linux_x64.tar.gz
 ```
 
 

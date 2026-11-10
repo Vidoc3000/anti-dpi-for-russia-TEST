@@ -1,8 +1,8 @@
 ﻿============================================================================
-Igareck AntiDPI Strategies + Bol-Van Zapret2
+AntiDPI Strategies + Bol-Van Zapret2
 CLI Version 1.0 | Windows 10/11 x64 | СПРАВОЧНИК ВСЕХ 492 СТРАТЕГИЙ
 ============================================================================
-ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ IGARECK НА БАЗЕ ZAPRET2 (BOL-VAN)
+ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ НА БАЗЕ ZAPRET2 (BOL-VAN)
 В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE
 ============================================================================
 https://github.com/igareck/anti-dpi-for-russia
@@ -14256,7 +14256,7 @@ padencap — настройка длин TLS/padding фейка с учётом 
 
 ====================================================================================================
 ИСТОЧНИКИ И ЛИЦЕНЗИИ
-Программа AntiDPI Стратегий Igareck [Linux/Windows]: https://github.com/igareck/anti-dpi-for-russia
+Программа AntiDPI со стратегиями [Linux/Windows]: https://github.com/igareck/anti-dpi-for-russia
 VPN/Tor Черные Списки: https://github.com/igareck/vpn-configs-for-russia
 Официальный Zapret2 Bol-Van [Windows]: https://github.com/bol-van/zapret-win-bundle
 Telegram: https://t.me/igareq

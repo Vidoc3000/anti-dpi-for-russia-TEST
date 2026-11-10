@@ -2,10 +2,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$corePath = Join-Path $repoRoot 'windows\payload\Igareck_Launcher_Core_20261023_public_v1.ps1'
-$IgareckLibraryOnly = $true
+$corePath = Join-Path $repoRoot 'windows\payload\AntiDPI_Launcher_Core_20261023_public_v1.ps1'
+$AntiDPILibraryOnly = $true
 . $corePath
-$IgareckLibraryOnly = $false
+$AntiDPILibraryOnly = $false
 
 function Assert-Equal([object]$Expected, [object]$Actual, [string]$Label) {
     if ([string]$Expected -cne [string]$Actual) {
@@ -72,13 +72,13 @@ Assert-Equal $linuxCatalogue.CatalogueInfo.FamilyCount $linuxCatalogue.FamilyRow
 
 # The CI job supplies the hash-verified official bundle and runs these with
 # interception disabled, so only option/Lua validation occurs, not packet capture.
-if ($env:IGARECK_WINWS2_DIR) {
-    $enginePath = Join-Path $env:IGARECK_WINWS2_DIR 'winws2.exe'
+if ($env:AntiDPI_WINWS2_DIR) {
+    $enginePath = Join-Path $env:AntiDPI_WINWS2_DIR 'winws2.exe'
     if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) { throw 'Verified winws2.exe not found.' }
-    Push-Location -LiteralPath $env:IGARECK_WINWS2_DIR
+    Push-Location -LiteralPath $env:AntiDPI_WINWS2_DIR
     try {
         foreach ($profile in $newWindowsRows) {
-            $engineArguments = @(Get-IgareckArguments -Row $profile -Index 1 -PortScope '443')
+            $engineArguments = @(Get-AntiDPIArguments -Row $profile -Index 1 -PortScope '443')
             $handlers = @($profile.Args | Where-Object { $_.StartsWith('--lua-desync=') } |
                 ForEach-Object { ($_ -split ':', 2)[0].Substring('--lua-desync='.Length) } | Sort-Object -Unique)
             $luaChecks = @($handlers | ForEach-Object { "assert(type($_)=='function','missing $_')" })
@@ -95,29 +95,29 @@ if ($env:IGARECK_WINWS2_DIR) {
 }
 
 # Port-scope normalization and validation.
-Assert-Equal 'all' (ConvertTo-IgareckPortScope '') 'empty scope defaults to all'
-Assert-Equal 'all' (ConvertTo-IgareckPortScope '0-65535') 'full range canonicalizes to all'
-Assert-Equal '80-81,443' (ConvertTo-IgareckPortScope '443,80-81,80') 'ranges sort and merge'
-Assert-True (Test-IgareckScopePort '80-81,443' 443) 'selected destination port matches'
-Assert-True (-not (Test-IgareckScopePort '80-81,443' 8443)) 'unselected destination port is excluded'
-Assert-Throws { ConvertTo-IgareckPortScope '65536' } 'port above maximum'
-Assert-Throws { ConvertTo-IgareckPortScope '100-80' } 'descending port range'
-Assert-Throws { ConvertTo-IgareckPortScope '443,,80' } 'empty list member'
+Assert-Equal 'all' (ConvertTo-AntiDPIPortScope '') 'empty scope defaults to all'
+Assert-Equal 'all' (ConvertTo-AntiDPIPortScope '0-65535') 'full range canonicalizes to all'
+Assert-Equal '80-81,443' (ConvertTo-AntiDPIPortScope '443,80-81,80') 'ranges sort and merge'
+Assert-True (Test-AntiDPIScopePort '80-81,443' 443) 'selected destination port matches'
+Assert-True (-not (Test-AntiDPIScopePort '80-81,443' 8443)) 'unselected destination port is excluded'
+Assert-Throws { ConvertTo-AntiDPIPortScope '65536' } 'port above maximum'
+Assert-Throws { ConvertTo-AntiDPIPortScope '100-80' } 'descending port range'
+Assert-Throws { ConvertTo-AntiDPIPortScope '443,,80' } 'empty list member'
 
 # Engine argument construction must preserve the IPv4/TCP/TLS and port filters.
 $row = [pscustomobject]@{ Args = @('--payload=tls_client_hello'); Init = $null }
-$singlePort = @(Get-IgareckArguments -Row $row -Index 12 -PortScope '443')
+$singlePort = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope '443')
 Assert-Contains $singlePort '--wf-l3=ipv4' 'IPv4 layer filter'
 Assert-Contains $singlePort '--wf-iface=12' 'adapter filter'
 Assert-Contains $singlePort '--wf-tcp-out=443' 'outbound TCP scope'
 Assert-Contains $singlePort '--filter-tcp=443' 'engine TCP scope'
 Assert-Contains $singlePort '--filter-l7=tls' 'TLS application filter'
 
-$allPorts = @(Get-IgareckArguments -Row $row -Index 12 -PortScope 'all')
+$allPorts = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope 'all')
 Assert-Contains $allPorts '--wf-tcp-out=0-65535' 'all TCP port scope'
 Assert-Contains $allPorts '--filter-tcp=0-65535' 'engine all-port scope'
 
-$probeArgs = @(Get-IgareckArguments -Row $row -Index 12 -PortScope '443' -ProbePorts @(45001, 45002))
+$probeArgs = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope '443' -ProbePorts @(45001, 45002))
 $rawFilter = $probeArgs | Where-Object { $_ -like '--wf-raw-filter=*' }
 Assert-True ($rawFilter -like '*tcp.SrcPort == 45001*' -and $rawFilter -like '*tcp.SrcPort == 45002*') 'probe source-port isolation'
 Assert-True ($rawFilter -like '*tcp.DstPort == 45001*' -and $rawFilter -like '*tcp.DstPort == 45002*') 'probe reverse-flow isolation'

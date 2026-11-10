@@ -10,9 +10,9 @@
 int main(void)
 {
     char *const arguments[] = {
-        "/usr/bin/python3", IGARECK_HELPER, "--launch", IGARECK_ACTION, NULL
+        "/usr/bin/python3", AntiDPI_HELPER, "--launch", AntiDPI_ACTION, NULL
     };
     execv(arguments[0], arguments);
-    perror("Igareck shortcut");
+    perror("AntiDPI shortcut");
     return 127;
 }

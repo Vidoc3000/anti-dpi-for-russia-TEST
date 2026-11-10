@@ -15,7 +15,7 @@ from app_paths import resource_path
 VERSION = 'CLI Version 1.1'
 SEPARATOR = '----------------------'
 ARTWORK_BASE = 0x104000
-ARTWORK_FAMILY = 'Igareck Artwork 16'
+ARTWORK_FAMILY = 'AntiDPI Artwork 16'
 
 
 def color(text, code='93'):
@@ -76,7 +76,7 @@ def tile_font_available():
         return False
     # A fresh root-side fc-match cannot describe an already-running terminal's
     # Pango font map. Print PUA tiles only inside the prepared native renderer.
-    return os.environ.get('IGARECK_ARTWORK_RENDERER') == 'fresh-gnome-fontconfig-v1'
+    return os.environ.get('AntiDPI_ARTWORK_RENDERER') == 'fresh-gnome-fontconfig-v1'
 
 
 def show_artwork(root):
@@ -106,11 +106,11 @@ def show_header(root, artwork=True):
     machine=platform.machine().lower()
     architecture='x64' if machine in ('x86_64','amd64') else 'ARM64' if machine in ('aarch64','arm64') else machine
     rule='='*min(79,columns())
-    lines=[rule,'  Igareck AntiDPI Strategies + Bol-Van Zapret2',
+    lines=[rule,'  AntiDPI Strategies + Bol-Van Zapret2',
            '  '+VERSION+' | Linux Ubuntu/Debian '+architecture,rule,
-           '  ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ IGARECK НА БАЗЕ ZAPRET2 (BOL-VAN)',
+           '  ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ AntiDPI НА БАЗЕ ZAPRET2 (BOL-VAN)',
            '  В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE',rule,
-           '  AntiDPI от Igareck из репозитория:',
+           '  AntiDPI из репозитория:',
            '  https://github.com/igareck/anti-dpi-for-russia',
            '  VPN/Tor Черные Списки:',
            '  https://github.com/igareck/vpn-configs-for-russia',

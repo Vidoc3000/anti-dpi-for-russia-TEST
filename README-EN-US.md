@@ -1,4 +1,4 @@
-# `IGARECK ANTI-DPI`
+# `AntiDPI ANTI-DPI`
 ## `PROGRAM WITH READY-TO-USE ANTI-DPI STRATEGIES BASED ON BOL-VAN'S ZAPRET2`
 ## `A SIMPLE CLI TOOL FOR BLACKLIST VPN SUBSCRIPTIONS + TOR`
 
@@ -19,7 +19,7 @@
 
 <div align="center">
 
-<img src="assets/Igareck_AntiDPI_CLI_v1_UI.jpg" width="860"/>
+<img src="assets/AntiDPI_CLI_v1_UI.jpg" width="860"/>
 
 </div>
 
@@ -35,20 +35,20 @@
 
 **If none of your configurations work, or only one or two out of a long list do - give it a try!**
 
-To use Blacklist VPN subscriptions or connect to Tor bridges, start **Igareck AntiDPI** first. Try the strategies one at a time, then run the ping or latency checks for your subscriptions or bridges in your client.
+To use Blacklist VPN subscriptions or connect to Tor bridges, start **AntiDPI** first. Try the strategies one at a time, then run the ping or latency checks for your subscriptions or bridges in your client.
 Some strategies will get more VPN configurations working than others. The best choice depends on your connection, so you will need to try them yourself. Start with the Golden strategies.
 
-For example, Tor bridges can connect faster with **Igareck AntiDPI** running, and obfs4 bridges may work on connections where they previously failed.
+For example, Tor bridges can connect faster with **AntiDPI** running, and obfs4 bridges may work on connections where they previously failed.
 
-### **`How can I check whether Igareck AntiDPI is working?`**
+### **`How can I check whether AntiDPI is working?`**
 
-1. First, run a latency test on the blacklist (BL) subscriptions **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)**, **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)**, or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** over an unrestricted network with **Igareck AntiDPI** disabled.
-2. Then enable **Igareck AntiDPI** and select a strategy, starting with **Golden**.
+1. First, run a latency test on the blacklist (BL) subscriptions **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)**, **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)**, or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)** over an unrestricted network with **AntiDPI** disabled.
+2. Then enable **AntiDPI** and select a strategy, starting with **Golden**.
 3. Run the latency test in your VPN client again.
 4. Compare the results to see how many more configurations are working.
 5. **Profit!**
 
-### **`Which VPN/Tor clients are compatible with Igareck AntiDPI?`**
+### **`Which VPN/Tor clients are compatible with AntiDPI?`**
 
 **Any client:** **[Karing](https://github.com/KaringX/karing/releases), [v2rayN](https://github.com/2dust/v2rayN/releases), [Throne](https://github.com/throneproj/Throne/releases), [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev/releases), [OnionHop V3](https://github.com/center2055/OnionHop/releases), [OnionFruit](https://github.com/dragonfruitnetwork/onionfruit/releases/latest)** and more.
 
@@ -64,11 +64,11 @@ See **[README_Стратегии_Windows_v1.0.txt](windows/README_Стратег
 
 Golden strategies may be more effective at bypassing TSPU filtering and can perform better than Silver for VPNs, Tor, and YouTube.
 
-### **`Can I watch YouTube on my PC with Igareck AntiDPI, without a VPN?`**
+### **`Can I watch YouTube on my PC with AntiDPI, without a VPN?`**
 
 Yes. In the menu that lets you enter a `strategy number` or `YouTube`, type `YouTube` to run the automatic strategy check. Strategies marked `PASS` should let you open YouTube in your browser without a VPN.
 
-**The main purpose of `Igareck AntiDPI` is to restore VPN/Tor connectivity. Direct access to YouTube is a nice bonus.** Some Golden strategies may also provide access to Discord, LinkedIn, Facebook, Threads, X.com, and parts of the Tor Project website.
+**The main purpose of `AntiDPI` is to restore VPN/Tor connectivity. Direct access to YouTube is a nice bonus.** Some Golden strategies may also provide access to Discord, LinkedIn, Facebook, Threads, X.com, and parts of the Tor Project website.
 
 ### **`Does a successful YouTube check mean that a strategy will get more VPN configurations working?`**
    
@@ -80,7 +80,7 @@ A strategy may fail to provide direct access to YouTube yet still get the most V
 
 The program uses the [Zapret2](https://github.com/bol-van/zapret2) engine developed by [Bol-Van](https://github.com/bol-van).
 
-**Igareck AntiDPI** comes with ready-to-use strategies for bypassing TSPU filtering. You only need to find the one that works best for you, rather than build a strategy from scratch.
+**AntiDPI** comes with ready-to-use strategies for bypassing TSPU filtering. You only need to find the one that works best for you, rather than build a strategy from scratch.
 
 The program and its strategies have been tested on mobile and wired internet connections in Russia. It is intended for people using public VPN/Tor subscriptions and accessing YouTube in Russia.
 
@@ -107,25 +107,25 @@ An Android version is planned.
 
 **[INSTALL USING THE EXE](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe)**
 
-Double-click **Igareck_AntiDPI_CLI_v1.0_Windows_x64.exe**.
+Double-click the downloaded Windows EXE.
 Approve the request to run as administrator.
 
 **[INSTALL FROM THE ZIP ARCHIVE](https://github.com/igareck/anti-dpi-for-russia/releases/download/v1.0/Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip)**
 
-Extract **Igareck_AntiDPI_CLI_v1.0_Windows_x64.zip**, open the **Igareck_AntiDPI_CLI_v1.0_Windows_x64** folder, and run **УСТАНОВКА.cmd**.
+Extract the downloaded ZIP, open the extracted folder, and run **УСТАНОВКА.cmd**.
 Approve the request to run as administrator.
 
 ### **2. Read the `ВНИМАНИЕ` (Warnings) and `ЗАМЕТКИ` (Notes) sections, then press Enter to continue.**
 
 ### **3. Choose an installation folder.**
 
-Press **Enter** to use the default folder, **`C:\Igareck_AntiDPI`**.
+Press **Enter** to use the default folder, **`C:\AntiDPI`**.
 
 Or enter a different installation path.
 
 ### **4. Choose the engine version by entering its number.**
 
-1 — the most compatible Zapret2 version, pinned to the commit used to test the current release of **Igareck AntiDPI**.
+1 — the most compatible Zapret2 version, pinned to the commit used to test the current release of **AntiDPI**.
 
 2 — the latest Zapret2 version from the official master branch.
 
@@ -138,7 +138,7 @@ Or enter a different installation path.
 
 *THE PROGRAM STARTS AUTOMATICALLY WHEN INSTALLATION FINISHES.*
 
-*TO START THE INSTALLED PROGRAM AGAIN, USE THE `START_Igareck_AntiDPI` SHORTCUT IN THE `Igareck_AntiDPI` FOLDER ON YOUR DESKTOP, OR RUN `ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd` IN THE INSTALLATION FOLDER.*
+*TO START THE INSTALLED PROGRAM AGAIN, USE THE `START_AntiDPI` SHORTCUT IN THE `AntiDPI` FOLDER ON YOUR DESKTOP, OR RUN `ЗАПУСК_AntiDPI_Zapret2.cmd` IN THE INSTALLATION FOLDER.*
 
 ---
 ---
@@ -222,9 +222,9 @@ c. A strategy may not provide direct YouTube access but may still get the larges
 
 ### **11. Once the strategy is running, test and connect to configurations in your VPN client (Karing is recommended), or check YouTube in your browser without a VPN.**
 
-A VPN configuration that only works with **Igareck AntiDPI**, and does not even respond to a latency check without it, may need 5–20 seconds to begin passing traffic. After connecting to a configuration that passed the check, give it 5–20 seconds before deciding it is not working.
+A VPN configuration that only works with **AntiDPI**, and does not even respond to a latency check without it, may need 5–20 seconds to begin passing traffic. After connecting to a configuration that passed the check, give it 5–20 seconds before deciding it is not working.
 
-Use **Igareck AntiDPI** with these **Blacklist VPN subscriptions** (for networks with blacklist-based filtering): **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** or **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
+Use **AntiDPI** with these **Blacklist VPN subscriptions** (for networks with blacklist-based filtering): **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** or **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
 
 ### **12. Controls available while the program is running.**
 
@@ -252,13 +252,13 @@ Stops the current *winws2.exe* process and exits the program.
 
 **To run:**
 
-1. Use the **START_Igareck_AntiDPI** shortcut in the **Igareck_AntiDPI** folder on your desktop.
-2. Run **ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd** in the installation folder.
+1. Use the **START_AntiDPI** shortcut in the **AntiDPI** folder on your desktop.
+2. Run **ЗАПУСК_AntiDPI_Zapret2.cmd** in the installation folder.
 
 **To uninstall:**
 
-1. Use the **DELETE_Igareck_AntiDPI** shortcut in the **Igareck_AntiDPI** folder on your desktop.
-2. Run **УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd** in the installation folder.
+1. Use the **DELETE_AntiDPI** shortcut in the **AntiDPI** folder on your desktop.
+2. Run **УДАЛИТЬ_AntiDPI_Zapret2.cmd** in the installation folder.
 
 ---
 ---
@@ -279,8 +279,10 @@ Stops the current *winws2.exe* process and exits the program.
 Open a terminal in the folder containing the downloaded archive and run:
 
 ```bash
-tar -xzf Igareck_AntiDPI_CLI_v1.1_Linux_x64.tar.gz
-cd Igareck_AntiDPI_CLI_v1.1_Linux_x64
+archive="$(find . -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+tar -xzf "$archive"
+folder="$(tar -tzf "$archive" | head -n1 | cut -d/ -f1)"
+cd "$folder"
 bash INSTALL.sh
 ```
 
@@ -288,13 +290,13 @@ bash INSTALL.sh
 
 ### **3. Choose an installation folder.**
 
-Press **Enter** to use the default folder, **`/opt/igareck-antidpi`**.
+Press **Enter** to use the default folder, **`/opt/antidpi`**.
 
 Or enter a different installation path.
 
 ### **4. Choose the engine version by entering its number.**
 
-1 — the most compatible Zapret2 version, pinned to the commit used to test the current release of **Igareck AntiDPI**;
+1 — the most compatible Zapret2 version, pinned to the commit used to test the current release of **AntiDPI**;
 
 2 — the latest Zapret2 version from the official master branch.
 
@@ -307,7 +309,7 @@ Or enter a different installation path.
 
 *THE PROGRAM STARTS AUTOMATICALLY WHEN INSTALLATION FINISHES.*
 
-*TO START THE INSTALLED PROGRAM AGAIN, USE THE `START_Igareck_AntiDPI` SHORTCUT IN THE `Igareck_AntiDPI` FOLDER ON YOUR DESKTOP, OR FIND IT IN YOUR APPLICATIONS MENU, OR RUN `START.sh` IN THE INSTALLATION FOLDER, OR ENTER `igareck-antidpi` IN A TERMINAL FROM ANY DIRECTORY.*
+*TO START THE INSTALLED PROGRAM AGAIN, USE THE `START_AntiDPI` SHORTCUT IN THE `AntiDPI` FOLDER ON YOUR DESKTOP, OR FIND IT IN YOUR APPLICATIONS MENU, OR RUN `START.sh` IN THE INSTALLATION FOLDER, OR ENTER `antidpi` IN A TERMINAL FROM ANY DIRECTORY.*
 
 ---
 ---
@@ -406,9 +408,9 @@ c. A strategy may not provide direct YouTube access but may still get the larges
 
 ### **11. Once the strategy is running, test and connect to configurations in your VPN client (Karing is recommended), or check YouTube in your browser without a VPN.**
 
-A VPN configuration that only works with **Igareck AntiDPI**, and does not even respond to a latency check without it, may need 5–20 seconds to begin passing traffic. After connecting to a configuration that passed the check, give it 5–20 seconds before deciding it is not working.
+A VPN configuration that only works with **AntiDPI**, and does not even respond to a latency check without it, may need 5–20 seconds to begin passing traffic. After connecting to a configuration that passed the check, give it 5–20 seconds before deciding it is not working.
 
-Use **Igareck AntiDPI** with these **Blacklist VPN subscriptions** (for networks with blacklist-based filtering): **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** or **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
+Use **AntiDPI** with these **Blacklist VPN subscriptions** (for networks with blacklist-based filtering): **[BLACK_VLESS_RUS_mobile.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt)** or **[BLACK_SS+All_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt)** or **[BLACK_VLESS_RUS.txt](https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt)**.
 
 ### **12. Controls available while the program is running.**
 
@@ -436,10 +438,10 @@ Exits the program.
 
 **To run:**
 
-1. Use the **START_Igareck_AntiDPI** shortcut in the **Igareck_AntiDPI** folder on your desktop.
-2. Use the **Igareck_AntiDPI** shortcut in your Applications Menu.
+1. Use the **START_AntiDPI** shortcut in the **AntiDPI** folder on your desktop.
+2. Use the **AntiDPI** shortcut in your Applications Menu.
 3. Run **START.sh** in the installation folder.
-4. Enter **`igareck-antidpi`** in a terminal from any directory.
+4. Enter **`antidpi`** in a terminal from any directory.
 
 **To uninstall:**
 
@@ -448,17 +450,17 @@ Exits the program.
 Run this command in a terminal:
 
 ```bash
-sudo bash /opt/igareck-antidpi/DELETE.sh
+sudo bash /opt/antidpi/DELETE.sh
 ```
-Or use the **DELETE_Igareck_AntiDPI** shortcut in the **Igareck_AntiDPI** folder on your desktop.
+Or use the **DELETE_AntiDPI** shortcut in the **AntiDPI** folder on your desktop.
 
 2. **Full uninstall: removes the entire installation folder.**
 
 ```bash
-sudo bash /opt/igareck-antidpi/DELETE.sh --purge
+sudo bash /opt/antidpi/DELETE.sh --purge
 ```
 
-If you installed the program elsewhere, replace `/opt/igareck-antidpi` with your installation path.
+If you installed the program elsewhere, replace `/opt/antidpi` with your installation path.
 
 </details>
 

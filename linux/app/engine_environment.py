@@ -97,7 +97,7 @@ def check_environment(root=None, check_nft=True):
                            'Для контейнера проверьте разрешения на хосте; это не ошибка стратегии.')
     uid, gid = engine_identity(state)
     if check_nft:
-        table = 'igareck_z2_probe_'+uuid.uuid4().hex[:12]
+        table = 'antidpi_z2_probe_'+uuid.uuid4().hex[:12]
         rules = ('table ip '+table+' {\n'
                  ' chain probe { type filter hook output priority -150; policy accept;\n'
                  '  queue num 24999 bypass\n }\n}\n')

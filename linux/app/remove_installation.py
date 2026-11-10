@@ -18,12 +18,12 @@ import signal
 import sys
 import uuid
 
-SCHEMA = 'igareck.zapret2.linux.install.v1'
+SCHEMA = 'antidpi.zapret2.linux.install.v1'
 CONTROL = frozenset(('DELETE.sh', 'remove_installation.py', 'installation.json'))
 # Keep the same artwork renderer available for a later full removal.
 RETAIN = CONTROL | frozenset(('terminal_bootstrap.py', 'desktop_integration.py',
-    'cli_ui.py', 'app_paths.py', 'artwork.json', 'IgareckArtLinux16.ttf',
-    'IgareckArt_OFL.txt', 'LICENSE.txt', 'diagnostics.py'))
+    'cli_ui.py', 'app_paths.py', 'artwork.json', 'AntiDPIArtLinux16.ttf',
+    'AntiDPIArt_OFL.txt', 'LICENSE.txt', 'diagnostics.py'))
 
 
 def digest(path):
@@ -57,12 +57,12 @@ def write_identity(root, identity):
 
 @contextmanager
 def runtime_lock():
-    fd = os.open('/run/lock/igareck-zapret2-public.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    fd = os.open('/run/lock/antidpi-zapret2-public.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError('Уже работает Linux-оболочка Igareck. Остановите её через Ctrl+C перед удалением.')
+            raise RuntimeError('Уже работает Linux-оболочка AntiDPI. Остановите её через Ctrl+C перед удалением.')
         yield
 
 
@@ -112,7 +112,7 @@ def uninstall(root, purge=False, yes=False):
         # This marker is written only AFTER successful network cleanup. A
         # second invocation after standard removal needs no deleted modules.
         if not identity.get('standard_uninstalled'):
-            from igareck import Session
+            from antidpi import Session
             Session(root).recover()
         if identity.get('shortcuts'):
             from desktop_integration import remove_shortcuts
@@ -150,7 +150,7 @@ def uninstall(root, purge=False, yes=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Удаление Igareck CLI Linux 1.1')
+    parser = argparse.ArgumentParser(description='Удаление AntiDPI CLI Linux 1.1')
     parser.add_argument('--purge', action='store_true', help='Удалить всю папку этой установки вместе с логами и изменёнными файлами')
     parser.add_argument('--yes', action='store_true', help='Без интерактивного подтверждения удаления')
     parser.add_argument('--prefix', help='Только с --purge: папка архивной установки с собственным installation.json')
@@ -171,7 +171,7 @@ def main():
         from diagnostics import report_exception
         report_exception(Path(__file__).resolve().parent, error, 'uninstaller')
         code = 1
-    if os.environ.get('IGARECK_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
+    if os.environ.get('AntiDPI_TERMINAL_WINDOW') == '1' and sys.stdin.isatty():
         try:
             input('\nНажмите Enter, чтобы закрыть окно.\n')
         except (EOFError, KeyboardInterrupt):

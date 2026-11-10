@@ -3,26 +3,26 @@
 param([ValidateSet('Install','Launch','Uninstall')][string]$Action='Install',[switch]$SkipHeader)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $payload=if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'payload')){Join-Path $PSScriptRoot 'payload'}else{$PSScriptRoot}
-$IgareckLibraryOnly=$true
-. (Join-Path $payload 'Igareck_Launcher_Core_20261023_public_v1.ps1')
-$IgareckLibraryOnly=$false
-$script:IgareckTranscriptActive=$false
-$script:IgareckTranscriptPath=''
-$script:IgareckInstalledRoot=''
+$AntiDPILibraryOnly=$true
+. (Join-Path $payload 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
+$AntiDPILibraryOnly=$false
+$script:AntiDPITranscriptActive=$false
+$script:AntiDPITranscriptPath=''
+$script:AntiDPIInstalledRoot=''
 function Test-ChildPath([string]$Root,[string]$Candidate) {
     $r=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
     return [IO.Path]::GetFullPath($Candidate).StartsWith($r,[StringComparison]::OrdinalIgnoreCase)
 }
 function Read-InstallManifest {
-    $root=Split-Path -Parent $PSScriptRoot;$path=Join-Path $root '.igareck-install.json'
+    $root=Split-Path -Parent $PSScriptRoot;$path=Join-Path $root '.antidpi-install.json'
     if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'Маркер установки не найден. Автоматическое удаление не выполняется.'}
     $m=Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json
-    if($m.Schema -ne 'igareck.zapret.install.v1' -or [IO.Path]::GetFullPath($m.InstallRoot) -ine [IO.Path]::GetFullPath($root)){throw 'Маркер установки не соответствует этой папке.'}
+    if($m.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath($m.InstallRoot) -ine [IO.Path]::GetFullPath($root)){throw 'Маркер установки не соответствует этой папке.'}
     foreach($f in $m.Files){if([IO.Path]::IsPathRooted($f.Path) -or -not (Test-ChildPath $root (Join-Path $root $f.Path))){throw 'Некорректный путь в списке установленных файлов.'}}
     return $m
 }
 function Stop-OwnedWinws($Manifest) {
-    $record=Join-Path $Manifest.InstallRoot 'Igareck\_state\owned_process.json'
+    $record=Join-Path $Manifest.InstallRoot 'AntiDPI\_state\owned_process.json'
     if(-not (Test-Path -LiteralPath $record)){return}
     try{$r=Get-Content -LiteralPath $record -Raw|ConvertFrom-Json}
     catch{if(-not (Test-Path -LiteralPath $record)){return};throw}
@@ -33,13 +33,13 @@ function Stop-OwnedWinws($Manifest) {
     }
     Remove-Item -LiteralPath $record -Force
 }
-function Assert-IgareckPathLength([string]$Path,[switch]$Directory) {
+function Assert-AntiDPIPathLength([string]$Path,[switch]$Directory) {
     $limit=if($Directory){247}else{259}
     if([IO.Path]::GetFullPath($Path).Length -gt $limit){
         throw ('Слишком длинный путь для Windows: '+$Path+'. Выберите более короткую папку установки.')
     }
 }
-function New-IgareckShortDirectory {
+function New-AntiDPIShortDirectory {
     # A private, uniquely created working directory independent of a long user TEMP.
     $parents=@([IO.Path]::GetPathRoot([Environment]::GetFolderPath('Windows')),
         [Environment]::GetFolderPath('CommonApplicationData')) | Select-Object -Unique
@@ -68,19 +68,19 @@ function New-IgareckShortDirectory {
                 return $path
             }catch{
                 $lastError=$_.Exception.Message
-                if($created){Remove-IgareckTemporaryDirectory $path}
+                if($created){Remove-AntiDPITemporaryDirectory $path}
                 break
             }
         }
     }
     throw ('Не удалось создать короткую временную папку установщика: '+$lastError)
 }
-function Assert-IgareckBundlePaths([string]$Source,[string]$Destination) {
-    Assert-IgareckPathLength $Destination -Directory
+function Assert-AntiDPIBundlePaths([string]$Source,[string]$Destination) {
+    Assert-AntiDPIPathLength $Destination -Directory
     foreach($file in Get-ChildItem -LiteralPath $Source -Force -Recurse){
         $relative=$file.FullName.Substring($Source.TrimEnd('\','/').Length+1)
         $target=Join-Path $Destination $relative
-        Assert-IgareckPathLength $target -Directory:$file.PSIsContainer
+        Assert-AntiDPIPathLength $target -Directory:$file.PSIsContainer
     }
 }
 function Expand-VerifiedBundle([string]$Zip,[string]$Destination,[string]$ArchiveRoot) {
@@ -103,8 +103,8 @@ function Expand-VerifiedBundle([string]$Zip,[string]$Destination,[string]$Archiv
             if(-not $seen.Add($full.TrimEnd('\','/'))){throw 'Повторяющийся путь внутри архива.'}
             if((($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960){throw 'Символическая ссылка в архиве запрещена.'}
             $directory=$name.EndsWith('/')
-            Assert-IgareckPathLength $full -Directory:$directory
-            if(-not $directory){Assert-IgareckPathLength (Split-Path -Parent $full) -Directory}
+            Assert-AntiDPIPathLength $full -Directory:$directory
+            if(-not $directory){Assert-AntiDPIPathLength (Split-Path -Parent $full) -Directory}
             $entries.Add([pscustomobject]@{Entry=$entry;Path=$full;Directory=$directory})
         }
         foreach($item in $entries){
@@ -115,23 +115,23 @@ function Expand-VerifiedBundle([string]$Zip,[string]$Destination,[string]$Archiv
     }finally{$z.Dispose()}
 }
 function New-UserCommand([string]$Path,[string]$Mode) {
-    $text='@echo off'+"`r`n"+'start "" "%SystemRoot%\System32\conhost.exe" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Igareck\Igareck_Manager.ps1" -Action '+$Mode+"`r`n"+'if errorlevel 1 pause'+"`r`n"
+    $text='@echo off'+"`r`n"+'start "" "%SystemRoot%\System32\conhost.exe" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0AntiDPI\AntiDPI_Manager.ps1" -Action '+$Mode+"`r`n"+'if errorlevel 1 pause'+"`r`n"
     [IO.File]::WriteAllText($Path,$text,[Text.Encoding]::ASCII)
 }
-function Write-IgareckBusyDirectory([string]$Reason='') {
+function Write-AntiDPIBusyDirectory([string]$Reason='') {
     Write-Host 'Папка уже занята, выберите другую папку или удалите текущую!' -ForegroundColor Yellow
     if($Reason){Write-Host ('Причина: '+$Reason) -ForegroundColor DarkYellow}
 }
-function Move-IgareckPreparedDirectory([string]$Prepared,[string]$Destination) {
+function Move-AntiDPIPreparedDirectory([string]$Prepared,[string]$Destination) {
     # Atomic same-volume rename. Unlike Move-Item, never nests inside a target
     # directory that another process happened to create after our last check.
     [IO.Directory]::Move($Prepared,$Destination)
 }
-function Read-IgareckInstallDirectory {
+function Read-AntiDPIInstallDirectory {
     while($true){
-        $answer=Read-IgareckInstallPathInput
+        $answer=Read-AntiDPIInstallPathInput
         $answer=([string]$answer).Trim().Trim('"').Trim()
-        if([string]::IsNullOrWhiteSpace($answer) -or $answer -match '^(?i:C):[\\/]+$'){$answer='C:\Igareck_AntiDPI'}
+        if([string]::IsNullOrWhiteSpace($answer) -or $answer -match '^(?i:C):[\\/]+$'){$answer='C:\AntiDPI'}
         try{$candidate=[IO.Path]::GetFullPath($answer)}catch{Write-Host 'Неверный путь.';continue}
         if(-not [IO.Path]::IsPathRooted($answer) -or $candidate -eq [IO.Path]::GetPathRoot($candidate)){
             Write-Host 'Укажите отдельную абсолютную папку.';continue
@@ -139,17 +139,17 @@ function Read-IgareckInstallDirectory {
         try{
             if(Test-Path -LiteralPath $candidate){
                 if(-not (Test-Path -LiteralPath $candidate -PathType Container)){
-                    Write-IgareckBusyDirectory 'Этот путь занят файлом.';continue
+                    Write-AntiDPIBusyDirectory 'Этот путь занят файлом.';continue
                 }
                 if(@(Get-ChildItem -LiteralPath $candidate -Force -ErrorAction Stop).Count){
-                    Write-IgareckBusyDirectory;continue
+                    Write-AntiDPIBusyDirectory;continue
                 }
             }
             return $candidate
-        }catch{Write-IgareckBusyDirectory $_.Exception.Message}
+        }catch{Write-AntiDPIBusyDirectory $_.Exception.Message}
     }
 }
-function Show-IgareckAntivirusNotice([switch]$Installing) {
+function Show-AntiDPIAntivirusNotice([switch]$Installing) {
     Write-Host 'ВНИМАНИЕ!' -ForegroundColor Yellow
     if($Installing){
         Write-Host '1. Перед началом установки отключите Антивирус!' -ForegroundColor Yellow
@@ -164,7 +164,7 @@ function Show-IgareckAntivirusNotice([switch]$Installing) {
     Write-Host ''
     Write-Host '----------------------'
     Write-Host ''
-    Wait-IgareckEnter 'Нажмите Enter, чтобы продолжить и прочитать ЗАМЕТКИ'
+    Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить и прочитать ЗАМЕТКИ'
     $notes=@(
         'ЗАМЕТКИ:',
         '1. Программа с готовыми AntiDPI стратегиями разработана специально для восстановления работоспособности VPN-конфигураций Черных Списков, Tor и YouTube.',
@@ -183,19 +183,19 @@ function Show-IgareckAntivirusNotice([switch]$Installing) {
     Write-Host ''
     Write-Host '----------------------'
     Write-Host ''
-    if($Installing){Wait-IgareckEnter 'Нажмите Enter, чтобы продолжить установку'}
-    else{Wait-IgareckEnter 'Нажмите Enter, чтобы продолжить работу'}
+    if($Installing){Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить установку'}
+    else{Wait-AntiDPIEnter 'Нажмите Enter, чтобы продолжить работу'}
 }
-function Wait-IgareckEnter([string]$Message) {
-    Initialize-IgareckRuntime
+function Wait-AntiDPIEnter([string]$Message) {
+    Initialize-AntiDPIRuntime
     Write-Host $Message
-    if(-not [Igareck.Public10.ConsoleEnterPause]::Wait()){
+    if(-not [AntiDPI.Public10.ConsoleEnterPause]::Wait()){
         throw [OperationCanceledException]::new('Работа остановлена пользователем.')
     }
     Write-Host ''
 }
 
-function Test-IgareckAntivirusBlock($Failure) {
+function Test-AntiDPIAntivirusBlock($Failure) {
     # Win32 225/226 survive localized messages and nested PowerShell exceptions.
     $errorObject=$Failure
     if($errorObject -is [Management.Automation.ErrorRecord]){$errorObject=$errorObject.Exception}
@@ -210,25 +210,25 @@ function Test-IgareckAntivirusBlock($Failure) {
     }
     return $false
 }
-function Read-IgareckBundleRetry($Failure) {
+function Read-AntiDPIBundleRetry($Failure) {
     Write-Host ('ОШИБКА: '+$Failure.Exception.Message) -ForegroundColor Red
     Write-Host ''
     Write-Host 'Выберите 1 или 2.'
     Write-Host '1 - попытаться повторно загрузить (перед эти шагом отключите антивирус)'
     Write-Host '2 - выйти из программы'
     while($true){
-        $answer=(Read-IgareckChoice).Trim()
+        $answer=(Read-AntiDPIChoice).Trim()
         if($answer -eq '1'){return $true}
         if($answer -eq '2'){return $false}
         Write-Host 'Введите 1 или 2.' -ForegroundColor Yellow
     }
 }
-function Remove-IgareckTemporaryDirectory([string]$Path) {
+function Remove-AntiDPITemporaryDirectory([string]$Path) {
     if(-not $Path){return}
     try{if(Test-Path -LiteralPath $Path){Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop}}
     catch{Write-Verbose ('Не удалось очистить временную папку '+$Path+': '+$_.Exception.Message)}
 }
-function Get-IgareckVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string]$Stage) {
+function Get-AntiDPIVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string]$Stage) {
     while($true){
         # A retry never reuses a quarantined ZIP or partially extracted directory.
         $attempt=Join-Path $Stage ('d-'+[guid]::NewGuid().ToString('N').Substring(0,8))
@@ -239,8 +239,8 @@ function Get-IgareckVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
             $branchArchive=([string]$Meta.commit -notmatch '^[0-9a-f]{40}$')
             if($branchArchive){Write-Host 'Скачиваю последнюю версию официальной ветки master bol-van.'}
             else{Write-Host ('Скачиваю официальный Windows Bundle bol-van: '+$Meta.commit)}
-            $mirror=Get-IgareckBundleMirrorUrl ([string]$Meta.commit)
-            $download=Invoke-IgareckBundleDownload -Url $Url -AlternativeUrls @($mirror) -Destination $zip -ExpectedBytes ([long]$Meta.bytes)
+            $mirror=Get-AntiDPIBundleMirrorUrl ([string]$Meta.commit)
+            $download=Invoke-AntiDPIBundleDownload -Url $Url -AlternativeUrls @($mirror) -Destination $zip -ExpectedBytes ([long]$Meta.bytes)
             $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
             if($Selection -eq 'Compatible'){
                 Write-Host 'Проверяю SHA-256...'
@@ -249,8 +249,8 @@ function Get-IgareckVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
             $archiveRef=if($branchArchive){'master'}else{[string]$Meta.commit}
             $commit=[string]$Meta.commit
             if($branchArchive){
-                Initialize-IgareckRuntime
-                $commit=[Igareck.Public10.BundleArchiveInfo]::ReadCommit($zip)
+                Initialize-AntiDPIRuntime
+                $commit=[AntiDPI.Public10.BundleArchiveInfo]::ReadCommit($zip)
                 Write-Host ('Коммит загруженного архива master: '+$commit)
             }
             $selected=[ordered]@{repo=$Meta.repo;commit=$commit;commit_date=$Meta.commit_date;url=$Url;download_url=$download.Url;download_final_url=$download.FinalUrl;download_mirror=$download.Mirror;sha256=$hash;bytes=(Get-Item -LiteralPath $zip -ErrorAction Stop).Length;selection=$Selection;hash_verified_against_known_value=($Selection -eq 'Compatible');archive_ref=$archiveRef}
@@ -262,26 +262,26 @@ function Get-IgareckVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
             $complete=$true
             return [pscustomobject]@{Bundle=$bundle;Hash=$hash;Metadata=$selected}
         }catch{
-            if(-not (Test-IgareckAntivirusBlock $_)){throw}
-            if(-not (Read-IgareckBundleRetry $_)){return $null}
-        }finally{if(-not $complete){Remove-IgareckTemporaryDirectory $attempt}}
+            if(-not (Test-AntiDPIAntivirusBlock $_)){throw}
+            if(-not (Read-AntiDPIBundleRetry $_)){return $null}
+        }finally{if(-not $complete){Remove-AntiDPITemporaryDirectory $attempt}}
     }
 }
 
-function Get-IgareckFirewallIdentity($Manifest) {
+function Get-AntiDPIFirewallIdentity($Manifest) {
     $id=[guid]::Empty
     if(-not [guid]::TryParse([string]$Manifest.InstallID,[ref]$id) -or $id -eq [guid]::Empty){
         throw 'В маркере установки отсутствует корректный InstallID для правила Firewall.'
     }
     $tag=$id.ToString('N')
     return [pscustomobject]@{
-        Name='Igareck-Zapret2-'+$tag+'-OUT'
-        Group='Igareck-Zapret2-'+$tag
+        Name='AntiDPI-Zapret2-'+$tag+'-OUT'
+        Group='AntiDPI-Zapret2-'+$tag
         Program=[IO.Path]::GetFullPath((Join-Path $Manifest.InstallRoot 'zapret-winws\winws2.exe'))
     }
 }
-function Set-IgareckFirewallRule($Manifest) {
-    $rule=Get-IgareckFirewallIdentity $Manifest
+function Set-AntiDPIFirewallRule($Manifest) {
+    $rule=Get-AntiDPIFirewallIdentity $Manifest
     if(-not (Test-Path -LiteralPath $rule.Program -PathType Leaf)){
         throw ('Не найден установленный winws2.exe: '+$rule.Program)
     }
@@ -293,7 +293,7 @@ function Set-IgareckFirewallRule($Manifest) {
     }
     $parameters=@{
         Name=$rule.Name
-        DisplayName='Igareck Zapret2: winws2.exe (OUT)'
+        DisplayName='AntiDPI Zapret2: winws2.exe (OUT)'
         Group=$rule.Group
         Program=$rule.Program
         Direction='Outbound'
@@ -302,7 +302,7 @@ function Set-IgareckFirewallRule($Manifest) {
         Protocol='Any'
         Enabled='True'
         PolicyStore='PersistentStore'
-        Description='Igareck CLI Version 1.0. Исходящее разрешение только для winws2.exe этой установки.'
+        Description='AntiDPI CLI Version 1.0. Исходящее разрешение только для winws2.exe этой установки.'
     }
     $created=New-NetFirewallRule @parameters -ErrorAction Stop
     $application=@($created|Get-NetFirewallApplicationFilter -ErrorAction Stop)
@@ -311,8 +311,8 @@ function Set-IgareckFirewallRule($Manifest) {
     }
     Write-Host ('Windows Firewall: добавлено исходящее разрешение для '+$rule.Program)
 }
-function Remove-IgareckFirewallRule($Manifest) {
-    $rule=Get-IgareckFirewallIdentity $Manifest
+function Remove-AntiDPIFirewallRule($Manifest) {
+    $rule=Get-AntiDPIFirewallIdentity $Manifest
     Import-Module NetSecurity -ErrorAction Stop
     $existing=@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Where-Object Name -eq $rule.Name)
     foreach($item in $existing){
@@ -321,13 +321,13 @@ function Remove-IgareckFirewallRule($Manifest) {
     }
     Write-Host 'Собственное правило Windows Firewall этой установки удалено.'
 }
-function Get-IgareckBundleMirrorUrl([string]$Commit) {
+function Get-AntiDPIBundleMirrorUrl([string]$Commit) {
     if([string]::IsNullOrEmpty($Commit)){$ref='refs/heads/master'}
     elseif($Commit -match '^[0-9a-f]{40}$'){$ref=$Commit}
     else{throw 'Некорректный идентификатор коммита для зеркала.'}
     return ('https://cdn.gh-proxy.org/https://github.com/bol-van/zapret-win-bundle/archive/'+$ref+'.zip')
 }
-function Write-IgareckDownloadProgress([string]$Source,[long]$Received,[long]$Total,[int]$Percent,[bool]$Estimated=$false) {
+function Write-AntiDPIDownloadProgress([string]$Source,[long]$Received,[long]$Total,[int]$Percent,[bool]$Estimated=$false) {
     # Append complete lines. A classic Write-Progress pane can overwrite the
     # catalogue when the buffer scrolls during installation or a YouTube scan.
     $filled=[int][Math]::Floor($Percent/5.0)
@@ -335,8 +335,8 @@ function Write-IgareckDownloadProgress([string]$Source,[long]$Received,[long]$To
     $approx=if($Estimated -and $Percent -lt 100){'~'}else{''}
     Write-Host ('{0}: [{1}] {2}{3}% — {4:N1} / {2}{5:N1} МиБ' -f $Source,$bar,$approx,$Percent,($Received/1MB),($Total/1MB))
 }
-function Invoke-IgareckBundleDownload([string]$Url,[string]$Destination,[long]$ExpectedBytes=0,[string[]]$AlternativeUrls=@()) {
-    Initialize-IgareckRuntime
+function Invoke-AntiDPIBundleDownload([string]$Url,[string]$Destination,[long]$ExpectedBytes=0,[string[]]$AlternativeUrls=@()) {
+    Initialize-AntiDPIRuntime
     if(Test-Path -LiteralPath $Destination){throw 'Путь загружаемого архива уже занят.'}
     $sources=@($Url)+@($AlternativeUrls)
     $sourceIndex=0
@@ -351,10 +351,10 @@ function Invoke-IgareckBundleDownload([string]$Url,[string]$Destination,[long]$E
         $partial=$Destination+'.part_'+[guid]::NewGuid().ToString('N')
         $attempt=$null;$clock=$null;$reason=''
         Write-Host ('Источник: '+$sourceName)
-        Write-IgareckDownloadProgress $sourceName 0 $ExpectedBytes 0 $true
+        Write-AntiDPIDownloadProgress $sourceName 0 $ExpectedBytes 0 $true
         try{
             $clock=[Diagnostics.Stopwatch]::StartNew()
-            $attempt=[Igareck.Public10.BundleDownloadAttempt]::new($source,$partial,$ExpectedBytes)
+            $attempt=[AntiDPI.Public10.BundleDownloadAttempt]::new($source,$partial,$ExpectedBytes)
             $windowStart=[long]0;$windowBytes=[long]0;$lastUpdate=[long]0;$lastPercent=0
             while(-not $attempt.Task.IsCompleted){
                 $elapsed=$clock.ElapsedMilliseconds
@@ -369,7 +369,7 @@ function Invoke-IgareckBundleDownload([string]$Url,[string]$Destination,[long]$E
                 }
                 $percent=[int][Math]::Min(99,[Math]::Floor(100.0*$received/$total))
                 if($elapsed-$lastUpdate -ge 5000 -or $percent-$lastPercent -ge 5){
-                    Write-IgareckDownloadProgress $sourceName $received $total $percent (-not $attempt.SizeKnown)
+                    Write-AntiDPIDownloadProgress $sourceName $received $total $percent (-not $attempt.SizeKnown)
                     $lastUpdate=$elapsed;$lastPercent=$percent
                 }
                 Start-Sleep -Milliseconds 100
@@ -380,11 +380,11 @@ function Invoke-IgareckBundleDownload([string]$Url,[string]$Destination,[long]$E
                     $received=$attempt.ReceivedBytes
                     $attempt.Dispose();$attempt=$null
                     [IO.File]::Move($partial,$Destination)
-                    Write-IgareckDownloadProgress $sourceName $received $received 100
+                    Write-AntiDPIDownloadProgress $sourceName $received $received 100
                     Write-Host ('Скачано: 100% ({0:N1} МиБ).' -f ($received/1MB))
                     return [pscustomobject]@{Url=$source;FinalUrl=$result.FinalUrl;Mirror=$sourceName}
                 }
-                if((Test-IgareckAntivirusBlock $result.Error) -or $result.FailureKind -ne 'Network'){throw $result.Error}
+                if((Test-AntiDPIAntivirusBlock $result.Error) -or $result.FailureKind -ne 'Network'){throw $result.Error}
                 $reason='Ошибка загрузки: '+$result.Error.Message+'. Переключаю источник.'
             }
         }finally{
@@ -398,8 +398,8 @@ function Invoke-IgareckBundleDownload([string]$Url,[string]$Destination,[long]$E
     }
 
 }
-function Invoke-IgareckLicenseDownload([string]$Url,[string[]]$AlternativeUrls,[string]$Destination,[int]$TimeoutSeconds=5) {
-    Initialize-IgareckRuntime
+function Invoke-AntiDPILicenseDownload([string]$Url,[string[]]$AlternativeUrls,[string]$Destination,[int]$TimeoutSeconds=5) {
+    Initialize-AntiDPIRuntime
     if(Test-Path -LiteralPath $Destination){throw 'Путь файла лицензии уже занят.'}
     $sources=@($Url)+@($AlternativeUrls)
     $attemptLimit=3
@@ -412,7 +412,7 @@ function Invoke-IgareckLicenseDownload([string]$Url,[string[]]$AlternativeUrls,[
         try{
             # This is a UTF-8 text file, not a bundle ZIP. Keep network reads
             # cancellable and bounded independently of archive progress rules.
-            $attempt=[Igareck.Public10.BundleDownloadAttempt]::new($source,'',1069,$false,65536)
+            $attempt=[AntiDPI.Public10.BundleDownloadAttempt]::new($source,'',1069,$false,65536)
             $clock=[Diagnostics.Stopwatch]::StartNew()
             while(-not $attempt.Task.IsCompleted){
                 if($clock.Elapsed.TotalSeconds -ge $TimeoutSeconds){
@@ -423,7 +423,7 @@ function Invoke-IgareckLicenseDownload([string]$Url,[string[]]$AlternativeUrls,[
             }
             $result=$attempt.Task.GetAwaiter().GetResult()
             if(-not $result.Success){
-                if((Test-IgareckAntivirusBlock $result.Error) -or $result.FailureKind -eq 'File'){throw $result.Error}
+                if((Test-AntiDPIAntivirusBlock $result.Error) -or $result.FailureKind -eq 'File'){throw $result.Error}
                 throw [IO.InvalidDataException]::new(('Ошибка загрузки лицензии: '+$result.Error.Message),$result.Error)
             }
             $attempt.Dispose();$attempt=$null
@@ -434,7 +434,7 @@ function Invoke-IgareckLicenseDownload([string]$Url,[string[]]$AlternativeUrls,[
             $acceptedBytes=$result.Content
             break
         }catch{
-            if((Test-IgareckAntivirusBlock $_) -or $_.Exception -is [UnauthorizedAccessException]){throw}
+            if((Test-AntiDPIAntivirusBlock $_) -or $_.Exception -is [UnauthorizedAccessException]){throw}
             $lastError=$_.Exception.Message
             Write-Host $lastError -ForegroundColor Yellow
         }finally{
@@ -453,32 +453,32 @@ function Invoke-IgareckLicenseDownload([string]$Url,[string[]]$AlternativeUrls,[
     Write-Host ('Лицензия скачана и проверена ({0} байт).' -f $acceptedBytes.Length)
     return $true
 }
-function Get-IgareckBolVanLicense([string]$Destination) {
+function Get-AntiDPIBolVanLicense([string]$Destination) {
     $source='https://raw.githubusercontent.com/bol-van/zapret2/refs/heads/master/docs/LICENSE.txt'
     $mirror='https://cdn.gh-proxy.org/'+$source
     Write-Host 'Скачиваю лицензию Zapret2 Bol-Van.'
-    Invoke-IgareckLicenseDownload -Url $source -AlternativeUrls @($mirror) -Destination $Destination
+    Invoke-AntiDPILicenseDownload -Url $source -AlternativeUrls @($mirror) -Destination $Destination
 }
-function Install-Igareck {
-    Show-IgareckAntivirusNotice -Installing
-    Write-Host 'Нажмите Enter для установки программы в C:\Igareck_AntiDPI по умолчанию или укажите новую пустую папку.'
-    $finalRoot=Read-IgareckInstallDirectory
-    $selection=Read-IgareckBundleSelection
-    $createShortcut=Read-IgareckShortcutChoice
+function Install-AntiDPI {
+    Show-AntiDPIAntivirusNotice -Installing
+    Write-Host 'Нажмите Enter для установки программы в C:\AntiDPI по умолчанию или укажите новую пустую папку.'
+    $finalRoot=Read-AntiDPIInstallDirectory
+    $selection=Read-AntiDPIBundleSelection
+    $createShortcut=Read-AntiDPIShortcutChoice
     Write-Host '----------------------'
     $meta=Get-Content -LiteralPath (Join-Path $payload 'Official_Bundle_20261023_public_v1.json') -Raw -Encoding UTF8|ConvertFrom-Json
     if($meta.repo -cne 'bol-van/zapret-win-bundle' -or $meta.commit -notmatch '^[0-9a-f]{40}$' -or $meta.sha256 -notmatch '^[0-9a-f]{64}$'){throw 'Некорректные сведения об официальной сборке.'}
-    if($selection -eq 'Latest'){$meta=Get-IgareckLatestBundle -ExpectedBytes ([long]$meta.bytes)}
+    if($selection -eq 'Latest'){$meta=Get-AntiDPILatestBundle -ExpectedBytes ([long]$meta.bytes)}
     $url=[string]$meta.url
-    $stage=New-IgareckShortDirectory
+    $stage=New-AntiDPIShortDirectory
     $ready=$null
     try{
         [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
-        $verified=Get-IgareckVerifiedBundle $meta $selection $url $stage
+        $verified=Get-AntiDPIVerifiedBundle $meta $selection $url $stage
         if($null -eq $verified){return}
         $bundle=$verified.Bundle;$downloadHash=$verified.Hash;$selectedMeta=$verified.Metadata
         $bolVanLicense=Join-Path $stage 'LICENSE_Bol-Van.txt'
-        $bolVanLicenseDownloaded=Get-IgareckBolVanLicense $bolVanLicense
+        $bolVanLicenseDownloaded=Get-AntiDPIBolVanLicense $bolVanLicense
         $driverBefore=@(Get-CimInstance Win32_SystemDriver -Filter "Name='WinDivert'" -ErrorAction SilentlyContinue|Select-Object Name,PathName,State)
         while($true){
             # A path can become occupied while the archive is downloading.
@@ -489,14 +489,14 @@ function Install-Igareck {
                 }
                 $parent=Split-Path -Parent $finalRoot
                 if(-not $needsAnother){
-                    Assert-IgareckBundlePaths $bundle $finalRoot
-                    Assert-IgareckBundlePaths $bundle (Join-Path $parent '.ig-000000000000')
+                    Assert-AntiDPIBundlePaths $bundle $finalRoot
+                    Assert-AntiDPIBundlePaths $bundle (Join-Path $parent '.ig-000000000000')
                     [IO.Directory]::CreateDirectory($parent)|Out-Null
                 }
             }catch{$needsAnother=$true;$reason=$_.Exception.Message}
             if($needsAnother){
-                Write-IgareckBusyDirectory $reason
-                $finalRoot=Read-IgareckInstallDirectory;continue
+                Write-AntiDPIBusyDirectory $reason
+                $finalRoot=Read-AntiDPIInstallDirectory;continue
             }
             $retry=$false;$retryDownload=$false
             $ready=Join-Path $parent ('.ig-'+[guid]::NewGuid().ToString('N').Substring(0,12))
@@ -507,8 +507,8 @@ function Install-Igareck {
                     if($file.Name -ieq 'readme.md'){continue}
                     Copy-Item -LiteralPath $file.FullName -Destination $ready -Recurse -Force
                 }
-                $installed=Join-Path $ready 'Igareck';[IO.Directory]::CreateDirectory($installed)|Out-Null
-                foreach($name in @('Igareck_Launcher_Core_20261023_public_v1.ps1','Igareck_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','Igareck_Artwork_CLI.json','Igareck_Console_Artwork.cs','ascii-art-new-1147-25102026.txt','Igareck_Runtime_20261023_public_v1.cs','Igareck_WinDivert_Recovery.cs','Igareck_Zapret2.ico','Igareck_Zapret2_delete.ico','IgareckArtCLI.ttf','IgareckArtCLI_OFL.txt')){
+                $installed=Join-Path $ready 'AntiDPI';[IO.Directory]::CreateDirectory($installed)|Out-Null
+                foreach($name in @('AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Artwork_CLI.json','AntiDPI_Console_Artwork.cs','ascii-art-new-1147-25102026.txt','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico','AntiDPIArtCLI.ttf','AntiDPIArtCLI_OFL.txt')){
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
                 foreach($name in @('README_Установка_Windows_v1.0.txt','README_Стратегии_Windows_v1.0.txt','LICENSE.txt')){
@@ -523,13 +523,13 @@ function Install-Igareck {
                 foreach($name in @('ips-exclude.txt')){
                     Copy-Item -LiteralPath (Join-Path (Join-Path $payload 'lists') $name) -Destination $lists
                 }
-                Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $installed 'Igareck_Manager.ps1')
-                New-UserCommand (Join-Path $ready 'ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd') 'Launch'
-                New-UserCommand (Join-Path $ready 'УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd') 'Uninstall'
+                Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $installed 'AntiDPI_Manager.ps1')
+                New-UserCommand (Join-Path $ready 'ЗАПУСК_AntiDPI_Zapret2.cmd') 'Launch'
+                New-UserCommand (Join-Path $ready 'УДАЛИТЬ_AntiDPI_Zapret2.cmd') 'Uninstall'
                 $files=@(Get-ChildItem -LiteralPath $ready -Recurse -File -Force|ForEach-Object {[pscustomobject]@{Path=$_.FullName.Substring($ready.TrimEnd('\','/').Length+1);Sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
-                $manifest=[ordered]@{Schema='igareck.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='CLI_1.0';DisplayVersion='CLI Version 1.0';OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
-                $manifest['Firewall']=Get-IgareckFirewallIdentity ([pscustomobject]$manifest)
-                [IO.File]::WriteAllText((Join-Path $ready '.igareck-install.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+                $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='CLI_1.0';DisplayVersion='CLI Version 1.0';OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
+                $manifest['Firewall']=Get-AntiDPIFirewallIdentity ([pscustomobject]$manifest)
+                [IO.File]::WriteAllText((Join-Path $ready '.antidpi-install.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
                 # Only destination/commit failures return to folder selection.
                 # Missing payload, checksum and extraction errors remain real errors.
                 try{
@@ -539,55 +539,55 @@ function Install-Igareck {
                         }
                         Remove-Item -LiteralPath $finalRoot -Force -ErrorAction Stop
                     }
-                    Move-IgareckPreparedDirectory $ready $finalRoot
+                    Move-AntiDPIPreparedDirectory $ready $finalRoot
                 }catch{
-                    if(Test-IgareckAntivirusBlock $_){throw}
+                    if(Test-AntiDPIAntivirusBlock $_){throw}
                     $retry=$true
-                    Write-IgareckBusyDirectory $_.Exception.Message
+                    Write-AntiDPIBusyDirectory $_.Exception.Message
                 }
             }catch{
-                if(-not (Test-IgareckAntivirusBlock $_)){throw}
-                if(-not (Read-IgareckBundleRetry $_)){return}
+                if(-not (Test-AntiDPIAntivirusBlock $_)){throw}
+                if(-not (Read-AntiDPIBundleRetry $_)){return}
                 $retryDownload=$true
             }finally{
-                Remove-IgareckTemporaryDirectory $ready
+                Remove-AntiDPITemporaryDirectory $ready
                 $ready=$null
             }
             if($retryDownload){
-                $verified=Get-IgareckVerifiedBundle $meta $selection $url $stage
+                $verified=Get-AntiDPIVerifiedBundle $meta $selection $url $stage
                 if($null -eq $verified){return}
                 $bundle=$verified.Bundle;$downloadHash=$verified.Hash;$selectedMeta=$verified.Metadata
                 continue
             }
             if($retry){
                 Write-Host 'Архив уже скачан и проверен. Выберите другую папку; повторное скачивание не требуется.'
-                $finalRoot=Read-IgareckInstallDirectory;continue
+                $finalRoot=Read-AntiDPIInstallDirectory;continue
             }
             break
         }
-        $installed=Join-Path $finalRoot 'Igareck'
-        $installedManifest=Get-Content -LiteralPath (Join-Path $finalRoot '.igareck-install.json') -Raw -Encoding UTF8|ConvertFrom-Json
-        $script:IgareckInstalledRoot=$finalRoot
+        $installed=Join-Path $finalRoot 'AntiDPI'
+        $installedManifest=Get-Content -LiteralPath (Join-Path $finalRoot '.antidpi-install.json') -Raw -Encoding UTF8|ConvertFrom-Json
+        $script:AntiDPIInstalledRoot=$finalRoot
         Write-Host ''
         Write-Host '----------------------'
-        Set-IgareckFirewallRule $installedManifest
+        Set-AntiDPIFirewallRule $installedManifest
         Write-Host '----------------------'
         if($createShortcut){
-            $installedManifest.Shortcut=New-IgareckDesktopShortcut $finalRoot
-            [IO.File]::WriteAllText((Join-Path $finalRoot '.igareck-install.json'),($installedManifest|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
+            $installedManifest.Shortcut=New-AntiDPIDesktopShortcut $finalRoot
+            [IO.File]::WriteAllText((Join-Path $finalRoot '.antidpi-install.json'),($installedManifest|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
         }
         Write-Host ("Установлено в:`r`n{0}`r`nИсходные файлы запуска и удаления находятся в этой корневой папке." -f $finalRoot) -ForegroundColor Yellow
         Write-Host '----------------------'
-        Complete-IgareckSessionLog
-        & (Join-Path $installed 'Igareck_Manager.ps1') -Action Launch -SkipHeader
+        Complete-AntiDPISessionLog
+        & (Join-Path $installed 'AntiDPI_Manager.ps1') -Action Launch -SkipHeader
     }finally{
-        Remove-IgareckTemporaryDirectory $ready
-        Remove-IgareckTemporaryDirectory $stage
+        Remove-AntiDPITemporaryDirectory $ready
+        Remove-AntiDPITemporaryDirectory $stage
     }
 }
 
-function Launch-Igareck([switch]$SkipIntro) {
-    if(-not $SkipIntro){Show-IgareckAntivirusNotice}
+function Launch-AntiDPI([switch]$SkipIntro) {
+    if(-not $SkipIntro){Show-AntiDPIAntivirusNotice}
     $m=Read-InstallManifest;$state=Join-Path $PSScriptRoot '_state';[IO.Directory]::CreateDirectory($state)|Out-Null
     $config=Join-Path $state 'adapter.json';$index=0
     if(Test-Path -LiteralPath $config){
@@ -599,20 +599,20 @@ function Launch-Igareck([switch]$SkipIntro) {
             else{Write-Host 'Прошлый адаптер сейчас не найден среди активных. Выберите новый.' -ForegroundColor Yellow}
         }catch{Write-Host 'Не удалось прочитать сохранённый адаптер. Выберите его заново.' -ForegroundColor Yellow}
     }
-    $adapter=Select-IgareckAdapter -Requested $index -Prompt
-    Save-IgareckAdapter $state $adapter
-    $scope=Read-IgareckTcpPorts
+    $adapter=Select-AntiDPIAdapter -Requested $index -Prompt
+    Save-AntiDPIAdapter $state $adapter
+    $scope=Read-AntiDPITcpPorts
     & (Join-Path $PSScriptRoot 'Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -InterfaceIndex $adapter.ifIndex -Scope $scope -ZapretDirectory (Join-Path $m.InstallRoot 'zapret-winws') -StateDirectory $state
 }
-function Uninstall-Igareck {
+function Uninstall-AntiDPI {
     $m=Read-InstallManifest;$root=$m.InstallRoot
     Write-Host "Будут удалены файлы этой установки: $root. Изменённые и посторонние файлы сохранятся."
     Write-Host 'Внимание! Перед удалением закройте папку с установленным Zapret2 и остановите все процессы Zapret2, если они запущены.' -ForegroundColor Yellow
     $confirmation=Read-Host 'Для удаления введите УДАЛИТЬ (или DELETE)'
     if(([string]$confirmation).Trim() -notin @('УДАЛИТЬ','DELETE')){Write-Host 'Удаление отменено.';return}
-    Initialize-IgareckRuntime
+    Initialize-AntiDPIRuntime
     $bundle=Join-Path $root 'zapret-winws'
-    $requested=[Igareck.Public10.WinDivertLifecycle]::RequestStop($bundle)
+    $requested=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)
     if($requested){
         # Let the controller cancel its own capture/parallel slots first.
         $wait=[Diagnostics.Stopwatch]::StartNew()
@@ -625,12 +625,12 @@ function Uninstall-Igareck {
     Stop-OwnedWinws $m
     $other=@(Get-Process -Name 'winws','winws2','goodbyedpi' -ErrorAction SilentlyContinue)
     if($other.Count){throw 'Другой AntiDPI ещё работает. Остановите его самостоятельно и повторите удаление; чужие процессы не остановлены.'}
-    $driverMutex=[Threading.Mutex]::new($false,'Global\Igareck_AntiDPI_WinDivert_Recovery')
+    $driverMutex=[Threading.Mutex]::new($false,'Global\AntiDPI_WinDivert_Recovery')
     $driverLock=$false
     try{
         try{$driverLock=$driverMutex.WaitOne(20000)}catch [Threading.AbandonedMutexException]{$driverLock=$true}
         if(-not $driverLock){throw 'Восстановление WinDivert ещё выполняется. Файлы сохранены; повторите удаление после его завершения.'}
-        $backend=[Igareck.Public10.NativeWinDivertBackend]::new($bundle)
+        $backend=[AntiDPI.Public10.NativeWinDivertBackend]::new($bundle)
         $driver=$backend.Read()
         if($driver.Error -ne 0){throw ('Не удалось проверить службу WinDivert: Win32 '+$driver.Error+'. Файлы сохранены.')}
         if($driver.Exists){
@@ -653,10 +653,10 @@ function Uninstall-Igareck {
             if($LASTEXITCODE -ne 0){throw 'Не удалось восстановить timestamps. Установка сохранена для повторного удаления.'}
         }else{Write-Host 'Timestamps изменены отдельно; текущее значение оставлено.'}
     }
-    Remove-IgareckFirewallRule $m
-    Remove-IgareckDesktopShortcut $m
+    Remove-AntiDPIFirewallRule $m
+    Remove-AntiDPIDesktopShortcut $m
     $kept=[Collections.Generic.List[string]]::new();$locked=[Collections.Generic.List[string]]::new()
-    $critical=@('УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd','Igareck\Igareck_Manager.ps1','Igareck\Igareck_Launcher_Core_20261023_public_v1.ps1')
+    $critical=@('УДАЛИТЬ_AntiDPI_Zapret2.cmd','AntiDPI\AntiDPI_Manager.ps1','AntiDPI\AntiDPI_Launcher_Core_20261023_public_v1.ps1')
     $ordered=@($m.Files|Where-Object {$_.Path -notin $critical})+@($m.Files|Where-Object {$_.Path -in $critical})
     foreach($file in $ordered){
         if($file.Path -in $critical -and $locked.Count){continue}
@@ -664,27 +664,27 @@ function Uninstall-Igareck {
         if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.Sha256){$kept.Add($file.Path);continue}
         try{Remove-Item -LiteralPath $path -Force}catch{$locked.Add($file.Path)}
     }
-    if($locked.Count){Write-Host ('Занятые файлы: '+($locked -join ', '));throw 'Перезагрузите ПК и повторите удаление из сохранённого файла УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd.'}
+    if($locked.Count){Write-Host ('Занятые файлы: '+($locked -join ', '));throw 'Перезагрузите ПК и повторите удаление из сохранённого файла УДАЛИТЬ_AntiDPI_Zapret2.cmd.'}
     $state=Join-Path $PSScriptRoot '_state'
     if(Test-Path -LiteralPath $state){
         foreach($name in @('owned_process.json','adapter.json','timestamps_before.json')){$p=Join-Path $state $name;if(Test-Path -LiteralPath $p){Remove-Item -LiteralPath $p -Force}}
     }
-    Remove-Item -LiteralPath (Join-Path $root '.igareck-install.json') -Force
+    Remove-Item -LiteralPath (Join-Path $root '.antidpi-install.json') -Force
     Get-ChildItem -LiteralPath $root -Directory -Force -Recurse|Sort-Object {$_.FullName.Length} -Descending|ForEach-Object {if(-not @(Get-ChildItem -LiteralPath $_.FullName -Force).Count){Remove-Item -LiteralPath $_.FullName -Force}}
     if(-not @(Get-ChildItem -LiteralPath $root -Force).Count){Remove-Item -LiteralPath $root -Force;Write-Host 'Zapret2 этой установки полностью удалён.'}else{Write-Host "Собственные неизменённые файлы удалены. Посторонние или изменённые файлы оставлены в $root."}
 }
-function Show-IgareckHeader {
+function Show-AntiDPIHeader {
     # Establish the final font/window size BEFORE printing any text: no later header reflow.
-    $prepared=Set-IgareckArtworkLayout 100 32 (Join-Path $payload 'IgareckArtCLI.ttf')
+    $prepared=Set-AntiDPIArtworkLayout 100 32 (Join-Path $payload 'AntiDPIArtCLI.ttf')
     $lines=@(
         '===============================================================================',
-        '  Igareck AntiDPI Strategies + Bol-Van Zapret2',
+        '  AntiDPI Strategies + Bol-Van Zapret2',
         '  CLI Version 1.0 | Windows 10/11 x64',
         '===============================================================================',
-        '  ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ IGARECK НА БАЗЕ ZAPRET2 (BOL-VAN)',
+        '  ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ AntiDPI НА БАЗЕ ZAPRET2 (BOL-VAN)',
         '  В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE',
         '===============================================================================',
-        '  AntiDPI от Igareck из репозитория:',
+        '  AntiDPI из репозитория:',
         '  https://github.com/igareck/anti-dpi-for-russia',
         '  VPN/Tor Черные Списки:',
         '  https://github.com/igareck/vpn-configs-for-russia',
@@ -697,49 +697,49 @@ function Show-IgareckHeader {
     )
     Write-Host ($lines -join [Environment]::NewLine) -ForegroundColor Cyan
     Write-Host ''
-    if($prepared){Show-IgareckArtwork (Join-Path $payload 'Igareck_Artwork_CLI.json') -Prepared}
+    if($prepared){Show-AntiDPIArtwork (Join-Path $payload 'AntiDPI_Artwork_CLI.json') -Prepared}
 }
-function Start-IgareckSessionLog {
-    if($script:IgareckTranscriptActive){return}
-    $directory=if($Action -eq 'Install'){Join-Path ([IO.Path]::GetTempPath()) 'Igareck_Install_Logs'}else{Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'}
+function Start-AntiDPISessionLog {
+    if($script:AntiDPITranscriptActive){return}
+    $directory=if($Action -eq 'Install'){Join-Path ([IO.Path]::GetTempPath()) 'AntiDPI_Install_Logs'}else{Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'}
     [IO.Directory]::CreateDirectory($directory)|Out-Null
-    $script:IgareckTranscriptPath=Join-Path $directory ('Igareck_{0}_{1}_{2}.log' -f $Action,(Get-Date -Format 'yyyyMMdd_HHmmss_fff'),$PID)
-    Start-Transcript -LiteralPath $script:IgareckTranscriptPath -Force|Out-Null
-    $script:IgareckTranscriptActive=$true
+    $script:AntiDPITranscriptPath=Join-Path $directory ('AntiDPI_{0}_{1}_{2}.log' -f $Action,(Get-Date -Format 'yyyyMMdd_HHmmss_fff'),$PID)
+    Start-Transcript -LiteralPath $script:AntiDPITranscriptPath -Force|Out-Null
+    $script:AntiDPITranscriptActive=$true
 }
-function Complete-IgareckSessionLog {
-    if($script:IgareckTranscriptActive){Stop-Transcript|Out-Null;$script:IgareckTranscriptActive=$false}
-    if($Action -eq 'Install' -and $script:IgareckInstalledRoot -and $script:IgareckTranscriptPath){
-        $logs=Join-Path $script:IgareckInstalledRoot 'logs'
+function Complete-AntiDPISessionLog {
+    if($script:AntiDPITranscriptActive){Stop-Transcript|Out-Null;$script:AntiDPITranscriptActive=$false}
+    if($Action -eq 'Install' -and $script:AntiDPIInstalledRoot -and $script:AntiDPITranscriptPath){
+        $logs=Join-Path $script:AntiDPIInstalledRoot 'logs'
         [IO.Directory]::CreateDirectory($logs)|Out-Null
-        $target=Join-Path $logs (Split-Path -Leaf $script:IgareckTranscriptPath)
-        if([IO.Path]::GetFullPath($target) -ine [IO.Path]::GetFullPath($script:IgareckTranscriptPath)){
-            Copy-Item -LiteralPath $script:IgareckTranscriptPath -Destination $target -Force
-            $script:IgareckTranscriptPath=$target
+        $target=Join-Path $logs (Split-Path -Leaf $script:AntiDPITranscriptPath)
+        if([IO.Path]::GetFullPath($target) -ine [IO.Path]::GetFullPath($script:AntiDPITranscriptPath)){
+            Copy-Item -LiteralPath $script:AntiDPITranscriptPath -Destination $target -Force
+            $script:AntiDPITranscriptPath=$target
         }
     }
 }
-function Read-IgareckInstallPathInput {
-    Initialize-IgareckRuntime
+function Read-AntiDPIInstallPathInput {
+    Initialize-AntiDPIRuntime
     if(-not [Console]::IsInputRedirected){
         try{$null=[Console]::KeyAvailable}
-        catch{return (Read-Host 'Папка установки [C:\Igareck_AntiDPI]')}
-        return [Igareck.Public10.ConsoleLineEditor]::Read('Папка установки [C:\Igareck_AntiDPI]: ','C:\')
+        catch{return (Read-Host 'Папка установки [C:\AntiDPI]')}
+        return [AntiDPI.Public10.ConsoleLineEditor]::Read('Папка установки [C:\AntiDPI]: ','C:\')
     }
-    return (Read-Host 'Папка установки [C:\Igareck_AntiDPI]')
+    return (Read-Host 'Папка установки [C:\AntiDPI]')
 }
-function Read-IgareckBundleSelection {
+function Read-AntiDPIBundleSelection {
     Write-Host '----------------------'
     while($true){
         Write-Host 'Выберите одно из двух.' -ForegroundColor Cyan
         Write-Host '1. Для установки максимально совместимой версии Zapret2 (рекомендуется) - нажмите 1'
         Write-Host '2. Для установки самой последней версии Zapret2 - нажмите 2'
-        $answer=Read-IgareckChoice 'Ваш выбор [Enter = 1]'
+        $answer=Read-AntiDPIChoice 'Ваш выбор [Enter = 1]'
         if([string]::IsNullOrWhiteSpace($answer) -or $answer.Trim() -eq '1'){return 'Compatible'}
         if($answer.Trim() -eq '2'){return 'Latest'}
     }
 }
-function Get-IgareckLatestBundle([long]$ExpectedBytes=0) {
+function Get-AntiDPILatestBundle([long]$ExpectedBytes=0) {
     # Both archive routes work without a prerequisite request to api.github.com.
     # The actual full commit ID is read from the downloaded git-archive ZIP.
     return [pscustomobject]@{
@@ -747,7 +747,7 @@ function Get-IgareckLatestBundle([long]$ExpectedBytes=0) {
         url='https://codeload.github.com/bol-van/zapret-win-bundle/zip/refs/heads/master';sha256='';bytes=$ExpectedBytes;selection='Latest'
     }
 }
-function Read-IgareckShortcutChoice {
+function Read-AntiDPIShortcutChoice {
     Write-Host '----------------------'
     while($true){
         Write-Host 'Создать папку с ярлыками Запуска и Удаления Программы на Рабочем Столе?' -ForegroundColor Cyan
@@ -756,26 +756,26 @@ function Read-IgareckShortcutChoice {
         if(([string]$answer).Trim() -in @('Нет','No')){return $false}
     }
 }
-function Get-IgareckDesktopDirectory {
+function Get-AntiDPIDesktopDirectory {
     $desktop=[Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
     if([string]::IsNullOrWhiteSpace($desktop)){throw 'Не удалось определить папку рабочего стола.'}
     return $desktop
 }
-function New-IgareckDesktopShortcut([string]$InstallRoot) {
-    $desktop=Get-IgareckDesktopDirectory
-    $directory=Join-Path $desktop 'Igareck_AntiDPI'
+function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
+    $desktop=Get-AntiDPIDesktopDirectory
+    $directory=Join-Path $desktop 'AntiDPI'
     $specs=@(
         [pscustomobject]@{
-            Name='START_Igareck_AntiDPI.lnk'
-            Target=(Join-Path $InstallRoot 'ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd')
-            Icon=(Join-Path $InstallRoot 'Igareck\Igareck_Zapret2.ico')
-            Description='Запуск Igareck AntiDPI Strategies + Bol-Van Zapret2 — CLI Version 1.0'
+            Name='START_AntiDPI.lnk'
+            Target=(Join-Path $InstallRoot 'ЗАПУСК_AntiDPI_Zapret2.cmd')
+            Icon=(Join-Path $InstallRoot 'AntiDPI\AntiDPI_Zapret2.ico')
+            Description='Запуск AntiDPI Strategies + Bol-Van Zapret2 — CLI Version 1.0'
         },
         [pscustomobject]@{
-            Name='DELETE_Igareck_AntiDPI.lnk'
-            Target=(Join-Path $InstallRoot 'УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd')
-            Icon=(Join-Path $InstallRoot 'Igareck\Igareck_Zapret2_delete.ico')
-            Description='Удаление Igareck AntiDPI Strategies + Bol-Van Zapret2 — CLI Version 1.0'
+            Name='DELETE_AntiDPI.lnk'
+            Target=(Join-Path $InstallRoot 'УДАЛИТЬ_AntiDPI_Zapret2.cmd')
+            Icon=(Join-Path $InstallRoot 'AntiDPI\AntiDPI_Zapret2_delete.ico')
+            Description='Удаление AntiDPI Strategies + Bol-Van Zapret2 — CLI Version 1.0'
         }
     )
     foreach($spec in $specs){
@@ -834,21 +834,21 @@ function New-IgareckDesktopShortcut([string]$InstallRoot) {
             [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)|Out-Null
         }
     }
-    Write-Host "Создана папка с удобными Ярлыками Запуска и Удаления на Рабочем Столе:`r`nIgareck_AntiDPI`r`nВ папку также добавлено подробное Описание Стратегий и Инструкции в формате txt." -ForegroundColor Yellow
+    Write-Host "Создана папка с удобными Ярлыками Запуска и Удаления на Рабочем Столе:`r`nAntiDPI`r`nВ папку также добавлено подробное Описание Стратегий и Инструкции в формате txt." -ForegroundColor Yellow
     return [pscustomobject]@{Directory=$directory;Links=$records.ToArray();Documents=$documents.ToArray()}
 }
-function Remove-IgareckDesktopShortcut($Manifest) {
+function Remove-AntiDPIDesktopShortcut($Manifest) {
     if($null -eq $Manifest.PSObject.Properties['Shortcut'] -or $null -eq $Manifest.Shortcut){return}
     $bundle=$Manifest.Shortcut
-    $desktop=Get-IgareckDesktopDirectory
+    $desktop=Get-AntiDPIDesktopDirectory
     if($null -eq $bundle.PSObject.Properties['Links']){
         throw 'Некорректный список ярлыков в маркере установки.'
     }
-    $directory=Join-Path $desktop 'Igareck_AntiDPI'
+    $directory=Join-Path $desktop 'AntiDPI'
     if([IO.Path]::GetFullPath($bundle.Directory) -ine [IO.Path]::GetFullPath($directory)){throw 'Некорректный путь папки ярлыков в маркере установки.'}
     $targets=@{
-        'START_Igareck_AntiDPI.lnk'=(Join-Path $Manifest.InstallRoot 'ЗАПУСК_Igareck_AntiDPI_Zapret2.cmd')
-        'DELETE_Igareck_AntiDPI.lnk'=(Join-Path $Manifest.InstallRoot 'УДАЛИТЬ_Igareck_AntiDPI_Zapret2.cmd')
+        'START_AntiDPI.lnk'=(Join-Path $Manifest.InstallRoot 'ЗАПУСК_AntiDPI_Zapret2.cmd')
+        'DELETE_AntiDPI.lnk'=(Join-Path $Manifest.InstallRoot 'УДАЛИТЬ_AntiDPI_Zapret2.cmd')
     }
     $links=@($bundle.Links);$seen=@{}
     if($links.Count -ne 2){throw 'Некорректный список ярлыков в маркере установки.'}
@@ -885,7 +885,7 @@ function Remove-IgareckDesktopShortcut($Manifest) {
 
 if($env:OS -ne 'Windows_NT'){throw 'Этот установщик предназначен для Windows 10/11 x64.'}
 if(-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64'){throw 'Нужна Windows x64. ARM64 требует отдельной подготовки официального драйвера.'}
-if(-not (Test-IgareckAdmin)){
+if(-not (Test-AntiDPIAdmin)){
     $arguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action',$Action)
     if($SkipHeader){$arguments+='-SkipHeader'}
     $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -895,12 +895,12 @@ if(-not (Test-IgareckAdmin)){
 }
 
 try{
-    Start-IgareckSessionLog
+    Start-AntiDPISessionLog
     if(-not $SkipHeader){
-        Show-IgareckHeader
+        Show-AntiDPIHeader
     }
-    switch($Action){'Install'{Install-Igareck};'Launch'{Launch-Igareck -SkipIntro:$SkipHeader};'Uninstall'{Uninstall-Igareck}}
+    switch($Action){'Install'{Install-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'Uninstall'{Uninstall-AntiDPI}}
 }
 catch [OperationCanceledException]{Write-Host ''}
 catch{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null;exit 1}
-finally{Close-IgareckArtworkConsole;Complete-IgareckSessionLog}
+finally{Close-AntiDPIArtworkConsole;Complete-AntiDPISessionLog}
