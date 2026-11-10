@@ -48,6 +48,17 @@ public final class AntiDpiVpnService extends VpnService {
         return thread;
     });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable statsUpdater = new Runnable() {
+        @Override public void run() {
+            if (engine == null) return;
+            String stats = engine.tunnelStats();
+            android.content.SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (!stats.equals(prefs.getString("traffic_stats", ""))) {
+                prefs.edit().putString("traffic_stats", stats).apply();
+            }
+            mainHandler.postDelayed(this, 1000);
+        }
+    };
     private volatile int startupGeneration;
     private boolean starting;
 
@@ -157,6 +168,8 @@ public final class AntiDpiVpnService extends VpnService {
                 activeAllowedApps = allowedApps.clone();
                 starting = false;
                 setState(true, "VPN активен · native ByeDPI · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
+                mainHandler.removeCallbacks(statsUpdater);
+                mainHandler.post(statsUpdater);
                 try {
                     startForegroundCompat(buildNotification("Защита включена"));
                     Log.i(TAG, "VPN started; strategy=" + strategy + ", blockQuic=" + blockQuic);
@@ -248,6 +261,7 @@ public final class AntiDpiVpnService extends VpnService {
     }
 
     private void cleanup() {
+        mainHandler.removeCallbacks(statsUpdater);
         if (engine != null) {
             try { engine.stop(); } catch (RuntimeException error) { Log.w(TAG, "Engine stop failed", error); }
             engine = null;
@@ -360,6 +374,11 @@ public final class AntiDpiVpnService extends VpnService {
     static int proxyPort(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getInt("proxy_port", 0);
+    }
+
+    static String trafficStats(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString("traffic_stats", "No TUN traffic stats yet");
     }
 
     static void stop(Context context) {

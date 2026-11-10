@@ -181,6 +181,18 @@ func (e *Engine) Stop() {
 	}
 }
 
+// TunnelStats returns a compact snapshot of forwarded TCP/UDP flows for UI
+// diagnostics. These counters describe routing, not bypass effectiveness.
+func (e *Engine) TunnelStats() string {
+	e.mu.Lock()
+	t := e.tun
+	e.mu.Unlock()
+	if t == nil {
+		return "tunnel not active"
+	}
+	return t.Stats()
+}
+
 // Running reports whether a tunnel is active.
 func (e *Engine) Running() bool {
 	e.mu.Lock()

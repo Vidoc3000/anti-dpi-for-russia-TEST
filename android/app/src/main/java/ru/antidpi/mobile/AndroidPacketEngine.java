@@ -91,6 +91,10 @@ final class AndroidPacketEngine {
         engine.startTunnelViaProxy(tun.getFd(), mtu, socks5Addr, blockQuic);
     }
 
+    String tunnelStats() {
+        return engine.tunnelStats();
+    }
+
     void stop() {
         engine.stop();
     }

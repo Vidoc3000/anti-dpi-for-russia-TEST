@@ -14,6 +14,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -65,6 +66,15 @@ type Tunnel struct {
 	log    func(string)
 
 	closeOnce sync.Once
+
+	tcpAttempts  atomic.Uint64
+	tcpConnected atomic.Uint64
+	tcpFailed    atomic.Uint64
+	udpFlows     atomic.Uint64
+	udpFailed    atomic.Uint64
+	quicDropped  atomic.Uint64
+	statsMu      sync.Mutex
+	lastEvent    string
 }
 
 // Start creates the stack and begins forwarding. It returns once the stack is
@@ -168,9 +178,12 @@ func (t *Tunnel) installTCP() {
 			addrToIP(id.LocalAddress).String(),
 			strconv.Itoa(int(id.LocalPort)),
 		)
+		t.tcpAttempts.Add(1)
 		var wq waiter.Queue
 		ep, tcperr := r.CreateEndpoint(&wq)
 		if tcperr != nil {
+			t.tcpFailed.Add(1)
+			t.setLastEvent(dst + " endpoint error: " + fmt.Sprint(tcperr))
 			r.Complete(true)
 			return
 		}
@@ -182,10 +195,14 @@ func (t *Tunnel) installTCP() {
 			defer cancel()
 			up, err := t.dialer.DialContext(dialCtx, "tcp", dst)
 			if err != nil {
+				t.tcpFailed.Add(1)
+				t.setLastEvent(dst + " connect error: " + err.Error())
 				t.log("tcp dial " + dst + ": " + err.Error())
 				local.Close()
 				return
 			}
+			t.tcpConnected.Add(1)
+			t.setLastEvent(dst + " connected")
 			desync.Relay(local, up)
 		}()
 	})
@@ -198,11 +215,14 @@ func (t *Tunnel) installUDP() {
 		dstIP := addrToIP(id.LocalAddress)
 		dstPort := int(id.LocalPort)
 		if t.opts.BlockQUIC && dstPort == 443 {
-			return true // consume the packet; client will retry over TCP
+			t.quicDropped.Add(1)
+			return true // consume the packet; client may retry over TCP
 		}
+		t.udpFlows.Add(1)
 		var wq waiter.Queue
 		ep, tcperr := r.CreateEndpoint(&wq)
 		if tcperr != nil {
+			t.udpFailed.Add(1)
 			return true
 		}
 		local := gonet.NewUDPConn(&wq, ep)
@@ -219,6 +239,8 @@ func (t *Tunnel) handleUDP(local *gonet.UDPConn, dstIP net.IP, dstPort int) {
 
 	remote, err := dialProtectedUDP(t.ctx, dstIP, dstPort, t.opts.Protector)
 	if err != nil {
+		t.udpFailed.Add(1)
+		t.setLastEvent("UDP " + net.JoinHostPort(dstIP.String(), strconv.Itoa(dstPort)) + " connect error: " + err.Error())
 		t.log("udp dial: " + err.Error())
 		return
 	}
@@ -275,6 +297,24 @@ func (t *Tunnel) Stop() {
 		}
 		t.log("tunnel stopped")
 	})
+}
+
+// Stats reports approximate flow counters for diagnosis. It does not indicate
+// that a DPI strategy bypassed filtering; it only shows what reached the TUN
+// and whether the local egress sockets connected.
+func (t *Tunnel) Stats() string {
+	t.statsMu.Lock()
+	last := t.lastEvent
+	t.statsMu.Unlock()
+	return fmt.Sprintf("TCP attempts=%d connected=%d failed=%d; UDP flows=%d failed=%d; UDP/443 dropped=%d; last=%s",
+		t.tcpAttempts.Load(), t.tcpConnected.Load(), t.tcpFailed.Load(),
+		t.udpFlows.Load(), t.udpFailed.Load(), t.quicDropped.Load(), last)
+}
+
+func (t *Tunnel) setLastEvent(event string) {
+	t.statsMu.Lock()
+	t.lastEvent = event
+	t.statsMu.Unlock()
 }
 
 func addrToIP(a tcpip.Address) net.IP {

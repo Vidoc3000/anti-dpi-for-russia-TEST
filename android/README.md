@@ -42,11 +42,13 @@ The Go engine produces `app/libs/antidpi-engine.aar` locally; it is generated, i
 - `app/src/main/assets/catalogue.json` — offline copy of the Linux strategy catalogue.
 - `engine/THIRD_PARTY_NOTICES.md` — pinned source commits and third-party license information.
 
-## Test
+## Test and routing diagnostics
 
 ```sh
 cd android/engine && go test ./...
 cd ../.. && python3 -m unittest discover -s tests/android -v
 ```
+
+The in-app HTTPS 204 probes connect to the local SOCKS proxy from the app's excluded UID; they do not traverse the Android TUN and are not an end-to-end test of another app's route. While the VPN is active, the Tests page also shows TUN counters: TCP attempts/connected/failed, UDP flows, and UDP/443 packets dropped for QUIC. Open the affected app or browser, retry a page, then return to the Tests page. Zero TCP attempts suggests the app's traffic did not reach this TUN; dial failures point to the proxy egress path. A TCP connection count is not proof of DPI bypass or successful video playback.
 
 On-device behavior still requires testing across Android versions, carriers, Wi-Fi/mobile networks, IPv4/IPv6, QUIC, and real target services. Build and protocol tests are not a substitute for field validation.

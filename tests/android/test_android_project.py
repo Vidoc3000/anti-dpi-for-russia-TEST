@@ -20,6 +20,7 @@ class AndroidProjectTests(unittest.TestCase):
 
         self.assertIn("engine.startTunnel(tun.getFd(), mtu, strategy, blockQuic)", engine)
         self.assertIn("service.protect((int) fd)", engine)
+        self.assertIn("engine.tunnelStats()", engine)
         self.assertIn("if (!AndroidPacketEngine.isReady())", service)
         self.assertIn("builder.establish()", service)
         self.assertIn("builder.addDisallowedApplication(getPackageName())", service)
@@ -33,6 +34,7 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("EXTRA_DNS_SERVERS", service)
         self.assertIn("EXTRA_MTU", service)
         self.assertIn("startupStage", service)
+        self.assertIn("statsUpdater", service)
         self.assertIn("engine.stop()", service)
         self.assertIn("VpnService.prepare(this)", activity)
         self.assertIn("AndroidPacketEngine.describeNativeProfile(selected.argsJson)", activity)
@@ -44,6 +46,8 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("showAppRoutingPicker()", activity)
         self.assertIn("configuredDnsServers()", activity)
         self.assertIn("configuredMtu()", activity)
+        self.assertIn("Счётчики реального TUN", activity)
+        self.assertIn("не проходит через TUN", activity)
         self.assertIn("FOREGROUND_SERVICE_TYPE_SPECIAL_USE", service)
 
     def test_android_build_includes_generated_engine_aar(self):
@@ -56,9 +60,9 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("gomobile init", workflow)
         self.assertIn("./android/engine/build-aar.sh", workflow)
         self.assertIn("go test ./...", workflow)
-        self.assertIn("ANDROID_PREVIEW_VERSION: '0.4.1-preview'", workflow)
-        self.assertIn("versionCode 5", gradle)
-        self.assertIn("versionName '0.4.1-preview'", gradle)
+        self.assertIn("ANDROID_PREVIEW_VERSION: '0.4.2-preview'", workflow)
+        self.assertIn("versionCode 6", gradle)
+        self.assertIn("versionName '0.4.2-preview'", gradle)
         self.assertTrue((ANDROID / "engine/THIRD_PARTY_NOTICES.md").is_file())
         self.assertTrue((ANDROID / "engine/LICENSE.zapret-mobile").is_file())
 
