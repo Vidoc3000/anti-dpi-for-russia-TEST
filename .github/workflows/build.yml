@@ -51,12 +51,7 @@ jobs:
 
       - name: Run Windows regression checks
         shell: powershell
-        run: |
-          try { .\tests\windows\test_regressions.ps1 }
-          catch {
-            Write-Output ("::error title=Windows regression details::" + $_.Exception.ToString())
-            throw
-          }
+        run: .\tests\windows\test_regressions.ps1
 
       - name: Build Windows release files
         shell: powershell
