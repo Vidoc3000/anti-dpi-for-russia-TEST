@@ -15,8 +15,8 @@ import (
 	"github.com/Vidoc3000/anti-dpi-for-russia-TEST/android/engine/tunnel"
 )
 
-// Protector is implemented on the Kotlin side to wrap VpnService.protect(fd),
-// which keeps the engine's own upstream sockets outside the VPN.
+// Protector wraps VpnService.protect(fd) for Go-owned sockets. The native
+// ByeDPI sockets are kept out of the VPN by excluding the app UID from the TUN.
 type Protector interface {
 	Protect(fd int) bool
 }
@@ -98,6 +98,19 @@ func (e *Engine) StartTunnel(fd int, mtu int, strategy string, blockQUIC bool) e
 	if err != nil {
 		return err
 	}
+	return e.startTunnel(fd, mtu, st, blockQUIC, "")
+}
+
+// StartTunnelViaProxy forwards TCP flows through a local native SOCKS5 engine,
+// allowing it to apply socket-level desynchronization methods before egress.
+func (e *Engine) StartTunnelViaProxy(fd int, mtu int, socks5Addr string, blockQUIC bool) error {
+	if socks5Addr == "" {
+		return errors.New("local SOCKS5 strategy proxy address is required")
+	}
+	return e.startTunnel(fd, mtu, desync.Strategy{}, blockQUIC, socks5Addr)
+}
+
+func (e *Engine) startTunnel(fd int, mtu int, st desync.Strategy, blockQUIC bool, socks5Addr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.tun != nil {
@@ -108,12 +121,13 @@ func (e *Engine) StartTunnel(fd int, mtu int, strategy string, blockQUIC bool) e
 		return errors.New("VpnService.protect callback is required; refusing an unprotected tunnel")
 	}
 	t, err := tunnel.Start(tunnel.Options{
-		FD:        fd,
-		MTU:       mtu,
-		Strategy:  st,
-		Protector: prot,
-		BlockQUIC: blockQUIC,
-		Log:       e.logf,
+		FD:         fd,
+		MTU:        mtu,
+		Strategy:   st,
+		Protector:  prot,
+		SOCKS5Addr: socks5Addr,
+		BlockQUIC:  blockQUIC,
+		Log:        e.logf,
 	})
 	if err != nil {
 		return err
