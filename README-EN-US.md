@@ -60,7 +60,7 @@ No special settings are required. It simply runs in the background.
 
 The new Silver family adds SYN-data (an extra initial TCP SYN payload) and TCP window-size (`wssize`) variants combined with TLS segmentation/reordering. These are experimental and network-dependent; the TLS-handshake probe does not validate a VPN/Tor tunnel.
 
-See **[README_Стратегии_Windows_v1.0.txt](windows/README_Стратегии_Windows_v1.0.txt)** for a detailed guide to all strategies.
+See **[README_Стратегии_Windows_v1.1.txt](windows/README_Стратегии_Windows_v1.1.txt)** for a detailed guide to all strategies.
 
 Golden strategies may be more effective at bypassing TSPU filtering and can perform better than Silver for VPNs, Tor, and YouTube.
 

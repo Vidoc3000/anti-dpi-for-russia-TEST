@@ -61,8 +61,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $output = '.\dist\windows-regression'
-          & .\packaging\windows\build.ps1 -ZipOnly -Version '1.0' -OutputDirectory $output
-          $sums = Join-Path $output 'SHA256SUMS_Windows_ZIP_v1.0.txt'
+          & .\packaging\windows\build.ps1 -ZipOnly -Version '1.1' -OutputDirectory $output
+          $sums = Join-Path $output 'SHA256SUMS_Windows_ZIP_v1.1.txt'
           foreach ($line in Get-Content -LiteralPath $sums) {
               if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Invalid ZIP checksum line.' }
               $expected = $Matches[1]

@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.2 — Windows GUI / Linux
+
+| English | Русский |
+| --- | --- |
+| Add a Windows GUI for strategy selection, adapter and TCP port configuration, managed stop, and logs. | Добавлено графическое управление Windows: выбор стратегии, адаптера и TCP-портов, штатная остановка и логи. |
+| Linux package version advances to 1.2; Windows GUI package version is 1.1. | Версия Linux-пакета повышена до 1.2; версия Windows-пакета с GUI — 1.1. |
+
 ## 1.1 — Linux
 
 | English | Русский |
