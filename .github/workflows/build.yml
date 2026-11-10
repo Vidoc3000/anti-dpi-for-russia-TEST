@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.6'
+        default: '1.7'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.5'
+        default: '1.6'
         type: string
       publish_release:
         description: 'Publish a GitHub release from this build (requires platform=all)'
@@ -172,7 +172,9 @@ jobs:
 
           - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64).
           - Windows GUI + CLI package: v${{ inputs.windows_version }} (Windows 10/11 x64).
-          - Windows GUI adds strategy analysis based on YouTube availability, persistent network settings, and named physical adapters.
+          - Windows includes the graphical installer and sequential YouTube strategy analysis with live per-strategy results.
+          - This update refreshes the launch/uninstall icons, uses the system console font instead of a bundled Windows TTF, and keeps PowerShell visible during installation.
+          - Linux functionality is unchanged from v1.6; its package version advances for the combined release.
           - YouTube analysis checks only IPv4/TCP/TLS HTTPS access; it does not validate VPN/Tor clients or tunnels.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
 

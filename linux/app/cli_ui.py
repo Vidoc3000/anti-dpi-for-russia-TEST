@@ -12,7 +12,7 @@ import unicodedata
 import time
 from app_paths import resource_path
 
-VERSION = 'CLI Version 1.6'
+VERSION = 'CLI Version 1.7'
 SEPARATOR = '----------------------'
 ARTWORK_BASE = 0x104000
 ARTWORK_FAMILY = 'AntiDPI Artwork 16'
