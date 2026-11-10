@@ -84,7 +84,7 @@ The command-line interface (CLI) is designed for everyday users, with straightfo
 
 **[Windows 10/11 x64](https://github.com/igareck/anti-dpi-for-russia/releases)** ★ **[Linux Ubuntu/Debian x64](https://github.com/igareck/anti-dpi-for-russia/releases)**
 
-An Android version is planned.
+An early native Android preview is available in [`android/`](android/). It can browse the strategy catalogue and run a direct YouTube HTTPS connectivity check. It does **not** yet apply DPI strategies or tunnel device traffic: the Android `VpnService` packet engine is not implemented, and the VPN start control remains disabled (fail-closed). See [`android/README.md`](android/README.md) for setup and limitations.
 
 ---
 
