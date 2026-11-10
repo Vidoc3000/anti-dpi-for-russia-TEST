@@ -31,6 +31,14 @@
 
 Сама сборка не требует прав администратора. Запуск готового установочного EXE запрашивает повышение прав, необходимое программе для установки и работы с WinDivert.
 
+Перед сборкой можно запустить Windows-регрессионные проверки из корня репозитория:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\test_regressions.ps1
+```
+
+Тесты разбирают все поставляемые PowerShell-скрипты парсером Windows PowerShell 5.1 и проверяют нормализацию TCP-портов, фильтры движка и изоляцию probe-портов. GitHub Actions запускает их для изменений Windows-кода, а также выполняет ZIP smoke-build с проверкой SHA-256.
+
 Откройте PowerShell в корне репозитория:
 
 ```powershell
