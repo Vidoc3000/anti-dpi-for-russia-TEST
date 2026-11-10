@@ -12,11 +12,12 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
-/** Runs the no-root TUN -> gVisor -> protected socket datapath as a foreground VPN service. */
+/** Runs the no-root TUN -> gVisor -> native ByeDPI datapath as a foreground VPN service. */
 public final class AntiDpiVpnService extends VpnService {
     static final String ACTION_START = "ru.antidpi.mobile.START_VPN";
     static final String ACTION_STOP = "ru.antidpi.mobile.STOP_VPN";
     static final String EXTRA_STRATEGY = "strategy";
+    static final String EXTRA_PROFILE_ARGS = "profile_args";
     static final String EXTRA_BLOCK_QUIC = "block_quic";
     static final String EXTRA_FORCE_RESTART = "force_restart";
     private static final String TAG = "AntiDpiVpnService";
@@ -27,6 +28,7 @@ public final class AntiDpiVpnService extends VpnService {
 
     private ParcelFileDescriptor tun;
     private AndroidPacketEngine engine;
+    private NativeByedpiProxy nativeProxy;
     private String activeStrategy;
     private boolean activeBlockQuic;
 
@@ -46,6 +48,8 @@ public final class AntiDpiVpnService extends VpnService {
         String strategy = intent == null ? "tlsrec:sni" : intent.getStringExtra(EXTRA_STRATEGY);
         if (strategy == null || strategy.isEmpty()) strategy = "tlsrec:sni";
         boolean blockQuic = intent == null || intent.getBooleanExtra(EXTRA_BLOCK_QUIC, true);
+        String profileArgs = intent == null ? "[]" : intent.getStringExtra(EXTRA_PROFILE_ARGS);
+        if (profileArgs == null) profileArgs = "[]";
         boolean forceRestart = intent != null && intent.getBooleanExtra(EXTRA_FORCE_RESTART, false);
         if (engine != null) {
             if (!ACTION_START.equals(intent.getAction())) return START_STICKY;
@@ -70,10 +74,13 @@ public final class AntiDpiVpnService extends VpnService {
 
             engine = AndroidPacketEngine.create(getApplicationContext(), this,
                     () -> Log.d(TAG, "native engine log callback"));
-            engine.startTunnel(tun, MTU, strategy, blockQuic);
+            nativeProxy = new NativeByedpiProxy();
+            nativeProxy.start(AndroidPacketEngine.nativeProfileArgs(profileArgs));
+            engine.startTunnelViaProxy(tun, MTU,
+                    "127.0.0.1:" + NativeByedpiProxy.PORT, blockQuic);
             activeStrategy = strategy;
             activeBlockQuic = blockQuic;
-            setState(true, "VPN активен · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
+            setState(true, "VPN активен · native ByeDPI · " + strategy + (blockQuic ? " · QUIC блокируется" : ""));
             startForegroundCompat(buildNotification("Защита включена"));
             Log.i(TAG, "VPN started; strategy=" + strategy + ", blockQuic=" + blockQuic);
             return START_STICKY;
@@ -95,8 +102,10 @@ public final class AntiDpiVpnService extends VpnService {
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("1.0.0.1")
                 .addDnsServer("2606:4700:4700::1111");
-        // Engine-owned upstream sockets are excluded individually with VpnService.protect().
-        // Keep this app itself inside the VPN so the built-in HTTPS tests exercise the tunnel.
+        // The native ByeDPI proxy owns sockets outside the Go protector callback.
+        // Exclude this UID to prevent its upstream sockets from looping into the TUN;
+        // diagnostics explicitly connect to the local SOCKS listener when VPN is active.
+        builder.addDisallowedApplication(getPackageName());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false);
         return builder.establish();
     }
@@ -119,6 +128,10 @@ public final class AntiDpiVpnService extends VpnService {
         if (engine != null) {
             try { engine.stop(); } catch (RuntimeException error) { Log.w(TAG, "Engine stop failed", error); }
             engine = null;
+        }
+        if (nativeProxy != null) {
+            try { nativeProxy.stop(); } catch (RuntimeException error) { Log.w(TAG, "Native proxy stop failed", error); }
+            nativeProxy = null;
         }
         if (tun != null) {
             try { tun.close(); } catch (Exception error) { Log.w(TAG, "TUN close failed", error); }

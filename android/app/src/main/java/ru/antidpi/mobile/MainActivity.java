@@ -271,7 +271,7 @@ public final class MainActivity extends Activity {
         page.addView(vpnCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
         TextView explanation = text(
-                "Проверка выполняет HTTPS-запросы к YouTube и Google. При включённом VPN запросы этого приложения идут через TUN и выбранную Android-адаптацию; при выключенном — напрямую. Успех проверки не гарантирует доступность всех сайтов.",
+                "Проверка выполняет HTTPS-запросы к YouTube и Google. При включённом VPN приложение отправляет их через локальный native ByeDPI SOCKS-прокси с выбранным профилем; при выключенном — напрямую. Успех проверки не гарантирует доступность всех сайтов.",
                 13, MUTED, false);
         explanation.setLineSpacing(dp(2), 1.0f);
         page.addView(explanation, margins(matchWrap(), 0, 0, 0, dp(10)));
@@ -328,7 +328,7 @@ public final class MainActivity extends Activity {
         LinearLayout aboutCard = card();
         aboutCard.addView(text("Ограничения Android", 15, CYAN, true), matchWrap());
         TextView about = text(
-                "Без root доступны только stream-safe TLS-разбиение и приблизительные TCP write boundaries. Fake-пакеты, TTL/SEQ/TS и настоящее переупорядочивание desktop-профилей не применяются.",
+                "Встроенный native ByeDPI применяет socket-level fake/TTL, split, TLS-record и disorder-приёмы. Это приближённое сопоставление каталога Zapret2, не точный повтор каждой desktop-команды: произвольные SEQ/TS, SYN data, window-size и custom fake blobs пока не реализованы.",
                 13, TEXT, false);
         about.setLineSpacing(dp(2), 1.0f);
         aboutCard.addView(about, margins(matchWrap(), 0, dp(6), 0, 0));
@@ -385,11 +385,11 @@ public final class MainActivity extends Activity {
         if (selectionText == null || androidStrategyText == null || selected == null) return;
         selectionText.setText("Профиль #" + selected.number + " · " + selected.familyName +
                 "\n" + selected.name);
-        String adapted = AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
+        String adapted = AndroidPacketEngine.describeNativeProfile(selected.argsJson);
         String activeNote = AntiDpiVpnService.isRunning(this)
                 ? " VPN перезапускается автоматически при смене профиля." : "";
-        androidStrategyText.setText("Android-адаптация: " + adapted + activeNote +
-                "\nFake/TTL/SEQ/TS/reorder и прочие packet-level команды пропускаются.");
+        androidStrategyText.setText("Native ByeDPI: " + adapted + activeNote +
+                "\nОтдельные поля desktop-профиля (SEQ/TS, SYN data, custom blob) не имеют точного мобильного эквивалента.");
     }
 
     private void toggleVpn() {
@@ -417,7 +417,7 @@ public final class MainActivity extends Activity {
     }
 
     private String selectedStrategy() {
-        return selected == null ? "tlsrec:sni" : AndroidPacketEngine.adaptProfileArgs(selected.argsJson);
+        return selected == null ? "tlsrec 0+sm" : AndroidPacketEngine.describeNativeProfile(selected.argsJson);
     }
 
     private boolean blockQuicEnabled() {
@@ -439,6 +439,7 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(this, AntiDpiVpnService.class)
                 .setAction(AntiDpiVpnService.ACTION_START)
                 .putExtra(AntiDpiVpnService.EXTRA_STRATEGY, selectedStrategy())
+                .putExtra(AntiDpiVpnService.EXTRA_PROFILE_ARGS, selected == null ? "[]" : selected.argsJson)
                 .putExtra(AntiDpiVpnService.EXTRA_BLOCK_QUIC, blockQuicEnabled())
                 .putExtra(AntiDpiVpnService.EXTRA_FORCE_RESTART, forceRestart);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
@@ -456,8 +457,8 @@ public final class MainActivity extends Activity {
         runningTestButton.setEnabled(false);
         runningResultView.setText("Проверяю HTTPS " + route + "…");
         executor.execute(() -> {
-            String youtube = probe("https://www.youtube.com/generate_204");
-            String google = probe("https://www.google.com/generate_204");
+            String youtube = probe("https://www.youtube.com/generate_204", throughVpn);
+            String google = probe("https://www.google.com/generate_204", throughVpn);
             String path = throughVpn ? "через VPN · профиль #" + profileNumber : "напрямую";
             String result = "Путь: " + path + "\n" +
                     "YouTube: " + youtube + "\n" +
@@ -472,10 +473,14 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private String probe(String address) {
+    private String probe(String address, boolean throughVpn) {
         HttpsURLConnection connection = null;
         try {
-            connection = (HttpsURLConnection) new URL(address).openConnection();
+            java.net.Proxy proxy = throughVpn
+                    ? new java.net.Proxy(java.net.Proxy.Type.SOCKS,
+                            new java.net.InetSocketAddress("127.0.0.1", NativeByedpiProxy.PORT))
+                    : java.net.Proxy.NO_PROXY;
+            connection = (HttpsURLConnection) new URL(address).openConnection(proxy);
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(7000);
@@ -494,11 +499,10 @@ public final class MainActivity extends Activity {
         boolean running = AntiDpiVpnService.isRunning(this);
         testProfileText.setText((running ? "VPN активен" : "VPN выключен") + "\n" +
                 (selected == null ? "Профиль не выбран" : "Профиль #" + selected.number + " · " +
-                        AndroidPacketEngine.adaptProfileArgs(selected.argsJson)));
+                        AndroidPacketEngine.describeNativeProfile(selected.argsJson)));
     }
 
     private void onVpnStateChanged() {
-        refreshVpnUi();
         showSelectedProfile();
         updateTestSummary();
     }

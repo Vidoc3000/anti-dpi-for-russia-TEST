@@ -25,8 +25,9 @@ var ErrProtectFailed = errors.New("protect socket failed")
 
 // Config configures a Dialer.
 type Config struct {
-	Strategy  Strategy
-	Protector Protector
+	Strategy   Strategy
+	Protector  Protector
+	SOCKS5Addr string
 }
 
 // Dialer dials upstream TCP connections that apply a stream strategy to the
@@ -60,6 +61,9 @@ func NewDialer(cfg Config) *Dialer {
 // DialContext dials addr and returns a connection that buffers enough of the
 // first payload to avoid losing a ClientHello split across TUN reads.
 func (d *Dialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if d.cfg.SOCKS5Addr != "" {
+		return d.dialSOCKS5(ctx, addr)
+	}
 	c, err := d.nd.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err

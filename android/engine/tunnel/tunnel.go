@@ -1,11 +1,11 @@
 // Package tunnel bridges an Android VpnService TUN device to the desync engine.
 //
 // Packets written by the OS into the TUN fd are handled by a userspace gVisor
-// TCP/IP stack. Each intercepted TCP flow is dialed out again through the desync
-// dialer (which fragments the TLS ClientHello / HTTP request and protects the
-// socket from the VPN), so no root and no raw sockets are required. UDP flows
-// are forwarded directly through protected sockets, with an option to drop
-// UDP/443 so that QUIC falls back to TCP where the desync applies.
+// TCP/IP stack. When configured, TCP flows are sent through a protected local
+// SOCKS5 connection so the native ByeDPI engine can apply socket-level fake/TTL,
+// split, TLS-record, and disorder methods. Without a SOCKS5 address the legacy Go
+// stream desynchronizer is used. UDP flows are forwarded directly through
+// protected sockets, with an option to drop UDP/443.
 package tunnel
 
 import (
@@ -46,6 +46,8 @@ type Options struct {
 	Strategy desync.Strategy
 	// Protector protects the engine's own upstream sockets. May be nil.
 	Protector desync.Protector
+	// SOCKS5Addr routes TCP flows through a local strategy proxy when set.
+	SOCKS5Addr string
 	// BlockQUIC drops outbound UDP to port 443 so browsers fall back to TCP TLS.
 	BlockQUIC bool
 	// Log receives human-readable diagnostics. May be nil.
@@ -98,7 +100,11 @@ func Start(opts Options) (*Tunnel, error) {
 		return nil, err
 	}
 	t.dupFD = dup
-	logf("tunnel started (mtu=" + strconv.Itoa(opts.MTU) + ", strategy=" + opts.Strategy.String() + ")")
+	strategyName := opts.Strategy.String()
+	if opts.SOCKS5Addr != "" {
+		strategyName = "native SOCKS5 " + opts.SOCKS5Addr
+	}
+	logf("tunnel started (mtu=" + strconv.Itoa(opts.MTU) + ", strategy=" + strategyName + ")")
 	return t, nil
 }
 
@@ -141,8 +147,9 @@ func startWithLink(linkEP stack.LinkEndpoint, opts Options) (*Tunnel, error) {
 		opts:  opts,
 		stack: s,
 		dialer: desync.NewDialer(desync.Config{
-			Strategy:  opts.Strategy,
-			Protector: opts.Protector,
+			Strategy:   opts.Strategy,
+			Protector:  opts.Protector,
+			SOCKS5Addr: opts.SOCKS5Addr,
 		}),
 		ctx:    ctx,
 		cancel: cancel,
