@@ -67,7 +67,7 @@ if ($quicProfiles.Count -eq 1 -and $quicProfiles[0] -is [array]) { $quicProfiles
 Assert-Equal 2 $quicProfiles.Count 'QUIC profile count'
 Assert-Contains $quicProfiles[0].Args '--payload=quic_initial' 'QUIC Initial payload'
 Assert-Contains $quicProfiles[0].Args '--lua-desync=fake:blob=fake_default_quic:repeats=2' 'QUIC fake recipe'
-Assert-True ($guiText.Contains("Set-GuiProfileItems 'tls'")) 'GUI populates TCP profile selection'
+Assert-True ($guiText.Contains('Set-GuiProfileItems $script:guiSettings.Protocol')) 'GUI populates profiles for the saved transport'
 Assert-True ($guiText.Contains("Set-GuiProfileItems ([string]`$protocolBox.SelectedItem.Value)")) 'GUI switches profiles by transport'
 Assert-True ($guiText.Contains("Label='IPv6';Value='ipv6'")) 'GUI offers IPv6'
 Assert-True ($guiText.Contains("Label='UDP + QUIC Initial (HTTP/3)';Value='quic'")) 'GUI offers UDP/QUIC'
