@@ -245,12 +245,13 @@ namespace AntiDPI.Setup
                 if (!File.Exists(powershell) || !File.Exists(installer))
                     throw new FileNotFoundException("Не найдены штатный Windows PowerShell или графический установщик AntiDPI.");
                 StringBuilder command = new StringBuilder(Quote(powershell) +
-                    " -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File " + Quote(installer));
+                    " -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File " + Quote(installer));
                 Native.StartupInfo startup = new Native.StartupInfo();
                 startup.cb = Marshal.SizeOf(typeof(Native.StartupInfo));
                 Native.ProcessInformation process;
-                Log("Starting the Windows GUI installer.");
-                if (!Native.CreateProcess(powershell, command, IntPtr.Zero, IntPtr.Zero, false, 0x08000000,
+                Log("Starting the Windows GUI installer in a visible console.");
+                // CREATE_NEW_CONSOLE: don't suppress PowerShell while the user installs the program.
+                if (!Native.CreateProcess(powershell, command, IntPtr.Zero, IntPtr.Zero, false, 0x00000010,
                     IntPtr.Zero, Path.GetDirectoryName(manager), ref startup, out process))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Не удалось запустить графический установщик.");
                 childFinished = false;
