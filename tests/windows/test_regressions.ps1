@@ -173,7 +173,7 @@ Assert-Contains $ipv6Quic '--wf-udp-out=443' 'QUIC outbound UDP scope'
 Assert-Contains $ipv6Quic '--filter-udp=443' 'QUIC UDP scope'
 Assert-Contains $ipv6Quic '--filter-l7=quic' 'QUIC application filter'
 Assert-Contains $ipv6Quic '--payload=quic_initial' 'QUIC Initial payload'
-Assert-Contains $ipv6Quic ('--ipset-exclude=' + (Join-Path $PSScriptRoot '..\\..\\windows\\payload\\lists\\ips6-exclude.txt')) 'IPv6 exclusions selected'
+Assert-Contains $ipv6Quic ('--ipset-exclude=' + (Join-Path $repoRoot 'windows\payload\lists\ips6-exclude.txt')) 'IPv6 exclusions selected'
 Assert-True ($ipv6Quic -cnotcontains '--wf-tcp-out=443' -and $ipv6Quic -cnotcontains '--filter-tcp=443') 'QUIC does not use TCP filters'
 Assert-Throws { Get-AntiDPIArguments -Row $quicRow -Index 12 -PortScope '443' -ProbePorts @(45001) -Protocol 'quic' } 'TLS probes cannot be combined with QUIC'
 
