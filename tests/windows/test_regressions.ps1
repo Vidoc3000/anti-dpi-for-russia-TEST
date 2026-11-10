@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -67,10 +67,16 @@ if ($quicProfiles.Count -eq 1 -and $quicProfiles[0] -is [array]) { $quicProfiles
 Assert-Equal 2 $quicProfiles.Count 'QUIC profile count'
 Assert-Contains $quicProfiles[0].Args '--payload=quic_initial' 'QUIC Initial payload'
 Assert-Contains $quicProfiles[0].Args '--lua-desync=fake:blob=fake_default_quic:repeats=2' 'QUIC fake recipe'
-Assert-True ($guiText.Contains("Set-GuiProfileItems 'tls'")) 'GUI populates TCP profile selection'
+Assert-True ($guiText.Contains('Set-GuiProfileItems $script:guiSettings.Protocol')) 'GUI populates profiles for the saved transport'
 Assert-True ($guiText.Contains("Set-GuiProfileItems ([string]`$protocolBox.SelectedItem.Value)")) 'GUI switches profiles by transport'
 Assert-True ($guiText.Contains("Label='IPv6';Value='ipv6'")) 'GUI offers IPv6'
 Assert-True ($guiText.Contains("Label='UDP + QUIC Initial (HTTP/3)';Value='quic'")) 'GUI offers UDP/QUIC'
+Assert-True ($guiText.Contains("::new('Стратегии')") -and $guiText.Contains("::new('Анализ')") -and $guiText.Contains("::new('Настройки')")) 'GUI contains strategy, analysis, and settings tabs'
+Assert-True ($guiText.Contains('Save-GuiSettings') -and $guiText.Contains("'gui-settings.json'")) 'GUI persists settings'
+Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiText.Contains('$adapterBox.Items.Add($item)')) 'adapter dropdown displays a name-only wrapper'
+Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
+Assert-True ($coreText.Contains('if($Analyze)') -and $coreText.Contains('strategy-analysis.v1')) 'analysis uses measured YouTube results'
+Assert-True ($catalogueText.Contains('[switch]$Analyze')) 'catalogue provides GUI analysis mode'
 Assert-True ($coreText.Contains('--wf-udp-out')) 'engine builder supports outbound UDP capture'
 Assert-True ($coreText.Contains('--filter-$transport=$ports')) 'engine builder chooses TCP or UDP filter'
 Assert-True ($managerText.Contains("'ips6-exclude.txt'")) 'installer packages IPv6 exclusions'

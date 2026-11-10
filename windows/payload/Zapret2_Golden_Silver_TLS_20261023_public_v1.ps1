@@ -5,7 +5,9 @@ param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [ValidateSet('tls','quic')][string]$Protocol='tls',
  [string]$ZapretDirectory=$PSScriptRoot,[string]$StateDirectory='',
  [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListProfilesJson,[switch]$ListQuicProfilesJson,[switch]$ListInterfaces,
- [switch]$ShowRecipe,[switch]$PrintArguments,[switch]$Check,[switch]$SkipTimestampSetup)
+ [switch]$ShowRecipe,[switch]$PrintArguments,[switch]$Check,[switch]$SkipTimestampSetup,
+ [switch]$Analyze,[int]$FirstProfile=1,[int]$LastProfile=45,[int]$Parallelism=2,
+ [string]$AnalysisResultPath='', [string]$AnalysisCancelFile='')
 
 $CatalogueInfo = @'
 {
