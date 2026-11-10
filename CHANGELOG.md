@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.7 — Windows icons and system-font console
+
+| English | Русский |
+| --- | --- |
+| Refresh the launch/uninstall icons, use the system console font instead of bundling a custom Windows font, and remove unused font/artwork source files. Show PowerShell during installation rather than hiding it. Linux behavior is unchanged. | Обновлены иконки запуска/удаления, для консоли Windows используется системный шрифт вместо отдельного TTF, удалены неиспользуемые файлы шрифта и исходника рисунка. PowerShell во время установки теперь виден пользователю. Работа Linux-пакета не менялась. |
+| Windows GUI + CLI package advances to 1.6; Linux package version advances to 1.7 for the combined release. | Версия Windows GUI + CLI повышена до 1.6; версия Linux-пакета — до 1.7 для общего выпуска. |
+
 ## 1.6 — Windows installer and live YouTube analysis
 
 | English | Русский |

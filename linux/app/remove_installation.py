@@ -150,7 +150,7 @@ def uninstall(root, purge=False, yes=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Удаление AntiDPI CLI Linux 1.6')
+    parser = argparse.ArgumentParser(description='Удаление AntiDPI CLI Linux 1.7')
     parser.add_argument('--purge', action='store_true', help='Удалить всю папку этой установки вместе с логами и изменёнными файлами')
     parser.add_argument('--yes', action='store_true', help='Без интерактивного подтверждения удаления')
     parser.add_argument('--prefix', help='Только с --purge: папка архивной установки с собственным installation.json')
