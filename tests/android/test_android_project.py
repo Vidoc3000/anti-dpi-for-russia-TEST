@@ -83,9 +83,9 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("gomobile init", workflow)
         self.assertIn("./android/engine/build-aar.sh", workflow)
         self.assertIn("go test ./...", workflow)
-        self.assertIn("ANDROID_PREVIEW_VERSION: '0.4.6-preview'", workflow)
-        self.assertIn("versionCode 10", gradle)
-        self.assertIn("versionName '0.4.6-preview'", gradle)
+        self.assertIn("ANDROID_PREVIEW_VERSION: '0.4.7-preview'", workflow)
+        self.assertIn("versionCode 11", gradle)
+        self.assertIn("versionName '0.4.7-preview'", gradle)
         self.assertTrue((ANDROID / "engine/THIRD_PARTY_NOTICES.md").is_file())
         self.assertTrue((ANDROID / "engine/LICENSE.zapret-mobile").is_file())
 
