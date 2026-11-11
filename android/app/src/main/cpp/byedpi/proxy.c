@@ -974,6 +974,7 @@ int on_connect(struct poolhd *pool, struct eval *val, int et)
             return -1;
         }
         if (!error) error = ECONNREFUSED;
+        LOG(LOG_E, "upstream connect failed: errno=%d (%s)", error, strerror(error));
         
         switch (error) {
         case ECONNRESET:

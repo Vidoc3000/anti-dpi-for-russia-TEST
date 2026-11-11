@@ -86,6 +86,28 @@ func TestDialerRoutesThroughLocalSOCKS5(t *testing.T) {
 	}
 }
 
+func TestSocks5ReplyName(t *testing.T) {
+	tests := []struct {
+		code byte
+		want string
+	}{
+		{repGeneralFailure, "general failure"},
+		{0x02, "connection not allowed by ruleset"},
+		{0x03, "network unreachable"},
+		{0x04, "host unreachable"},
+		{0x05, "connection refused"},
+		{0x06, "TTL expired"},
+		{repCommandNotSupport, "command not supported"},
+		{repAddrTypeNotSupport, "address type not supported"},
+		{0xff, "unknown SOCKS5 reply"},
+	}
+	for _, test := range tests {
+		if got := socks5ReplyName(test.code); got != test.want {
+			t.Errorf("socks5ReplyName(%d) = %q, want %q", test.code, got, test.want)
+		}
+	}
+}
+
 func errUnexpectedSOCKSData(stage string, got []byte) error {
 	return &unexpectedSOCKSData{stage: stage, got: append([]byte(nil), got...)}
 }
