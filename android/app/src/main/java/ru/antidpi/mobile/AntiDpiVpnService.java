@@ -151,7 +151,9 @@ public final class AntiDpiVpnService extends VpnService {
             startedEngine = AndroidPacketEngine.create(getApplicationContext(), this, line -> {
                 String lower = line.toLowerCase(java.util.Locale.ROOT);
                 int level = lower.contains("error") || lower.contains("failed")
-                        || lower.contains("refused") ? DiagnosticLog.ERROR : DiagnosticLog.INFO;
+                        || lower.contains("refused") || lower.contains("reject")
+                        || lower.contains("unreachable") || lower.contains("timeout")
+                        ? DiagnosticLog.ERROR : DiagnosticLog.INFO;
                 DiagnosticLog.record(getApplicationContext(), level, line);
             });
             startedProxy = new NativeByedpiProxy(this);

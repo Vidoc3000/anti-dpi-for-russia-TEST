@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -27,9 +28,14 @@
         fprintf(stderr, "%s: %ld\n", str, GetLastError())
 #else
     #ifdef ANDROID_APP
-    #define uniperror(str) \
-        __android_log_print(ANDROID_LOG_ERROR, "proxy", \
-            "%s: %s\n", str, strerror(errno))
+    #define uniperror(str) do { \
+        int saved_errno = errno; \
+        char error_message[256]; \
+        snprintf(error_message, sizeof(error_message), \
+            "%s: errno=%d (%s)", str, saved_errno, strerror(saved_errno)); \
+        __android_log_print(ANDROID_LOG_ERROR, "proxy", "%s", error_message); \
+        android_proxy_log(error_message); \
+    } while (0)
     #else
     #define uniperror(str) \
         perror(str)
