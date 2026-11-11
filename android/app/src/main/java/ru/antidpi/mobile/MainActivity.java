@@ -2,8 +2,10 @@ package ru.antidpi.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ClipData;
 import android.content.SharedPreferences;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -68,6 +70,12 @@ public final class MainActivity extends Activity {
     private static final int PAGE_TESTS = 1;
     private static final int PAGE_LOG = 2;
     private static final int PAGE_SETTINGS = 3;
+    private static final String[] DIAGNOSTIC_TARGET_NAMES = {"YouTube", "Google", "общий HTTPS-контроль example.org"};
+    private static final String[] DIAGNOSTIC_TARGET_URLS = {
+            "https://www.youtube.com/generate_204",
+            "https://www.google.com/generate_204",
+            "https://example.org/"
+    };
 
     private final ArrayList<Profile> allProfiles = new ArrayList<>();
     private final ArrayList<Family> families = new ArrayList<>();
@@ -348,15 +356,23 @@ public final class MainActivity extends Activity {
 
         LinearLayout selfCheckCard = card();
         selfCheckCard.addView(text("Самодиагностика", 14, CYAN, true), matchWrap());
-        TextView selfHelp = text("Проверит доступность движка и профиля, локальный SOCKS при активном VPN, базовый HTTPS и последние счётчики. Проверки HTTPS идут не через TUN.",
+        TextView selfHelp = text("Сравнит HTTPS к YouTube, Google и example.org напрямую и через локальный SOCKS. Эти проверки обходят TUN; результат можно скопировать целиком.",
                 11, MUTED, false);
         selfHelp.setLineSpacing(dp(2), 1.0f);
         selfCheckCard.addView(selfHelp, margins(matchWrap(), 0, dp(4), 0, dp(7)));
-        selfDiagnosticButton = button("Запустить самодиагностику", true);
+        LinearLayout diagnosticActions = new LinearLayout(this);
+        diagnosticActions.setOrientation(LinearLayout.HORIZONTAL);
+        selfDiagnosticButton = button("Запустить", true);
         selfDiagnosticButton.setOnClickListener(v -> runSelfDiagnostics());
-        selfCheckCard.addView(selfDiagnosticButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        diagnosticActions.addView(selfDiagnosticButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        Button copyDiagnostic = button("Копировать результат", true);
+        copyDiagnostic.setOnClickListener(v -> copySelfDiagnosticResults());
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+        copyParams.leftMargin = dp(6);
+        diagnosticActions.addView(copyDiagnostic, copyParams);
+        selfCheckCard.addView(diagnosticActions, matchWrap());
         selfDiagnosticText = text("Диагностика ещё не запускалась.", 12, TEXT, false);
+        selfDiagnosticText.setTextIsSelectable(true);
         selfDiagnosticText.setLineSpacing(dp(2), 1.0f);
         selfCheckCard.addView(selfDiagnosticText, margins(matchWrap(), 0, dp(6), 0, 0));
         page.addView(selfCheckCard, margins(matchWrap(), 0, dp(10), 0, 0));
@@ -404,6 +420,23 @@ public final class MainActivity extends Activity {
         page.addView(privacy, margins(matchWrap(), 0, dp(7), 0, 0));
         refreshLogView();
         return page;
+    }
+
+    private void copySelfDiagnosticResults() {
+        if (selfDiagnosticText == null) return;
+        String report = selfDiagnosticText.getText().toString().trim();
+        if (report.isEmpty() || report.startsWith("Диагностика ещё не запускалась")
+                || report.startsWith("Проверяю движок")) {
+            Toast.makeText(this, "Сначала запустите самодиагностику.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            Toast.makeText(this, "Буфер обмена недоступен.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("AntiDPI self-diagnostic", report));
+        Toast.makeText(this, "Результат самодиагностики скопирован.", Toast.LENGTH_SHORT).show();
     }
 
     private void refreshLogView() {
@@ -493,6 +526,31 @@ public final class MainActivity extends Activity {
         loggingCard.addView(openLog, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
         page.addView(loggingCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
+        LinearLayout advancedCard = card();
+        advancedCard.addView(text("Расширенные настройки диагностики", 15, CYAN, true), matchWrap());
+        TextView advancedHelp = text("В HTTPS-проверку добавлен нейтральный контрольный сайт example.org. Если он доступен, а Google/YouTube нет, базовый интернет работает, но эти цели недоступны по текущему маршруту. При разрешённых IPv6-адресах ByeDPI теперь предпочитает IPv4 и использует IPv6 для IPv6-only узлов.",
+                12, MUTED, false);
+        advancedHelp.setLineSpacing(dp(2), 1.0f);
+        advancedCard.addView(advancedHelp, margins(matchWrap(), 0, dp(5), 0, dp(3)));
+        advancedCard.addView(text("Тайм-аут одной HTTPS-пробы", 12, MUTED, false),
+                margins(matchWrap(), 0, dp(2), 0, dp(3)));
+        String[] timeoutLabels = {"5 секунд · быстрее", "10 секунд · стандартный", "15 секунд · медленная сеть"};
+        int[] timeoutValues = {5000, 10000, 15000};
+        int timeout = diagnosticProbeTimeout();
+        int timeoutIndex = timeout == 5000 ? 0 : (timeout == 15000 ? 2 : 1);
+        Spinner timeoutSpinner = settingsSpinner(timeoutLabels, timeoutIndex);
+        final int[] previousTimeout = {timeoutIndex};
+        timeoutSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == previousTimeout[0]) return;
+                previousTimeout[0] = position;
+                settingsPreferences().edit().putInt("diagnostic_probe_timeout_ms", timeoutValues[position]).apply();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        advancedCard.addView(timeoutSpinner, margins(matchWrap(), 0, 0, 0, dp(2)));
+        page.addView(advancedCard, margins(matchWrap(), 0, 0, 0, dp(10)));
 
         LinearLayout networkCard = card();
         networkCard.addView(text("Сетевое поведение", 15, CYAN, true), matchWrap());
@@ -617,6 +675,11 @@ public final class MainActivity extends Activity {
 
     private SharedPreferences settingsPreferences() {
         return getSharedPreferences("android_settings", MODE_PRIVATE);
+    }
+
+    private int diagnosticProbeTimeout() {
+        int timeout = settingsPreferences().getInt("diagnostic_probe_timeout_ms", 10000);
+        return timeout == 5000 || timeout == 15000 ? timeout : 10000;
     }
 
     private int configuredMtu() {
@@ -936,67 +999,96 @@ public final class MainActivity extends Activity {
         final Button runButton = selfDiagnosticButton;
         final TextView resultView = selfDiagnosticText;
         runButton.setEnabled(false);
-        resultView.setText("Проверяю движок, профиль, VPN и базовый HTTPS…");
+        resultView.setText("Проверяю движок, профиль и HTTPS по нескольким независимым адресам…");
         final int profileNumber = selected == null ? -1 : selected.number;
         final String profileArgs = selected == null ? "[]" : selected.argsJson;
         final boolean vpnActive = AntiDpiVpnService.isRunning(this);
+        final int timeoutMs = diagnosticProbeTimeout();
         executor.execute(() -> {
             boolean engineReady = AndroidPacketEngine.isReady();
             boolean profileSupported = profileNumber >= 0
                     && AndroidPacketEngine.supportsNativeProfile(profileArgs);
             String proxyResult = vpnActive ? localSocksHealth() : "не проверялся (VPN выключен)";
-            String youtube = probe("https://www.youtube.com/generate_204", vpnActive);
-            String google = probe("https://www.google.com/generate_204", vpnActive);
-            String directYoutube = vpnActive
-                    ? probe("https://www.youtube.com/generate_204", false) : youtube;
-            String directGoogle = vpnActive
-                    ? probe("https://www.google.com/generate_204", false) : google;
+            String[] viaProxy = probeDiagnosticTargets(vpnActive, timeoutMs);
+            String[] direct = vpnActive ? probeDiagnosticTargets(false, timeoutMs) : viaProxy;
             String stats = AntiDpiVpnService.trafficStats(getApplicationContext());
             boolean proxyReady = !vpnActive || "готов".equals(proxyResult);
-            boolean proxyHttpsOk = youtube.startsWith("HTTP 2") && google.startsWith("HTTP 2");
-            boolean directHttpsOk = directYoutube.startsWith("HTTP 2") && directGoogle.startsWith("HTTP 2");
+            boolean proxyHttpsOk = hasSuccessfulProbe(viaProxy);
+            boolean directHttpsOk = hasSuccessfulProbe(direct);
+            boolean proxyControlOk = viaProxy[2].startsWith("HTTP 2");
+            boolean directControlOk = direct[2].startsWith("HTTP 2");
             String comparison;
-            if (vpnActive && directHttpsOk && !proxyHttpsOk) {
-                comparison = "Прямые HTTPS-пробы проходят, а через SOCKS — нет. Сбой связан с различием proxy/стратегии или её взаимодействием с сетью; это само по себе не доказывает DPI.";
-            } else if (vpnActive && !directHttpsOk && !proxyHttpsOk) {
-                comparison = "Не проходят ни прямые HTTPS-пробы, ни пробы через SOCKS; проверьте доступность сети, DNS и целевых узлов.";
+            if (vpnActive && directControlOk && !proxyControlOk) {
+                comparison = "Контрольный HTTPS напрямую работает, через SOCKS — нет: проверьте SOCKS upstream, DNS и выбранный профиль. Это не доказывает DPI.";
+            } else if (vpnActive && directControlOk && proxyControlOk
+                    && (!viaProxy[0].startsWith("HTTP 2") || !viaProxy[1].startsWith("HTTP 2"))) {
+                comparison = "Обычный HTTPS работает обоими путями, но Google или YouTube недоступны через SOCKS; вероятна проблема именно с этими целями/маршрутом, а не отсутствие интернета.";
+            } else if (vpnActive && !directControlOk && proxyControlOk) {
+                comparison = "Контрольный HTTPS работает через SOCKS, но не напрямую из приложения; различаются Android-маршруты или DNS.";
+            } else if (vpnActive && !directControlOk && !proxyControlOk) {
+                comparison = "Контрольный адрес не ответил ни напрямую, ни через SOCKS. Это не доказывает отсутствие интернета: проверьте приведённые ошибки и доступность именно контрольного домена.";
             } else {
-                comparison = "Сравнение прямого и SOCKS-маршрута не выявило однозначной причины.";
+                comparison = "Проверьте HTTP-статусы и ошибки каждого адреса: успех контрольного сайта подтверждает базовый HTTPS только до него, не до всех сайтов.";
             }
-            String report = "Движок: " + (engineReady ? "загружен" : "не готов") + "\n"
-                    + "Профиль #" + profileNumber + ": " + (profileSupported
-                            ? "имеет Android-native операцию" : "не поддержан или не выбран") + "\n"
-                    + "VPN: " + (vpnActive ? "активен" : "выключен") + "\n"
-                    + "Локальный SOCKS: " + proxyResult + "\n"
-                    + "DNS в настройках: " + java.util.Arrays.toString(configuredDnsServers()) + "\n"
-                    + "HTTPS через " + (vpnActive ? "локальный SOCKS" : "напрямую") + " — YouTube: " + youtube + "\n"
-                    + "HTTPS через " + (vpnActive ? "локальный SOCKS" : "напрямую") + " — Google: " + google + "\n"
-                    + (vpnActive ? "HTTPS напрямую, без SOCKS — YouTube: " + directYoutube + "\n"
-                            + "HTTPS напрямую, без SOCKS — Google: " + directGoogle + "\n" : "")
-                    + "Android API: " + Build.VERSION.SDK_INT + "\n"
-                    + comparison + "\n\n"
-                    + "Счётчики TUN:\n" + stats + "\n\n"
-                    + "При активном VPN приложение AntiDPI исключено из TUN, поэтому прямой контрольный запрос не проходит через VPN. SOCKS-пробы также не являются тестом TUN. Ни один из этих тестов не подтверждает обход DPI, работу YouTube-видео или совместимость с каждой сетью.";
+            String routeName = vpnActive ? "локальный SOCKS (в обход TUN)" : "напрямую";
+            StringBuilder report = new StringBuilder();
+            report.append("Движок: ").append(engineReady ? "загружен" : "не готов").append('\n')
+                    .append("Профиль #").append(profileNumber).append(": ")
+                    .append(profileSupported ? "поддержан" : "не поддержан или не выбран").append('\n')
+                    .append("VPN: ").append(vpnActive ? "активен" : "выключен").append('\n')
+                    .append("Локальный SOCKS: ").append(proxyResult).append('\n')
+                    .append("Тайм-аут HTTPS-пробы: ").append(timeoutMs / 1000).append(" с\n")
+                    .append("Результаты через ").append(routeName).append(':').append('\n');
+            appendProbeResults(report, viaProxy);
+            if (vpnActive) {
+                report.append("Результаты напрямую (приложение исключено из TUN):\n");
+                appendProbeResults(report, direct);
+            }
+            report.append("DNS VPN: ").append(java.util.Arrays.toString(configuredDnsServers())).append('\n')
+                    .append("Android API: ").append(Build.VERSION.SDK_INT).append('\n')
+                    .append("Итог: ").append(comparison).append("\n\n")
+                    .append("Счётчики TUN: ").append(stats).append("\n\n")
+                    .append("Проверки идут в обход TUN — они не измеряют трафик других приложений через туннель. Успех example.org подтверждает только базовый HTTPS к контрольному узлу; это не тест обхода DPI, YouTube-видео или всех сайтов.");
             int level = engineReady && profileSupported && proxyReady && proxyHttpsOk && directHttpsOk
                     ? DiagnosticLog.INFO : DiagnosticLog.WARN;
             Context logContext = getApplicationContext();
             DiagnosticLog.record(logContext, level,
                     "Self-diagnostic status: engine=" + engineReady + ", profile=" + profileSupported
                             + ", VPN=" + vpnActive + ", SOCKS=" + proxyResult);
-            DiagnosticLog.record(logContext, level,
-                    "Self-diagnostic HTTPS via " + (vpnActive ? "local SOCKS" : "direct")
-                            + ": YouTube=" + youtube + "; Google=" + google);
-            if (vpnActive) {
+            for (int i = 0; i < DIAGNOSTIC_TARGET_NAMES.length; i++) {
                 DiagnosticLog.record(logContext, level,
-                        "Self-diagnostic direct HTTPS (app excluded from TUN): YouTube="
-                                + directYoutube + "; Google=" + directGoogle);
-                DiagnosticLog.record(logContext, level, "Self-diagnostic route comparison: " + comparison);
+                        "Self-diagnostic " + DIAGNOSTIC_TARGET_NAMES[i] + " via " + routeName + ": " + viaProxy[i]);
+                if (vpnActive) {
+                    DiagnosticLog.record(logContext, level,
+                            "Self-diagnostic " + DIAGNOSTIC_TARGET_NAMES[i] + " direct (app excluded from TUN): " + direct[i]);
+                }
             }
+            DiagnosticLog.record(logContext, level, "Self-diagnostic route comparison: " + comparison);
+            final String finalReport = report.toString();
             runOnUiThread(() -> {
-                resultView.setText(report);
+                resultView.setText(finalReport);
                 runButton.setEnabled(true);
             });
         });
+    }
+
+    private String[] probeDiagnosticTargets(boolean throughSocks, int timeoutMs) {
+        String[] results = new String[DIAGNOSTIC_TARGET_URLS.length];
+        for (int i = 0; i < DIAGNOSTIC_TARGET_URLS.length; i++) {
+            results[i] = probe(DIAGNOSTIC_TARGET_URLS[i], throughSocks, timeoutMs);
+        }
+        return results;
+    }
+
+    private boolean hasSuccessfulProbe(String[] results) {
+        for (String result : results) if (result.startsWith("HTTP 2")) return true;
+        return false;
+    }
+
+    private void appendProbeResults(StringBuilder report, String[] results) {
+        for (int i = 0; i < results.length; i++) {
+            report.append("  ").append(DIAGNOSTIC_TARGET_NAMES[i]).append(": ").append(results[i]).append('\n');
+        }
     }
 
     private String localSocksHealth() {
@@ -1048,6 +1140,10 @@ public final class MainActivity extends Activity {
     }
 
     private String probe(String address, boolean throughVpn) {
+        return probe(address, throughVpn, diagnosticProbeTimeout());
+    }
+
+    private String probe(String address, boolean throughVpn, int timeoutMs) {
         HttpsURLConnection connection = null;
         try {
             java.net.Proxy proxy = throughVpn
@@ -1056,8 +1152,8 @@ public final class MainActivity extends Activity {
                     : java.net.Proxy.NO_PROXY;
             connection = (HttpsURLConnection) new URL(address).openConnection(proxy);
             connection.setRequestMethod("GET");
-            connection.setConnectTimeout(7000);
-            connection.setReadTimeout(7000);
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
             connection.setInstanceFollowRedirects(true);
             int code = connection.getResponseCode();
             return "HTTP " + code;
