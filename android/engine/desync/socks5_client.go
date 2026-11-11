@@ -61,12 +61,35 @@ func (d *Dialer) dialSOCKS5(ctx context.Context, addr string) (net.Conn, error) 
 	if err = discardSOCKS5Address(c, response[3]); err != nil {
 		return nil, fmt.Errorf("read SOCKS5 bound address: %w", err)
 	}
-	if response[1] != 0 {
-		return nil, fmt.Errorf("SOCKS5 CONNECT rejected with code %d", response[1])
+	if response[1] != repSucceeded {
+		return nil, fmt.Errorf("SOCKS5 CONNECT rejected: %s (code %d)", socks5ReplyName(response[1]), response[1])
 	}
 	_ = c.SetDeadline(time.Time{})
 	ok = true
 	return c, nil
+}
+
+func socks5ReplyName(code byte) string {
+	switch code {
+	case repGeneralFailure:
+		return "general failure"
+	case 0x02:
+		return "connection not allowed by ruleset"
+	case 0x03:
+		return "network unreachable"
+	case 0x04:
+		return "host unreachable"
+	case 0x05:
+		return "connection refused"
+	case 0x06:
+		return "TTL expired"
+	case repCommandNotSupport:
+		return "command not supported"
+	case repAddrTypeNotSupport:
+		return "address type not supported"
+	default:
+		return "unknown SOCKS5 reply"
+	}
 }
 
 func socks5ConnectRequest(addr string) ([]byte, error) {
