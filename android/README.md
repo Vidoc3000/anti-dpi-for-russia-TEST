@@ -37,7 +37,7 @@ The Go engine produces `app/libs/antidpi-engine.aar` locally; it is generated, i
 - `app/src/main/java/ru/antidpi/mobile/` — catalogue UI, VPN lifecycle, Go/JNI bridges, native proxy lifecycle, and tests.
 - `app/src/main/cpp/byedpi/` — pinned MIT-licensed ByeDPI C engine source.
 - `engine/desync/` — legacy stream engine plus SOCKS5 client for routing gVisor TCP flows to the native strategy proxy.
-- `engine/tunnel/` — gVisor TCP/IP stack attached to the Android TUN fd; TCP/UDP forwarding.
+- `engine/tunnel/` — gVisor TCP/IP stack attached to the Android TUN fd, a per-flow forwarding core, and an injectable TCP/UDP egress boundary. The current egress adapter preserves local-SOCKS TCP and protected-socket UDP behavior; this boundary is the first migration seam for the core redesign.
 - `engine/mobile/` — gomobile API and Zapret2-to-ByeDPI profile adaptation.
 - `app/src/main/assets/catalogue.json` — offline copy of the Linux strategy catalogue.
 - `engine/THIRD_PARTY_NOTICES.md` — pinned source commits and third-party license information.
