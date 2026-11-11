@@ -2,6 +2,7 @@ package ru.antidpi.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ResolveInfo;
@@ -978,11 +979,19 @@ public final class MainActivity extends Activity {
                     + "При активном VPN приложение AntiDPI исключено из TUN, поэтому прямой контрольный запрос не проходит через VPN. SOCKS-пробы также не являются тестом TUN. Ни один из этих тестов не подтверждает обход DPI, работу YouTube-видео или совместимость с каждой сетью.";
             int level = engineReady && profileSupported && proxyReady && proxyHttpsOk && directHttpsOk
                     ? DiagnosticLog.INFO : DiagnosticLog.WARN;
-            DiagnosticLog.record(getApplicationContext(), level,
-                    "Self-diagnostic result: engine=" + engineReady + ", profile=" + profileSupported
-                            + ", VPN=" + vpnActive + ", SOCKS=" + proxyResult
-                            + ", SOCKS YouTube=" + youtube + ", SOCKS Google=" + google
-                            + ", direct YouTube=" + directYoutube + ", direct Google=" + directGoogle);
+            Context logContext = getApplicationContext();
+            DiagnosticLog.record(logContext, level,
+                    "Self-diagnostic status: engine=" + engineReady + ", profile=" + profileSupported
+                            + ", VPN=" + vpnActive + ", SOCKS=" + proxyResult);
+            DiagnosticLog.record(logContext, level,
+                    "Self-diagnostic HTTPS via " + (vpnActive ? "local SOCKS" : "direct")
+                            + ": YouTube=" + youtube + "; Google=" + google);
+            if (vpnActive) {
+                DiagnosticLog.record(logContext, level,
+                        "Self-diagnostic direct HTTPS (app excluded from TUN): YouTube="
+                                + directYoutube + "; Google=" + directGoogle);
+                DiagnosticLog.record(logContext, level, "Self-diagnostic route comparison: " + comparison);
+            }
             runOnUiThread(() -> {
                 resultView.setText(report);
                 runButton.setEnabled(true);

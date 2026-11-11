@@ -52,6 +52,8 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("runSelfDiagnostics()", activity)
         self.assertIn("localSocksHealth()", activity)
         self.assertIn("directYoutube", activity)
+        self.assertIn("Self-diagnostic direct HTTPS (app excluded from TUN)", activity)
+        self.assertIn("Self-diagnostic route comparison", activity)
         self.assertIn("Сбой связан с различием proxy/стратегии", activity)
         self.assertIn("verbose_diagnostics", activity)
         self.assertIn("diagnostic_log_limit", activity)
