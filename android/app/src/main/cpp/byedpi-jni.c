@@ -20,6 +20,37 @@ extern char *optarg;
 
 static pthread_mutex_t proxy_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool proxy_running;
+static JNIEnv *proxy_worker_env;
+static jclass proxy_log_class;
+static jmethodID proxy_log_method;
+
+void android_proxy_log(const char *message) {
+    JNIEnv *env = proxy_worker_env;
+    if (!env || !message) return;
+    if (!proxy_log_class) {
+        jclass local = (*env)->FindClass(env, "ru/antidpi/mobile/NativeByedpiProxy");
+        if (!local) {
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            return;
+        }
+        proxy_log_class = (jclass) (*env)->NewGlobalRef(env, local);
+        (*env)->DeleteLocalRef(env, local);
+        if (!proxy_log_class) return;
+        proxy_log_method = (*env)->GetStaticMethodID(env, proxy_log_class,
+                "onNativeLog", "(Ljava/lang/String;)V");
+        if (!proxy_log_method) {
+            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            (*env)->DeleteGlobalRef(env, proxy_log_class);
+            proxy_log_class = NULL;
+            return;
+        }
+    }
+    jstring value = (*env)->NewStringUTF(env, message);
+    if (!value) return;
+    (*env)->CallStaticVoidMethod(env, proxy_log_class, proxy_log_method, value);
+    (*env)->DeleteLocalRef(env, value);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
 
 static void reset_params(void) {
     memset(&params, 0, sizeof(params));
@@ -83,7 +114,14 @@ Java_ru_antidpi_mobile_NativeByedpiProxy_nativeStartProxy(
     }
 
     __android_log_print(ANDROID_LOG_INFO, TAG, "starting native ByeDPI proxy (%d arguments)", count);
+    proxy_worker_env = env;
     result = main((int) count + 1, argv);
+    proxy_worker_env = NULL;
+    if (proxy_log_class) {
+        (*env)->DeleteGlobalRef(env, proxy_log_class);
+        proxy_log_class = NULL;
+        proxy_log_method = NULL;
+    }
     __android_log_print(ANDROID_LOG_INFO, TAG, "native ByeDPI proxy exited: %d", result);
 
 cleanup:

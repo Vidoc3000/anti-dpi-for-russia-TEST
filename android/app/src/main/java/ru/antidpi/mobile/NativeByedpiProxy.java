@@ -1,5 +1,6 @@
 package ru.antidpi.mobile;
 
+import android.content.Context;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -16,7 +17,22 @@ final class NativeByedpiProxy {
     private static final String TAG = "AntiDpiByedpi";
     private static final long START_TIMEOUT_MS = 6000;
     private static final int START_ATTEMPTS = 3;
+    private static volatile Context logContext;
+    private final Context appContext;
     private volatile int port;
+
+    NativeByedpiProxy(Context context) {
+        appContext = context.getApplicationContext();
+        logContext = appContext;
+    }
+
+    static void onNativeLog(String message) {
+        Context context = logContext;
+        if (context == null || message == null) return;
+        DiagnosticLog.record(context,
+                message.contains("failed") ? DiagnosticLog.ERROR : DiagnosticLog.WARN,
+                "ByeDPI: " + message);
+    }
 
     static {
         System.loadLibrary("antidpi_native");
@@ -34,6 +50,7 @@ final class NativeByedpiProxy {
         }
         IOException lastFailure = null;
         for (int attempt = 1; attempt <= START_ATTEMPTS; attempt++) {
+            logContext = appContext;
             port = reserveEphemeralPort();
             String[] arguments = withPort(strategyArguments, port);
             exitCode = Integer.MIN_VALUE;
@@ -42,6 +59,8 @@ final class NativeByedpiProxy {
                     exitCode = nativeStartProxy(arguments);
                 } catch (Throwable error) {
                     Log.e(TAG, "Native ByeDPI worker failed", error);
+                    DiagnosticLog.record(appContext, DiagnosticLog.ERROR,
+                            "Native ByeDPI worker failed: " + error.getMessage());
                     exitCode = -1;
                 }
             }, "AntiDpi-ByeDPI");
@@ -55,6 +74,8 @@ final class NativeByedpiProxy {
                 }
                 if (socksHandshakeReady(port)) {
                     Log.i(TAG, "Native ByeDPI SOCKS listener ready on 127.0.0.1:" + port);
+                    DiagnosticLog.record(appContext, DiagnosticLog.INFO,
+                            "ByeDPI SOCKS listener ready on local port " + port);
                     return;
                 }
                 SystemClock.sleep(40);
@@ -70,6 +91,8 @@ final class NativeByedpiProxy {
                 worker = null;
             }
             Log.w(TAG, "Native proxy startup attempt " + attempt + " failed: " + lastFailure.getMessage());
+            DiagnosticLog.record(appContext, DiagnosticLog.WARN,
+                    "ByeDPI startup attempt " + attempt + " failed: " + lastFailure.getMessage());
         }
         port = 0;
         throw lastFailure == null ? new IOException("Native ByeDPI proxy failed to start") : lastFailure;
@@ -125,8 +148,11 @@ final class NativeByedpiProxy {
         }
         if (running.isAlive()) {
             Log.w(TAG, "Native ByeDPI worker did not stop within timeout");
+            DiagnosticLog.record(appContext, DiagnosticLog.WARN,
+                    "ByeDPI worker did not stop within timeout");
         } else {
             worker = null;
+            if (logContext == appContext) logContext = null;
         }
     }
 }

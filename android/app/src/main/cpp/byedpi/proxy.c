@@ -975,6 +975,12 @@ int on_connect(struct poolhd *pool, struct eval *val, int et)
         }
         if (!error) error = ECONNREFUSED;
         LOG(LOG_E, "upstream connect failed: errno=%d (%s)", error, strerror(error));
+#ifdef ANDROID_APP
+        char diagnostic[256];
+        snprintf(diagnostic, sizeof(diagnostic),
+                "upstream connect failed: errno=%d (%s)", error, strerror(error));
+        android_proxy_log(diagnostic);
+#endif
         
         switch (error) {
         case ECONNRESET:

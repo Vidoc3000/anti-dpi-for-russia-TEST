@@ -7,6 +7,8 @@ import android.util.Log;
 
 import org.json.JSONArray;
 
+import java.util.function.Consumer;
+
 import go.Seq;
 import ru.antidpi.mobile.engine.zapret.Engine;
 import ru.antidpi.mobile.engine.zapret.Logger;
@@ -35,6 +37,15 @@ final class AndroidPacketEngine {
 
     static String adaptProfileArgs(String argsJson) {
         return Zapret.adaptZapretArgs(argsJson);
+    }
+
+    static boolean supportsNativeProfile(String argsJson) {
+        try {
+            return Zapret.supportsByeDpiProfile(argsJson);
+        } catch (RuntimeException | LinkageError error) {
+            Log.w(TAG, "Could not validate Android profile", error);
+            return false;
+        }
     }
 
     static String[] nativeProfileArgs(String argsJson) {
@@ -79,13 +90,13 @@ final class AndroidPacketEngine {
         return summary.toString();
     }
 
-    static AndroidPacketEngine create(Context context, VpnService service, Runnable onEngineLog) {
+    static AndroidPacketEngine create(Context context, VpnService service, Consumer<String> onEngineLog) {
         Seq.setContext(context.getApplicationContext());
         Engine engine = Zapret.newEngine();
         engine.setLogger(new Logger() {
             @Override public void log(String line) {
                 Log.i(TAG, line);
-                if (onEngineLog != null) onEngineLog.run();
+                if (onEngineLog != null) onEngineLog.accept(line);
             }
         });
         engine.setProtector(new Protector() {
