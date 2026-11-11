@@ -946,26 +946,43 @@ public final class MainActivity extends Activity {
             String proxyResult = vpnActive ? localSocksHealth() : "не проверялся (VPN выключен)";
             String youtube = probe("https://www.youtube.com/generate_204", vpnActive);
             String google = probe("https://www.google.com/generate_204", vpnActive);
+            String directYoutube = vpnActive
+                    ? probe("https://www.youtube.com/generate_204", false) : youtube;
+            String directGoogle = vpnActive
+                    ? probe("https://www.google.com/generate_204", false) : google;
             String stats = AntiDpiVpnService.trafficStats(getApplicationContext());
             boolean proxyReady = !vpnActive || "готов".equals(proxyResult);
-            boolean httpsOk = youtube.startsWith("HTTP 2") && google.startsWith("HTTP 2");
+            boolean proxyHttpsOk = youtube.startsWith("HTTP 2") && google.startsWith("HTTP 2");
+            boolean directHttpsOk = directYoutube.startsWith("HTTP 2") && directGoogle.startsWith("HTTP 2");
+            String comparison;
+            if (vpnActive && directHttpsOk && !proxyHttpsOk) {
+                comparison = "Прямые HTTPS-пробы проходят, а через SOCKS — нет. Сбой связан с различием proxy/стратегии или её взаимодействием с сетью; это само по себе не доказывает DPI.";
+            } else if (vpnActive && !directHttpsOk && !proxyHttpsOk) {
+                comparison = "Не проходят ни прямые HTTPS-пробы, ни пробы через SOCKS; проверьте доступность сети, DNS и целевых узлов.";
+            } else {
+                comparison = "Сравнение прямого и SOCKS-маршрута не выявило однозначной причины.";
+            }
             String report = "Движок: " + (engineReady ? "загружен" : "не готов") + "\n"
                     + "Профиль #" + profileNumber + ": " + (profileSupported
                             ? "имеет Android-native операцию" : "не поддержан или не выбран") + "\n"
                     + "VPN: " + (vpnActive ? "активен" : "выключен") + "\n"
                     + "Локальный SOCKS: " + proxyResult + "\n"
                     + "DNS в настройках: " + java.util.Arrays.toString(configuredDnsServers()) + "\n"
-                    + "HTTPS YouTube: " + youtube + "\n"
-                    + "HTTPS Google: " + google + "\n"
-                    + "Android API: " + Build.VERSION.SDK_INT + "\n\n"
+                    + "HTTPS через " + (vpnActive ? "локальный SOCKS" : "напрямую") + " — YouTube: " + youtube + "\n"
+                    + "HTTPS через " + (vpnActive ? "локальный SOCKS" : "напрямую") + " — Google: " + google + "\n"
+                    + (vpnActive ? "HTTPS напрямую, без SOCKS — YouTube: " + directYoutube + "\n"
+                            + "HTTPS напрямую, без SOCKS — Google: " + directGoogle + "\n" : "")
+                    + "Android API: " + Build.VERSION.SDK_INT + "\n"
+                    + comparison + "\n\n"
                     + "Счётчики TUN:\n" + stats + "\n\n"
-                    + "HTTPS-пробы проходят напрямую к локальному SOCKS-прокси (или напрямую при выключенном VPN), не через TUN. Это не подтверждает обход DPI, работу YouTube-видео или совместимость с каждой сетью.";
-            int level = engineReady && profileSupported && proxyReady && httpsOk
+                    + "При активном VPN приложение AntiDPI исключено из TUN, поэтому прямой контрольный запрос не проходит через VPN. SOCKS-пробы также не являются тестом TUN. Ни один из этих тестов не подтверждает обход DPI, работу YouTube-видео или совместимость с каждой сетью.";
+            int level = engineReady && profileSupported && proxyReady && proxyHttpsOk && directHttpsOk
                     ? DiagnosticLog.INFO : DiagnosticLog.WARN;
             DiagnosticLog.record(getApplicationContext(), level,
                     "Self-diagnostic result: engine=" + engineReady + ", profile=" + profileSupported
                             + ", VPN=" + vpnActive + ", SOCKS=" + proxyResult
-                            + ", YouTube=" + youtube + ", Google=" + google);
+                            + ", SOCKS YouTube=" + youtube + ", SOCKS Google=" + google
+                            + ", direct YouTube=" + directYoutube + ", direct Google=" + directGoogle);
             runOnUiThread(() -> {
                 resultView.setText(report);
                 runButton.setEnabled(true);
