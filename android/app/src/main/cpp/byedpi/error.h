@@ -58,6 +58,7 @@ static int unie(int e)
 }
 
 #ifdef ANDROID_APP
+    void android_proxy_log(const char *message);
     #define LOG_E ANDROID_LOG_ERROR
     #define LOG_S ANDROID_LOG_DEBUG
     #define LOG_L ANDROID_LOG_VERBOSE

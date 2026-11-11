@@ -91,6 +91,21 @@ func AdaptZapretArgs(encodedArgs string) string {
 	return adaptZapretArgs(encodedArgs)
 }
 
+// SupportsByeDpiProfile reports whether the profile produces at least one
+// active TCP desynchronization operation supported by the Android ByeDPI
+// adapter. Profiles that silently collapse to the generic TLS-record fallback
+// are not presented as Android-compatible strategies.
+func SupportsByeDpiProfile(encodedArgs string) bool {
+	adapted := adaptByeDpiArgs(encodedArgs, 10808)
+	for _, arg := range adapted {
+		switch arg {
+		case "--fake", "--split", "--disorder":
+			return true
+		}
+	}
+	return false
+}
+
 // StartTunnel begins forwarding packets from the VpnService TUN fd. The fd is
 // dup'd internally; the caller keeps ownership of the ParcelFileDescriptor.
 func (e *Engine) StartTunnel(fd int, mtu int, strategy string, blockQUIC bool) error {

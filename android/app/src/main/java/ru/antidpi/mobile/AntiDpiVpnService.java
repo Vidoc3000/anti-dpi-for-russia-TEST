@@ -79,6 +79,8 @@ public final class AntiDpiVpnService extends VpnService {
             startForegroundCompat(buildNotification(engine == null ? "Запуск VPN…" : "Перезапуск VPN…"));
         } catch (RuntimeException | LinkageError error) {
             Log.e(TAG, "Could not enter foreground service state", error);
+            DiagnosticLog.record(this, DiagnosticLog.ERROR,
+                    "Could not enter foreground VPN service: " + safeMessage(error));
             fail("Android не разрешил запустить VPN-службу: " + safeMessage(error));
             return START_NOT_STICKY;
         }
@@ -146,9 +148,13 @@ public final class AntiDpiVpnService extends VpnService {
             if (generation != startupGeneration) throw new InterruptedException("Запуск отменён");
 
             startupStage = "запуска native ByeDPI";
-            startedEngine = AndroidPacketEngine.create(getApplicationContext(), this,
-                    () -> Log.d(TAG, "native engine log callback"));
-            startedProxy = new NativeByedpiProxy();
+            startedEngine = AndroidPacketEngine.create(getApplicationContext(), this, line -> {
+                String lower = line.toLowerCase(java.util.Locale.ROOT);
+                int level = lower.contains("error") || lower.contains("failed")
+                        || lower.contains("refused") ? DiagnosticLog.ERROR : DiagnosticLog.INFO;
+                DiagnosticLog.record(getApplicationContext(), level, line);
+            });
+            startedProxy = new NativeByedpiProxy(this);
             startedProxy.start(AndroidPacketEngine.nativeProfileArgs(profileArgs,
                     NativeByedpiProxy.DEFAULT_PORT, blockIPv6));
             if (generation != startupGeneration) throw new InterruptedException("Запуск отменён");
@@ -193,6 +199,8 @@ public final class AntiDpiVpnService extends VpnService {
             startedProxy = null;
         } catch (Exception | LinkageError error) {
             Log.e(TAG, "Failed to start VPN", error);
+            DiagnosticLog.record(getApplicationContext(), DiagnosticLog.ERROR,
+                    "Failed to start VPN at " + startupStage + ": " + safeMessage(error));
             stopComponents(startedEngine, startedProxy, startedTun);
             if (!(error instanceof InterruptedException)) {
                 String message = "Не удалось запустить VPN на этапе " + startupStage + ": " + safeMessage(error);
@@ -360,6 +368,9 @@ public final class AntiDpiVpnService extends VpnService {
     }
 
     private void setState(boolean active, String message) {
+        DiagnosticLog.record(getApplicationContext(),
+                message.startsWith("Не удалось") ? DiagnosticLog.ERROR : DiagnosticLog.INFO,
+                "VPN state: " + message);
         int port = active && nativeProxy != null ? nativeProxy.port() : 0;
         boolean isStarting = !active && ("Подготовка VPN".equals(message)
                 || message.startsWith("Перезапуск VPN"));

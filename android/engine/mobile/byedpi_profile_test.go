@@ -81,6 +81,45 @@ func TestAdaptByeDpiArgsCoversAndroidCatalogue(t *testing.T) {
 	}
 }
 
+func TestSupportsByeDpiProfileFiltersUnsupportedCatalogueRows(t *testing.T) {
+	data, err := os.ReadFile("../../app/src/main/assets/catalogue.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalogue struct {
+		ProfileRows []struct {
+			Number int      `json:"Number"`
+			Args   []string `json:"Args"`
+		} `json:"ProfileRows"`
+	}
+	if err := json.Unmarshal(data, &catalogue); err != nil {
+		t.Fatal(err)
+	}
+	supported := 0
+	for _, profile := range catalogue.ProfileRows {
+		encoded, err := json.Marshal(profile.Args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := SupportsByeDpiProfile(string(encoded))
+		if got {
+			supported++
+		}
+		if got != (profile.Number != 485) {
+			t.Errorf("profile #%d supported = %t, want %t", profile.Number, got, profile.Number != 485)
+		}
+	}
+	if supported != 491 {
+		t.Fatalf("Android-compatible profile count = %d, want 491", supported)
+	}
+	if SupportsByeDpiProfile(`["--lua-desync=syndata"]`) {
+		t.Fatal("SYN-data-only profile must not be advertised as Android-compatible")
+	}
+	if SupportsByeDpiProfile(`not-json`) {
+		t.Fatal("malformed profile must not be advertised as Android-compatible")
+	}
+}
+
 func TestAdaptByeDpiArgsMapsFakedDisorderAndHostFilter(t *testing.T) {
 	args := `["--lua-desync=fakeddisorder:pos=1,midsld:tcp_seq=1000000",
 		"--lua-desync=hostfakesplit:host=example.org:midhost=midsld"]`

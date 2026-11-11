@@ -11,6 +11,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -37,6 +39,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.Socket;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,11 +65,22 @@ public final class MainActivity extends Activity {
     private static final int NOTIFICATION_REQUEST = 4102;
     private static final int PAGE_STRATEGIES = 0;
     private static final int PAGE_TESTS = 1;
-    private static final int PAGE_SETTINGS = 2;
+    private static final int PAGE_LOG = 2;
+    private static final int PAGE_SETTINGS = 3;
 
     private final ArrayList<Profile> allProfiles = new ArrayList<>();
     private final ArrayList<Family> families = new ArrayList<>();
+    private int catalogueProfileCount;
+    private int excludedProfileCount;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable logRefresh = new Runnable() {
+        @Override public void run() {
+            if (currentPage != PAGE_LOG || logTextView == null) return;
+            refreshLogView();
+            uiHandler.postDelayed(this, 1500);
+        }
+    };
     private ProfileAdapter profileAdapter;
     private EditText searchField;
     private Spinner familySpinner;
@@ -77,6 +91,10 @@ public final class MainActivity extends Activity {
     private TextView testResultText;
     private TextView testProfileText;
     private TextView tunnelStatsText;
+    private TextView selfDiagnosticText;
+    private TextView logTextView;
+    private TextView logCountText;
+    private Button selfDiagnosticButton;
     private CheckBox blockQuicCheckBox;
     private CheckBox blockIPv6CheckBox;
     private TextView appRoutingSummary;
@@ -105,7 +123,11 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(NAVY);
         getWindow().getDecorView().setSystemUiVisibility(0);
         loadCatalogue();
-        selected = findProfile(getPreferences(MODE_PRIVATE).getInt("selected_profile", 1));
+        int savedProfileNumber = getPreferences(MODE_PRIVATE).getInt("selected_profile", 1);
+        selected = findProfile(savedProfileNumber);
+        if (selected != null && selected.number != savedProfileNumber) {
+            getPreferences(MODE_PRIVATE).edit().putInt("selected_profile", selected.number).apply();
+        }
         setContentView(buildScreen());
         showPage(PAGE_STRATEGIES);
     }
@@ -140,6 +162,7 @@ public final class MainActivity extends Activity {
         navigationButtons = new Button[] {
                 navButton("Стратегии", PAGE_STRATEGIES),
                 navButton("Тесты", PAGE_TESTS),
+                navButton("Журнал", PAGE_LOG),
                 navButton("Настройки", PAGE_SETTINGS)
         };
         for (int i = 0; i < navigationButtons.length; i++) {
@@ -166,7 +189,9 @@ public final class MainActivity extends Activity {
 
     private Button navButton(String label, int page) {
         Button button = button(label, true);
-        button.setTextSize(12);
+        button.setTextSize(10);
+        button.setMinWidth(0);
+        button.setPadding(dp(2), 0, dp(2), 0);
         button.setOnClickListener(v -> showPage(page));
         return button;
     }
@@ -174,9 +199,11 @@ public final class MainActivity extends Activity {
     private void showPage(int page) {
         if (pageHost == null) return;
         currentPage = page;
+        uiHandler.removeCallbacks(logRefresh);
         pageHost.removeAllViews();
         View content;
         if (page == PAGE_TESTS) content = buildTestsPage();
+        else if (page == PAGE_LOG) content = buildLogPage();
         else if (page == PAGE_SETTINGS) content = buildSettingsPage();
         else content = buildStrategiesPage();
         pageHost.addView(content, new FrameLayout.LayoutParams(
@@ -187,6 +214,10 @@ public final class MainActivity extends Activity {
             navigationButtons[i].setTextColor(active ? NAVY : MUTED);
         }
         refreshVpnUi();
+        if (page == PAGE_LOG) {
+            refreshLogView();
+            uiHandler.postDelayed(logRefresh, 1500);
+        }
     }
 
     private View buildStrategiesPage() {
@@ -313,8 +344,103 @@ public final class MainActivity extends Activity {
         testResultText.setLineSpacing(dp(3), 1.0f);
         testResultText.setBackground(shape(CARD, dp(13)));
         page.addView(testResultText, matchWrap());
+
+        LinearLayout selfCheckCard = card();
+        selfCheckCard.addView(text("Самодиагностика", 14, CYAN, true), matchWrap());
+        TextView selfHelp = text("Проверит доступность движка и профиля, локальный SOCKS при активном VPN, базовый HTTPS и последние счётчики. Проверки HTTPS идут не через TUN.",
+                11, MUTED, false);
+        selfHelp.setLineSpacing(dp(2), 1.0f);
+        selfCheckCard.addView(selfHelp, margins(matchWrap(), 0, dp(4), 0, dp(7)));
+        selfDiagnosticButton = button("Запустить самодиагностику", true);
+        selfDiagnosticButton.setOnClickListener(v -> runSelfDiagnostics());
+        selfCheckCard.addView(selfDiagnosticButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        selfDiagnosticText = text("Диагностика ещё не запускалась.", 12, TEXT, false);
+        selfDiagnosticText.setLineSpacing(dp(2), 1.0f);
+        selfCheckCard.addView(selfDiagnosticText, margins(matchWrap(), 0, dp(6), 0, 0));
+        page.addView(selfCheckCard, margins(matchWrap(), 0, dp(10), 0, 0));
         updateTestSummary();
         return scroll;
+    }
+
+    private View buildLogPage() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(0, 0, 0, dp(6));
+        page.addView(text("Журнал событий", 20, TEXT, true), margins(matchWrap(), 0, 0, 0, dp(3)));
+        logCountText = text("", 11, MUTED, false);
+        page.addView(logCountText, margins(matchWrap(), 0, 0, 0, dp(7)));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button share = button("Отправить журнал", true);
+        share.setTextSize(11);
+        share.setOnClickListener(v -> confirmShareLog());
+        actions.addView(share, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Button clear = button("Очистить", true);
+        clear.setTextSize(11);
+        clear.setOnClickListener(v -> confirmClearLog());
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        clearParams.leftMargin = dp(6);
+        actions.addView(clear, clearParams);
+        page.addView(actions, margins(matchWrap(), 0, 0, 0, dp(7)));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        logTextView = text("", 10, TEXT, false);
+        logTextView.setTypeface(Typeface.MONOSPACE);
+        logTextView.setTextIsSelectable(true);
+        logTextView.setLineSpacing(dp(2), 1.0f);
+        logTextView.setPadding(dp(11), dp(10), dp(11), dp(10));
+        logTextView.setBackground(shape(CARD, dp(12)));
+        scroll.addView(logTextView, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        TextView privacy = text("Журнал хранится локально в данных приложения. Перед отправкой проверьте содержимое: там могут быть технические сведения о подключении и настройках. Отправка открывает системный выбор приложений; выберите мессенджер сами.",
+                10, MUTED, false);
+        privacy.setLineSpacing(dp(2), 1.0f);
+        page.addView(privacy, margins(matchWrap(), 0, dp(7), 0, 0));
+        refreshLogView();
+        return page;
+    }
+
+    private void refreshLogView() {
+        if (logTextView != null) logTextView.setText(DiagnosticLog.read(this));
+        if (logCountText != null) {
+            logCountText.setText(DiagnosticLog.count(this) + " записей · хранится локально");
+        }
+    }
+
+    private void confirmShareLog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Отправить журнал?")
+                .setMessage("Журнал может содержать технические сведения о сети, ошибках и выбранных настройках. Перед отправкой вы сможете выбрать приложение и получателя.")
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Выбрать приложение", (dialog, which) -> shareLog())
+                .show();
+    }
+
+    private void shareLog() {
+        DiagnosticLog.record(this, DiagnosticLog.INFO, "User opened system share sheet for diagnostics");
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, "AntiDPI Android — журнал диагностики");
+        send.putExtra(Intent.EXTRA_TEXT, DiagnosticLog.read(this));
+        startActivity(Intent.createChooser(send, "Отправить журнал через…"));
+    }
+
+    private void confirmClearLog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Очистить журнал?")
+                .setMessage("Все сохранённые записи диагностики будут удалены.")
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Очистить", (dialog, which) -> {
+                    DiagnosticLog.clear(this);
+                    refreshLogView();
+                    Toast.makeText(this, "Журнал очищен", Toast.LENGTH_SHORT).show();
+                })
+                .show();
     }
 
     private View buildSettingsPage() {
@@ -325,6 +451,48 @@ public final class MainActivity extends Activity {
         scroll.addView(page);
 
         page.addView(text("Настройки", 20, TEXT, true), margins(matchWrap(), 0, 0, 0, dp(9)));
+
+        LinearLayout loggingCard = card();
+        loggingCard.addView(text("Журнал и диагностика", 15, CYAN, true), matchWrap());
+        CheckBox verboseLogs = new CheckBox(this);
+        verboseLogs.setText("Подробно записывать события");
+        verboseLogs.setTextColor(TEXT);
+        verboseLogs.setTextSize(14);
+        verboseLogs.setButtonTintList(android.content.res.ColorStateList.valueOf(CYAN));
+        verboseLogs.setChecked(settingsPreferences().getBoolean("verbose_diagnostics", true));
+        verboseLogs.setOnCheckedChangeListener((button, checked) -> {
+            settingsPreferences().edit().putBoolean("verbose_diagnostics", checked).apply();
+            DiagnosticLog.record(this, DiagnosticLog.WARN,
+                    "Detailed diagnostic logging " + (checked ? "enabled" : "disabled"));
+        });
+        loggingCard.addView(verboseLogs, margins(matchWrap(), -dp(8), dp(2), 0, 0));
+        TextView loggingHelp = text("Ошибки и предупреждения сохраняются всегда. Подробные события можно отключить. Журнал ограничен выбранным числом строк.",
+                11, MUTED, false);
+        loggingHelp.setLineSpacing(dp(2), 1.0f);
+        loggingCard.addView(loggingHelp, margins(matchWrap(), 0, 0, 0, dp(5)));
+        int currentLogLimit = DiagnosticLog.configuredLimit(this);
+        String[] logLimitLabels = {"100 последних записей", "300 последних записей", "600 последних записей"};
+        int logLimitIndex = currentLogLimit == 100 ? 0 : (currentLogLimit == 600 ? 2 : 1);
+        Spinner logLimitSpinner = settingsSpinner(logLimitLabels, logLimitIndex);
+        final int[] previousLogLimit = {logLimitIndex};
+        int[] logLimitValues = {100, 300, 600};
+        logLimitSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == previousLogLimit[0]) return;
+                previousLogLimit[0] = position;
+                settingsPreferences().edit().putInt("diagnostic_log_limit", logLimitValues[position]).apply();
+                DiagnosticLog.trim(MainActivity.this);
+                refreshLogView();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        loggingCard.addView(logLimitSpinner, margins(matchWrap(), 0, 0, 0, dp(4)));
+        Button openLog = button("Открыть журнал и отправить", true);
+        openLog.setOnClickListener(v -> showPage(PAGE_LOG));
+        loggingCard.addView(openLog, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
+        page.addView(loggingCard, margins(matchWrap(), 0, 0, 0, dp(10)));
+
         LinearLayout networkCard = card();
         networkCard.addView(text("Сетевое поведение", 15, CYAN, true), matchWrap());
         blockQuicCheckBox = new CheckBox(this);
@@ -638,17 +806,26 @@ public final class MainActivity extends Activity {
                 families.add(new Family(row.getInt("Number"), row.getString("Name")));
             }
             JSONArray profiles = catalogue.getJSONArray("ProfileRows");
+            catalogueProfileCount = profiles.length();
             for (int i = 0; i < profiles.length(); i++) {
                 JSONObject row = profiles.getJSONObject(i);
+                String argsJson = row.getJSONArray("Args").toString();
+                if (!AndroidPacketEngine.supportsNativeProfile(argsJson)) continue;
                 int familyId = row.getInt("Family");
                 String familyName = "Семейство " + familyId;
                 for (Family family : families) if (family.id == familyId) familyName = family.name;
                 allProfiles.add(new Profile(row.getInt("Number"), familyId,
-                        row.getString("Name"), familyName, row.getJSONArray("Args").toString()));
+                        row.getString("Name"), familyName, argsJson));
             }
+            excludedProfileCount = catalogueProfileCount - allProfiles.size();
+            Set<Integer> usedFamilies = new HashSet<>();
+            for (Profile profile : allProfiles) usedFamilies.add(profile.familyId);
+            families.removeIf(family -> !usedFamilies.contains(family.id));
         } catch (Exception error) {
             allProfiles.clear();
             families.clear();
+            catalogueProfileCount = 0;
+            excludedProfileCount = 0;
         }
     }
 
@@ -678,7 +855,7 @@ public final class MainActivity extends Activity {
         String activeNote = AntiDpiVpnService.isRunning(this)
                 ? " VPN перезапускается автоматически при смене профиля." : "";
         androidStrategyText.setText("Native ByeDPI: " + adapted + activeNote +
-                "\nНекоторые desktop-поля (SEQ/TS, SYN data, системные blob-файлы) не имеют точного мобильного эквивалента.");
+                "\nКаталог отфильтрован: для профиля найдено хотя бы одно исполняемое Android-действие (fake/split/disorder). Остальные desktop-поля могут быть упрощены или опущены; это не точный перенос Zapret2.");
     }
 
     private void toggleVpn() {
@@ -688,6 +865,10 @@ public final class MainActivity extends Activity {
         }
         if (!AndroidPacketEngine.isReady()) {
             Toast.makeText(this, "В APK отсутствует Android packet engine.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (selected == null) {
+            Toast.makeText(this, "Не найдено Android-совместимых стратегий.", Toast.LENGTH_LONG).show();
             return;
         }
         if (AntiDpiVpnService.isRunning(this)) {
@@ -749,6 +930,65 @@ public final class MainActivity extends Activity {
         vpnStatusText.setText("Применяется профиль #" + (selected == null ? 1 : selected.number) + "…");
     }
 
+    private void runSelfDiagnostics() {
+        if (selfDiagnosticButton == null || selfDiagnosticText == null) return;
+        final Button runButton = selfDiagnosticButton;
+        final TextView resultView = selfDiagnosticText;
+        runButton.setEnabled(false);
+        resultView.setText("Проверяю движок, профиль, VPN и базовый HTTPS…");
+        final int profileNumber = selected == null ? -1 : selected.number;
+        final String profileArgs = selected == null ? "[]" : selected.argsJson;
+        final boolean vpnActive = AntiDpiVpnService.isRunning(this);
+        executor.execute(() -> {
+            boolean engineReady = AndroidPacketEngine.isReady();
+            boolean profileSupported = profileNumber >= 0
+                    && AndroidPacketEngine.supportsNativeProfile(profileArgs);
+            String proxyResult = vpnActive ? localSocksHealth() : "не проверялся (VPN выключен)";
+            String youtube = probe("https://www.youtube.com/generate_204", vpnActive);
+            String google = probe("https://www.google.com/generate_204", vpnActive);
+            String stats = AntiDpiVpnService.trafficStats(getApplicationContext());
+            boolean proxyReady = !vpnActive || "готов".equals(proxyResult);
+            boolean httpsOk = youtube.startsWith("HTTP 2") && google.startsWith("HTTP 2");
+            String report = "Движок: " + (engineReady ? "загружен" : "не готов") + "\n"
+                    + "Профиль #" + profileNumber + ": " + (profileSupported
+                            ? "имеет Android-native операцию" : "не поддержан или не выбран") + "\n"
+                    + "VPN: " + (vpnActive ? "активен" : "выключен") + "\n"
+                    + "Локальный SOCKS: " + proxyResult + "\n"
+                    + "DNS в настройках: " + java.util.Arrays.toString(configuredDnsServers()) + "\n"
+                    + "HTTPS YouTube: " + youtube + "\n"
+                    + "HTTPS Google: " + google + "\n"
+                    + "Android API: " + Build.VERSION.SDK_INT + "\n\n"
+                    + "Счётчики TUN:\n" + stats + "\n\n"
+                    + "HTTPS-пробы проходят напрямую к локальному SOCKS-прокси (или напрямую при выключенном VPN), не через TUN. Это не подтверждает обход DPI, работу YouTube-видео или совместимость с каждой сетью.";
+            int level = engineReady && profileSupported && proxyReady && httpsOk
+                    ? DiagnosticLog.INFO : DiagnosticLog.WARN;
+            DiagnosticLog.record(getApplicationContext(), level,
+                    "Self-diagnostic result: engine=" + engineReady + ", profile=" + profileSupported
+                            + ", VPN=" + vpnActive + ", SOCKS=" + proxyResult
+                            + ", YouTube=" + youtube + ", Google=" + google);
+            runOnUiThread(() -> {
+                resultView.setText(report);
+                runButton.setEnabled(true);
+            });
+        });
+    }
+
+    private String localSocksHealth() {
+        int port = AntiDpiVpnService.proxyPort(this);
+        if (port < 1 || port > 65535) return "порт не опубликован";
+        try (Socket socket = new Socket()) {
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), 1500);
+            socket.setSoTimeout(1500);
+            socket.getOutputStream().write(new byte[]{5, 1, 0});
+            socket.getOutputStream().flush();
+            int version = socket.getInputStream().read();
+            int method = socket.getInputStream().read();
+            return version == 5 && method == 0 ? "готов" : "ошибка SOCKS greeting";
+        } catch (Exception error) {
+            return "ошибка " + exceptionSummary(error);
+        }
+    }
+
     private void runConnectivityTests() {
         if (testButton == null || testResultText == null) return;
         final Button runningTestButton = testButton;
@@ -768,6 +1008,10 @@ public final class MainActivity extends Activity {
                     "YouTube: " + youtube + "\n" +
                     "Google: " + google + "\n\n" +
                     "Это базовая HTTPS-проверка TCP, не гарантия обхода блокировки.";
+            DiagnosticLog.record(getApplicationContext(),
+                    youtube.startsWith("HTTP 2") && google.startsWith("HTTP 2")
+                            ? DiagnosticLog.INFO : DiagnosticLog.WARN,
+                    "HTTPS probes via " + path + ": YouTube=" + youtube + ", Google=" + google);
             runOnUiThread(() -> {
                 if (!isFinishing()) {
                     runningResultView.setText(result);
@@ -849,7 +1093,8 @@ public final class MainActivity extends Activity {
         boolean starting = AntiDpiVpnService.isStarting(this);
         vpnStatusText.setText(AntiDpiVpnService.stateMessage(this));
         vpnButton.setText(running ? "Остановить VPN" : (starting ? "VPN запускается…" : "Запустить VPN"));
-        vpnButton.setEnabled(AndroidPacketEngine.isReady() && !starting);
+        vpnButton.setEnabled(AndroidPacketEngine.isReady() && !starting
+                && (running || selected != null));
         onVpnStateChanged();
     }
 
@@ -858,10 +1103,16 @@ public final class MainActivity extends Activity {
         super.onResume();
         getSharedPreferences("vpn_state", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(vpnStateListener);
         refreshVpnUi();
+        if (currentPage == PAGE_LOG) {
+            refreshLogView();
+            uiHandler.removeCallbacks(logRefresh);
+            uiHandler.postDelayed(logRefresh, 1500);
+        }
     }
 
     @Override
     protected void onPause() {
+        uiHandler.removeCallbacks(logRefresh);
         getSharedPreferences("vpn_state", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(vpnStateListener);
         super.onPause();
     }
@@ -879,8 +1130,10 @@ public final class MainActivity extends Activity {
         }
         profileAdapter.setProfiles(filtered);
         if (countText != null) {
-            countText.setText(allProfiles.isEmpty() ? "Не удалось загрузить каталог стратегий."
-                    : "Показано " + filtered.size() + " из " + allProfiles.size() + " стратегий");
+            countText.setText(allProfiles.isEmpty() ? "Нет доступных Android-совместимых стратегий."
+                    : "Показано " + filtered.size() + " из " + allProfiles.size()
+                            + " Android-совместимых; исключено " + excludedProfileCount
+                            + " из " + catalogueProfileCount + " каталога.");
         }
     }
 
@@ -941,6 +1194,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        uiHandler.removeCallbacks(logRefresh);
         executor.shutdownNow();
         super.onDestroy();
     }
