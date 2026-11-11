@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,20 @@ func TestTunnelStatsReportsRoutingCounters(t *testing.T) {
 	}
 }
 
+type recordingEgress struct {
+	Egress
+	tcpTargets chan string
+}
+
+func (e *recordingEgress) DialTCP(ctx context.Context, network, address string) (net.Conn, error) {
+	e.tcpTargets <- address
+	return e.Egress.DialTCP(ctx, network, address)
+}
+
+func (e *recordingEgress) DialUDP(ctx context.Context, ip net.IP, port int) (net.Conn, error) {
+	return e.Egress.DialUDP(ctx, ip, port)
+}
+
 func TestTunnelTCPFlow(t *testing.T) {
 	// Real echo server on loopback.
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
@@ -112,7 +127,11 @@ func TestTunnelTCPFlow(t *testing.T) {
 	// Tunnel stack on a channel endpoint.
 	tunEP := channel.New(512, 1500, "")
 	st, _ := desync.ParseStrategy("split:4")
-	tun, err := startWithLink(tunEP, Options{MTU: 1500, Strategy: st})
+	egress := &recordingEgress{
+		Egress:     newSocketEgress(st, nil, ""),
+		tcpTargets: make(chan string, 1),
+	}
+	tun, err := startWithLink(tunEP, Options{MTU: 1500, Strategy: st, Egress: egress})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,5 +190,13 @@ func TestTunnelTCPFlow(t *testing.T) {
 	}
 	if tun.tcpAttempts.Load() == 0 || tun.tcpConnected.Load() == 0 || tun.tcpFailed.Load() != 0 {
 		t.Fatalf("unexpected forwarding stats: %s", tun.Stats())
+	}
+	select {
+	case target := <-egress.tcpTargets:
+		if want := net.JoinHostPort("127.0.0.1", strconv.Itoa(echoPort)); target != want {
+			t.Fatalf("egress target = %q, want %q", target, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("tunnel did not call the injected TCP egress")
 	}
 }

@@ -54,6 +54,9 @@ type Options struct {
 	// BlockIPv6 rejects IPv6 TCP/UDP flows inside the TUN; IPv6 remains captured
 	// by Android and is never sent directly over the underlying network.
 	BlockIPv6 bool
+	// Egress overrides transport creation for tests or an alternate core adapter.
+	// When nil, the current protected-socket/SOCKS egress is used.
+	Egress Egress
 	// Log receives human-readable diagnostics. May be nil.
 	Log func(string)
 }
@@ -62,7 +65,7 @@ type Options struct {
 type Tunnel struct {
 	opts   Options
 	stack  *stack.Stack
-	dialer *desync.Dialer
+	egress Egress
 	dupFD  int
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -159,14 +162,14 @@ func startWithLink(linkEP stack.LinkEndpoint, opts Options) (*Tunnel, error) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
+	egress := opts.Egress
+	if egress == nil {
+		egress = newSocketEgress(opts.Strategy, opts.Protector, opts.SOCKS5Addr)
+	}
 	t := &Tunnel{
-		opts:  opts,
-		stack: s,
-		dialer: desync.NewDialer(desync.Config{
-			Strategy:   opts.Strategy,
-			Protector:  opts.Protector,
-			SOCKS5Addr: opts.SOCKS5Addr,
-		}),
+		opts:   opts,
+		stack:  s,
+		egress: egress,
 		ctx:    ctx,
 		cancel: cancel,
 		log:    logf,
@@ -206,7 +209,7 @@ func (t *Tunnel) installTCP() {
 		go func() {
 			dialCtx, cancel := context.WithTimeout(t.ctx, 20*time.Second)
 			defer cancel()
-			up, err := t.dialer.DialContext(dialCtx, "tcp", dst)
+			up, err := t.egress.DialTCP(dialCtx, "tcp", dst)
 			if err != nil {
 				t.tcpFailed.Add(1)
 				t.tcpDialFailed.Add(1)
@@ -256,7 +259,7 @@ func (t *Tunnel) installUDP() {
 func (t *Tunnel) handleUDP(local *gonet.UDPConn, dstIP net.IP, dstPort int) {
 	defer local.Close()
 
-	remote, err := dialProtectedUDP(t.ctx, dstIP, dstPort, t.opts.Protector)
+	remote, err := t.egress.DialUDP(t.ctx, dstIP, dstPort)
 	if err != nil {
 		t.udpFailed.Add(1)
 		t.setLastEvent("UDP " + net.JoinHostPort(dstIP.String(), strconv.Itoa(dstPort)) + " connect error: " + err.Error())
