@@ -27,6 +27,7 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
 $script:installProcess=$null
 $script:stdoutPath=''
 $script:stderrPath=''
+$script:cancelFile=''
 $script:lastLog=''
 $script:installedPath=''
 function Test-InstallerExistingInstall([string]$Path) {
@@ -121,6 +122,9 @@ $form.Controls.Add($installButton)
 $openLogsButton=New-Object System.Windows.Forms.Button
 $openLogsButton.Text='Открыть логи';$openLogsButton.Location=[System.Drawing.Point]::new(192,590);$openLogsButton.Size=[System.Drawing.Size]::new(140,36);$openLogsButton.Enabled=$false;$openLogsButton.Anchor='Bottom,Left'
 $form.Controls.Add($openLogsButton)
+$cancelButton=New-Object System.Windows.Forms.Button
+$cancelButton.Text='Отменить загрузку';$cancelButton.Location=[System.Drawing.Point]::new(350,590);$cancelButton.Size=[System.Drawing.Size]::new(180,36);$cancelButton.Enabled=$false;$cancelButton.Anchor='Bottom,Left'
+$form.Controls.Add($cancelButton)
 $closeButton=New-Object System.Windows.Forms.Button
 $closeButton.Text='Закрыть';$closeButton.Location=[System.Drawing.Point]::new(552,590);$closeButton.Size=[System.Drawing.Size]::new(130,36);$closeButton.Anchor='Bottom,Right'
 $form.Controls.Add($closeButton)
@@ -136,6 +140,15 @@ if($updateCheck.Checked){$installButton.Text='Обновить'}
 
 $openLogsButton.Add_Click({
     try{$directory=Split-Path -Parent $script:stdoutPath;if($directory){Start-Process explorer.exe -ArgumentList (ConvertTo-InstallerArgument $directory)}}catch{Show-InstallerError $_.Exception.Message}
+})
+$cancelButton.Add_Click({
+    if($null -eq $script:installProcess -or $script:installProcess.HasExited -or -not $script:cancelFile){return}
+    if(Test-Path -LiteralPath ($script:cancelFile+'.closed') -PathType Leaf){$cancelButton.Enabled=$false;$status.Text='Архив уже проверен; отмена загрузки недоступна.';return}
+    try{
+        [IO.File]::WriteAllText($script:cancelFile,'cancel',[Text.UTF8Encoding]::new($false))
+        $cancelButton.Enabled=$false
+        $status.Text='Отмена запрошена. Очищаю временные файлы…';$status.ForeColor=[System.Drawing.Color]::DarkOrange
+    }catch{Show-InstallerError ('Не удалось отменить загрузку: '+$_.Exception.Message)}
 })
 $closeButton.Add_Click({$form.Close()})
 $installButton.Add_Click({
@@ -155,10 +168,12 @@ $installButton.Add_Click({
         $stamp=Get-Date -Format 'yyyyMMdd_HHmmss_fff'
         $script:stdoutPath=Join-Path $logDirectory ('Wizard_'+$stamp+'.out.log')
         $script:stderrPath=Join-Path $logDirectory ('Wizard_'+$stamp+'.err.log')
+        $script:cancelFile=Join-Path $logDirectory ('cancel_'+$stamp+'.request')
         $script:lastLog=''
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $action=if($updateCheck.Checked){'Update'}else{'Install'}
         $args=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action',$action,'-InstallPath',$target,'-NonInteractiveInstaller','-SkipHeader')
+        if($action -eq 'Install'){$args+=@('-CancelFile',$script:cancelFile)}
         if(-not $updateCheck.Checked){
             $choice=if($latestRadio.Checked){'Latest'}else{'Compatible'}
             $shortcut=if($shortcutCheck.Checked){'Yes'}else{'No'}
@@ -167,7 +182,7 @@ $installButton.Add_Click({
         $joined=(@($args|ForEach-Object {ConvertTo-InstallerArgument ([string]$_)}) -join ' ')
         $script:installProcess=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Normal -RedirectStandardOutput $script:stdoutPath -RedirectStandardError $script:stderrPath -PassThru
         $installButton.Enabled=$false;$pathBox.Enabled=$false;$browseButton.Enabled=$false;$bundleGroup.Enabled=$false;$shortcutCheck.Enabled=$false;$updateCheck.Enabled=$false
-        $openLogsButton.Enabled=$true;$progress.Style=[System.Windows.Forms.ProgressBarStyle]::Marquee;$progress.MarqueeAnimationSpeed=25
+        $openLogsButton.Enabled=$true;$cancelButton.Enabled=($action -eq 'Install');$progress.Style=[System.Windows.Forms.ProgressBarStyle]::Marquee;$progress.MarqueeAnimationSpeed=25
         $status.Text=if($action -eq 'Update'){'Обновляются файлы AntiDPI; настройки, логи и текущий Zapret2 сохраняются.'}else{'Идёт загрузка, проверка и установка. Это может занять несколько минут.'}
     }catch{Show-InstallerError $_.Exception.Message}
 })
@@ -182,9 +197,13 @@ $timer.Add_Tick({
             if($tail -cne $script:lastLog){$logBox.Text=$tail;$logBox.SelectionStart=$logBox.TextLength;$logBox.ScrollToCaret();$script:lastLog=$tail}
         }catch{}
     }
+    if($cancelButton.Enabled -and $script:cancelFile -and (Test-Path -LiteralPath ($script:cancelFile+'.closed') -PathType Leaf)){$cancelButton.Enabled=$false;$status.Text='Архив проверен. Выполняется подготовка установки; отмена загрузки уже недоступна.';$status.ForeColor=[System.Drawing.Color]::DarkGreen}
     if($null -ne $script:installProcess -and $script:installProcess.HasExited){
         $code=$script:installProcess.ExitCode
         $script:installProcess.Dispose();$script:installProcess=$null
+        $cancelButton.Enabled=$false
+        if($script:cancelFile -and (Test-Path -LiteralPath $script:cancelFile)){Remove-Item -LiteralPath $script:cancelFile -Force -ErrorAction SilentlyContinue}
+        if($script:cancelFile -and (Test-Path -LiteralPath ($script:cancelFile+'.closed'))){Remove-Item -LiteralPath ($script:cancelFile+'.closed') -Force -ErrorAction SilentlyContinue}
         $progress.Style=[System.Windows.Forms.ProgressBarStyle]::Blocks;$progress.MarqueeAnimationSpeed=0;$progress.Value=if($code -eq 0){100}else{0}
         $openLogsButton.Enabled=$true
         $recent=@()
@@ -193,7 +212,11 @@ $timer.Add_Tick({
         }
         $recent=@($recent|Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
         if($recent.Count){$logBox.Text=($recent -join [Environment]::NewLine);$logBox.SelectionStart=$logBox.TextLength;$logBox.ScrollToCaret()}
-        if($code -eq 0){
+        if($code -eq 2){
+            $status.Text='Установка отменена. Временные файлы очищены; можно повторить.';$status.ForeColor=[System.Drawing.Color]::DarkOrange
+            $installButton.Text='Повторить установку';$installButton.Enabled=$true;$pathBox.Enabled=$true;$browseButton.Enabled=$true;$updateCheck.Enabled=$true
+            $bundleGroup.Enabled=(-not $updateCheck.Checked);$shortcutCheck.Enabled=(-not $updateCheck.Checked)
+        }elseif($code -eq 0){
             $verb=if($updateCheck.Checked){'Обновление'}else{'Установка'}
             $status.Text=($verb+' завершено: '+$pathBox.Text);$status.ForeColor=[System.Drawing.Color]::DarkGreen
             $installButton.Text=if($updateCheck.Checked){'Обновлено'}else{'Установлено'};$installButton.Enabled=$false
@@ -210,7 +233,7 @@ $timer.Start()
 $form.Add_FormClosing({
     param($sender,$eventArgs)
     if($null -ne $script:installProcess -and -not $script:installProcess.HasExited){
-        [System.Windows.Forms.MessageBox]::Show('Дождитесь завершения установки. Закрытие окна не отменяет системные изменения.','AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
+        [System.Windows.Forms.MessageBox]::Show('Дождитесь завершения или отмените загрузку кнопкой «Отменить загрузку». Закрытие окна не прервёт системные изменения.','AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
         $eventArgs.Cancel=$true
     }
 })
