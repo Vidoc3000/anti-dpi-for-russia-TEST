@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
- [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller)
+ [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [string]$CancelFile='')
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
@@ -14,9 +14,16 @@ $script:AntiDPITranscriptActive=$false
 $script:AntiDPITranscriptPath=''
 $script:AntiDPIInstalledRoot=''
 $script:AntiDPIInstallerNonInteractive=[bool]$NonInteractiveInstaller
+$script:AntiDPIInstallCancelFile=$CancelFile
+$script:AntiDPIWasCancelled=$false
 function Test-ChildPath([string]$Root,[string]$Candidate) {
     $r=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
     return [IO.Path]::GetFullPath($Candidate).StartsWith($r,[StringComparison]::OrdinalIgnoreCase)
+}
+function Test-AntiDPIInstallCancellation {
+    if($script:AntiDPIInstallCancelFile -and (Test-Path -LiteralPath $script:AntiDPIInstallCancelFile -PathType Leaf)){
+        throw [OperationCanceledException]::new('Пользователь отменил загрузку установщика.')
+    }
 }
 function Read-InstallManifest {
     $root=Split-Path -Parent $PSScriptRoot;$path=Join-Path $root '.antidpi-install.json'
@@ -363,6 +370,7 @@ function Get-AntiDPIVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
             else{Write-Host ('Скачиваю официальный Windows Bundle bol-van: '+$Meta.commit)}
             $mirror=Get-AntiDPIBundleMirrorUrl ([string]$Meta.commit)
             $download=Invoke-AntiDPIBundleDownload -Url $Url -AlternativeUrls @($mirror) -Destination $zip -ExpectedBytes ([long]$Meta.bytes)
+            Test-AntiDPIInstallCancellation
             $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
             if($Selection -eq 'Compatible'){
                 Write-Host 'Проверяю SHA-256...'
@@ -460,25 +468,37 @@ function Write-AntiDPIDownloadProgress([string]$Source,[long]$Received,[long]$To
 function Invoke-AntiDPIBundleDownload([string]$Url,[string]$Destination,[long]$ExpectedBytes=0,[string[]]$AlternativeUrls=@()) {
     Initialize-AntiDPIRuntime
     if(Test-Path -LiteralPath $Destination){throw 'Путь загружаемого архива уже занят.'}
-    $sources=@($Url)+@($AlternativeUrls)
-    $sourceIndex=0
+    $sources=@($Url)+@($AlternativeUrls|Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
+    if(-not $sources.Count){throw 'Не задан источник загрузки.'}
+    $maxAttempts=3*$sources.Count
+    $maximumSeconds=600
+    $deadline=[Diagnostics.Stopwatch]::StartNew()
+    $attemptNumber=0
+    $lastReason=''
     $windowSeconds=15
     $minimumPercent=3
-    # A server may stream without Content-Length. In that case this is a size
-    # estimate from the compatible bundle, not an independently known total.
+    # A server may stream without Content-Length. This estimate is not a trusted size.
     if($ExpectedBytes -le 0){$ExpectedBytes=19522338}
-    while($true){
+    while($attemptNumber -lt $maxAttempts -and $deadline.Elapsed.TotalSeconds -lt $maximumSeconds){
+        Test-AntiDPIInstallCancellation
+        $attemptNumber++
+        $sourceIndex=($attemptNumber-1)%$sources.Count
         $source=[string]$sources[$sourceIndex]
-        $sourceName=if($sourceIndex -eq 0){'GitHub'}else{'cdn.gh-proxy.org'}
+        $sourceName=if($sourceIndex -eq 0){'GitHub'}else{'зеркало'}
         $partial=$Destination+'.part_'+[guid]::NewGuid().ToString('N')
         $attempt=$null;$clock=$null;$reason=''
-        Write-Host ('Источник: '+$sourceName)
+        Write-Host ('Источник: '+$sourceName+'; попытка '+$attemptNumber+'/'+$maxAttempts)
         Write-AntiDPIDownloadProgress $sourceName 0 $ExpectedBytes 0 $true
         try{
             $clock=[Diagnostics.Stopwatch]::StartNew()
             $attempt=[AntiDPI.Public10.BundleDownloadAttempt]::new($source,$partial,$ExpectedBytes)
             $windowStart=[long]0;$windowBytes=[long]0;$lastUpdate=[long]0;$lastPercent=0
             while(-not $attempt.Task.IsCompleted){
+                Test-AntiDPIInstallCancellation
+                if($deadline.Elapsed.TotalSeconds -ge $maximumSeconds){
+                    $reason='Превышено общее время загрузки (10 минут).'
+                    $attempt.Abort();break
+                }
                 $elapsed=$clock.ElapsedMilliseconds
                 $received=$attempt.ReceivedBytes;$total=$attempt.TotalBytes
                 if($elapsed-$windowStart -ge ($windowSeconds*1000)){
@@ -507,18 +527,27 @@ function Invoke-AntiDPIBundleDownload([string]$Url,[string]$Destination,[long]$E
                     return [pscustomobject]@{Url=$source;FinalUrl=$result.FinalUrl;Mirror=$sourceName}
                 }
                 if((Test-AntiDPIAntivirusBlock $result.Error) -or $result.FailureKind -ne 'Network'){throw $result.Error}
-                $reason='Ошибка загрузки: '+$result.Error.Message+'. Переключаю источник.'
+                $reason='Ошибка загрузки: '+$result.Error.Message+'.'
             }
         }finally{
             if($null -ne $attempt){$attempt.Dispose()}
             try{if(Test-Path -LiteralPath $partial){Remove-Item -LiteralPath $partial -Force -ErrorAction Stop}}
             catch{Write-Verbose ('Не удалось удалить частичную загрузку: '+$_.Exception.Message)}
         }
-        Write-Host $reason -ForegroundColor Yellow
-        $sourceIndex=($sourceIndex+1)%$sources.Count
-        Start-Sleep -Milliseconds 250
+        $lastReason=$reason
+        Write-Host ($reason+' Повторю загрузку, если остались попытки.') -ForegroundColor Yellow
+        if($deadline.Elapsed.TotalSeconds -ge $maximumSeconds){break}
+        if($attemptNumber -lt $maxAttempts){
+            $delay=[Math]::Min(8,[int][Math]::Pow(2,[Math]::Min(3,$attemptNumber-1)))
+            $backoff=[Diagnostics.Stopwatch]::StartNew()
+            while($backoff.Elapsed.TotalSeconds -lt $delay){
+                Test-AntiDPIInstallCancellation
+                Start-Sleep -Milliseconds 100
+            }
+        }
     }
-
+    Test-AntiDPIInstallCancellation
+    throw [IO.IOException]::new(('Не удалось скачать архив за {0} попыток или 10 минут. Последняя ошибка: {1}' -f $attemptNumber,$lastReason))
 }
 function Invoke-AntiDPILicenseDownload([string]$Url,[string[]]$AlternativeUrls,[string]$Destination,[int]$TimeoutSeconds=5) {
     Initialize-AntiDPIRuntime
@@ -613,6 +642,8 @@ function Install-AntiDPI {
         $verified=Get-AntiDPIVerifiedBundle $meta $selection $url $stage
         if($null -eq $verified){return}
         $bundle=$verified.Bundle;$downloadHash=$verified.Hash;$selectedMeta=$verified.Metadata
+        Test-AntiDPIInstallCancellation
+        if($CancelFile){[IO.File]::WriteAllText(($CancelFile+'.closed'),'verified',[Text.UTF8Encoding]::new($false));Test-AntiDPIInstallCancellation}
         $bolVanLicense=Join-Path $stage 'LICENSE_Bol-Van.txt'
         $bolVanLicenseDownloaded=Get-AntiDPIBolVanLicense $bolVanLicense
         $driverBefore=@(Get-CimInstance Win32_SystemDriver -Filter "Name='WinDivert'" -ErrorAction SilentlyContinue|Select-Object Name,PathName,State)
@@ -1031,6 +1062,7 @@ if($needsElevation -or $needsSta){
     if($InstallPath){$arguments+=@('-InstallPath',$InstallPath)}
     if($BundleSelection){$arguments+=@('-BundleSelection',$BundleSelection)}
     if($CreateShortcutChoice){$arguments+=@('-CreateShortcutChoice',$CreateShortcutChoice)}
+    if($CancelFile){$arguments+=@('-CancelFile',$CancelFile)}
     if($NonInteractiveInstaller){$arguments+='-NonInteractiveInstaller'}
     if($SkipHeader -or $Action -eq 'GUI'){$arguments+='-SkipHeader'}
     $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -1052,6 +1084,7 @@ try{
     }
     switch($Action){'Install'{Install-AntiDPI};'Update'{Update-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
 }
-catch [OperationCanceledException]{Write-Host ''}
+catch [OperationCanceledException]{Write-Host 'Операция отменена пользователем.' -ForegroundColor Yellow;$script:AntiDPIWasCancelled=$true}
 catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
 finally{Complete-AntiDPISessionLog}
+if($script:AntiDPIWasCancelled -and $Action -in @('Install','Update')){exit 2}
