@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.11](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.11)**: Windows GUI + CLI версии **1.10**, Linux CLI версии **1.11**.
+В **[релизе v1.12](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.12)**: Windows GUI + CLI версии **1.11**, Linux CLI версии **1.12**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.10_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.10_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.11_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/SHA256SUMS_Windows_v1.10.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/SHA256SUMS_Linux_v1.11.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.12/AntiDPI_CLI_v1.11_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.12/AntiDPI_CLI_v1.11_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.12/AntiDPI_CLI_v1.12_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.12/SHA256SUMS_Windows_v1.11.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.12/SHA256SUMS_Linux_v1.12.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -32,7 +32,7 @@
 ### Вкладки
 
 - **Стратегии** — выбрать IPv4/IPv6, TCP/TLS или UDP/QUIC, стратегию, физический сетевой адаптер и порты; затем запустить или штатно остановить обработку. В списке адаптеров показываются имена устройств.
-- **Анализ** — сравнивать выбранные стратегии с контрольным запросом без тестовой стратегии, настраивать параллельность, число попыток, HTTPS-таймаут и порог полученных данных. BASELINE_PASS означает, что YouTube прошёл и в контрольном запросе, поэтому эффект стратегии не подтверждён. Проверка ограничена YouTube по IPv4/TCP/TLS; она не доказывает работу VPN/Tor-туннеля или обход DPI.
+- **Анализ** — сравнивать выбранные стратегии с контрольным запросом без тестовой стратегии, настраивать параллельность, число попыток, HTTPS-таймаут и порог полученных данных, экспортировать результаты в CSV. BASELINE_PASS означает, что YouTube прошёл и в контрольном запросе, поэтому эффект стратегии не подтверждён. Проверка ограничена YouTube по IPv4/TCP/TLS; она не доказывает работу VPN/Tor-туннеля или обход DPI.
 - **Настройки** — сохранить IP-семейство, режим TCP/TLS или UDP/QUIC, порты, диапазон и параллельность YouTube-анализа, предпочтение адаптера и режим без изменения TCP timestamps.
 - Во вкладке «О программе» отображается версия и ссылка на релизы. В списке стратегий доступны фильтр по семействам, просмотр рецепта и аргументов движка, проверка параметров без запуска перехвата, список интерфейсов и управляемый перезапуск.
 
@@ -49,8 +49,8 @@
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.11_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.11_Linux_x64
+tar -xzf AntiDPI_CLI_v1.12_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.12_Linux_x64
 bash INSTALL.sh
 ```
 

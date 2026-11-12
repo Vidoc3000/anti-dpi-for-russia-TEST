@@ -57,6 +57,7 @@ $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setu
 $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
 $buildWorkflowText = [IO.File]::ReadAllText((Join-Path $repoRoot '.github\workflows\build.yml'))
 Assert-True ($buildWorkflowText.Contains("if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'")) 'stable release publishing is gated to the main branch'
+Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.11'") -and $managerText.Contains("Version='GUI_CLI_1.11'") -and $buildWorkflowText.Contains("default: '1.11'")) 'Windows release package version matches the manager manifest and workflow default'
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('Ярлык уже существует и будет сохранён')) 'install rollback cleans its firewall rule and preserves pre-existing desktop items'
