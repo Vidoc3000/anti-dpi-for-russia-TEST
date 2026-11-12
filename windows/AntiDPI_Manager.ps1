@@ -368,9 +368,15 @@ function Get-AntiDPIVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
             $branchArchive=([string]$Meta.commit -notmatch '^[0-9a-f]{40}$')
             if($branchArchive){Write-Host 'Скачиваю последнюю версию официальной ветки master bol-van.'}
             else{Write-Host ('Скачиваю официальный Windows Bundle bol-van: '+$Meta.commit)}
-            $mirror=Get-AntiDPIBundleMirrorUrl ([string]$Meta.commit)
-            $download=Invoke-AntiDPIBundleDownload -Url $Url -AlternativeUrls @($mirror) -Destination $zip -ExpectedBytes ([long]$Meta.bytes)
+            $alternatives=@()
+            if($Selection -eq 'Compatible'){$alternatives=@((Get-AntiDPIBundleMirrorUrl ([string]$Meta.commit)))}
+            else{Write-Host 'Режим Latest: используется только HTTPS codeload.github.com; доверенная контрольная сумма заранее неизвестна.' -ForegroundColor Yellow}
+            $download=Invoke-AntiDPIBundleDownload -Url $Url -AlternativeUrls $alternatives -Destination $zip -ExpectedBytes ([long]$Meta.bytes)
             Test-AntiDPIInstallCancellation
+            if($Selection -eq 'Latest'){
+                $finalUri=[Uri]$download.FinalUrl
+                if($finalUri.Scheme -cne 'https' -or $finalUri.DnsSafeHost -ine 'codeload.github.com' -or $finalUri.Port -ne 443){throw 'Режим Latest принимает архив только напрямую по HTTPS с codeload.github.com.'}
+            }
             $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
             if($Selection -eq 'Compatible'){
                 Write-Host 'Проверяю SHA-256...'
@@ -383,7 +389,9 @@ function Get-AntiDPIVerifiedBundle($Meta,[string]$Selection,[string]$Url,[string
                 $commit=[AntiDPI.Public10.BundleArchiveInfo]::ReadCommit($zip)
                 Write-Host ('Коммит загруженного архива master: '+$commit)
             }
-            $selected=[ordered]@{repo=$Meta.repo;commit=$commit;commit_date=$Meta.commit_date;url=$Url;download_url=$download.Url;download_final_url=$download.FinalUrl;download_mirror=$download.Mirror;sha256=$hash;bytes=(Get-Item -LiteralPath $zip -ErrorAction Stop).Length;selection=$Selection;hash_verified_against_known_value=($Selection -eq 'Compatible');archive_ref=$archiveRef}
+            $hashVerified=($Selection -eq 'Compatible')
+            $integrityStatus=if($hashVerified){'matched_pinned_manifest'}else{'computed_locally_no_trusted_expected_digest'}
+            $selected=[ordered]@{repo=$Meta.repo;commit=$commit;commit_date=$Meta.commit_date;url=$Url;download_url=$download.Url;download_final_url=$download.FinalUrl;download_mirror=$download.Mirror;sha256=$hash;bytes=(Get-Item -LiteralPath $zip -ErrorAction Stop).Length;selection=$Selection;hash_verified_against_known_value=$hashVerified;integrity_status=$integrityStatus;archive_ref=$archiveRef}
             Write-Host '----------------------'
             $unpacked=Join-Path $attempt 's';[IO.Directory]::CreateDirectory($unpacked)|Out-Null
             Expand-VerifiedBundle $zip $unpacked ('zapret-win-bundle-'+$archiveRef)
