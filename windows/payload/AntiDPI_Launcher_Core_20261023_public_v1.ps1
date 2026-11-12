@@ -456,7 +456,15 @@ function Write-AntiDPIDiagnostic([string]$Path,$Data) {
 function Get-AntiDPIAnalysisRow($Result,[int]$Number,[int]$BaselineSuccesses=-1,[int]$ExpectedAttempts=2) {
     $successes=[int]$Result.Successes
     if($Result.Cancelled){$status='CANCELLED'}elseif($Result.Error){$status='ERROR'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -ge $ExpectedAttempts){$status='BASELINE_PASS'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -gt 0){$status='INCONCLUSIVE'}elseif($successes -ge $ExpectedAttempts){$status='PASS'}elseif($successes -gt 0){$status='UNSTABLE'}else{$status='FAIL'}
-    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;ExpectedAttempts=$ExpectedAttempts;BaselineSuccesses=$BaselineSuccesses;Details=[string]$Result.Error}
+    $attemptDetails=[Collections.Generic.List[string]]::new();$attemptNumber=0
+    if($null -ne $Result.PSObject.Properties['Attempts']){
+        foreach($attempt in @($Result.Attempts)){
+            if($null -eq $attempt){continue};$attemptNumber++
+            if($attempt.Success){$attemptDetails.Add(('Попытка {0}: HTTP {1}, {2:N0} байт, {3:N1} с' -f $attemptNumber,[int]$attempt.HttpStatus,[long]$attempt.Bytes,[double]$attempt.Seconds))}
+            else{$reason=if($attempt.Reason){[string]$attempt.Reason}else{'ошибка запроса'};$attemptDetails.Add(('Попытка {0}: {1}' -f $attemptNumber,$reason))}
+        }
+    }
+    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;ExpectedAttempts=$ExpectedAttempts;BaselineSuccesses=$BaselineSuccesses;AttemptDetails=($attemptDetails -join '; ');Details=[string]$Result.Error}
 }
 function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0,$Baseline=$null) {
     if(-not $Path){return}
