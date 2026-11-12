@@ -142,6 +142,7 @@ foreach ($removedAsset in @('windows\payload\AntiDPIArtCLI.ttf','windows\payload
 Assert-True (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'assets'))) 'Removed unused root assets directory'
 Assert-True ($coreText.Contains('if($Analyze)') -and $coreText.Contains('strategy-analysis.v1')) 'analysis uses measured YouTube results'
 Assert-True ($catalogueText.Contains('[switch]$Analyze')) 'catalogue provides GUI analysis mode'
+Assert-True ($catalogueText.Contains('[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)') -and $catalogueText.Contains('$OutputEncoding=[Console]::OutputEncoding')) 'Windows catalogue writes UTF-8 so redirected GUI logs preserve Cyrillic'
 Assert-True ($coreText.Contains('--wf-udp-out')) 'engine builder supports outbound UDP capture'
 Assert-True ($coreText.Contains('--filter-$transport=$ports')) 'engine builder chooses TCP or UDP filter'
 Assert-True ($managerText.Contains("'ips6-exclude.txt'")) 'installer packages IPv6 exclusions'
