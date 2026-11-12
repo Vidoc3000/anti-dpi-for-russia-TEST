@@ -7,6 +7,7 @@ param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [switch]$ListGroups,[switch]$ListProfiles,[switch]$ListProfilesJson,[switch]$ListQuicProfilesJson,[switch]$ListInterfaces,
  [switch]$ShowRecipe,[switch]$PrintArguments,[switch]$Check,[switch]$SkipTimestampSetup,
  [switch]$Analyze,[int]$FirstProfile=1,[int]$LastProfile=45,[int]$Parallelism=2,
+ [ValidateRange(1,5)][int]$AnalysisAttempts=2,[ValidateRange(16,1024)][int]$AnalysisThresholdKB=100,[ValidateRange(5,120)][int]$AnalysisTimeoutSeconds=15,
  [string]$AnalysisResultPath='', [string]$AnalysisCancelFile='')
 
 $CatalogueInfo = @'

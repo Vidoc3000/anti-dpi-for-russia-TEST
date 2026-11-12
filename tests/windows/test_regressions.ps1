@@ -51,6 +51,7 @@ $managerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Mana
 $coreText = [IO.File]::ReadAllText($corePath)
 $catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'))
 $guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
+$runtimeText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_Runtime_20261023_public_v1.cs'))
 $installerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Installer.ps1'))
 $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setup.cs'))
 $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
@@ -84,7 +85,7 @@ Assert-True ($guiText.Contains("::new('Стратегии')") -and $guiText.Cont
 Assert-True ($guiText.Contains('Save-GuiSettings') -and $guiText.Contains("'gui-settings.json'")) 'GUI persists settings'
 Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiText.Contains('$adapterBox.Items.Add($item)')) 'adapter dropdown displays a name-only wrapper'
 Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
-Assert-True ($guiText.Contains('MaxDropDownItems=12') -and $guiText.Contains('DropDownHeight=') -and $guiText.Contains('AutoScroll=$true')) 'GUI clips strategy list to the screen and scrolls on compact displays'
+Assert-True ($guiText.Contains('$profileListBox.ScrollAlwaysVisible=$true') -and $guiText.Contains('AutoScrollMinSize=')) 'GUI keeps the strategy ListBox scrollable on compact displays'
 Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
 Assert-True ($guiText.Contains('$parallelism=[int]$analysisParallelismBox.Value') -and $guiText.Contains("'-Parallelism',[string]`$parallelism")) 'GUI forwards the user-selected analysis parallelism to the CLI'
 Assert-True ($guiText.Contains('AnalysisParallelism=1') -and $guiText.Contains('SkipTimestampSetup=$false') -and $guiText.Contains('$arguments+= ''-SkipTimestampSetup''')) 'GUI saves and applies the analysis concurrency and timestamp opt-out settings'
@@ -95,10 +96,20 @@ Assert-True ($guiText.Contains('Show-GuiProfileDetails') -and $guiText.Contains(
 Assert-True ($guiText.Contains('$launchArguments+= ''-Check''') -and $guiText.Contains('CheckOnly') -and $guiText.Contains('перехват не запускался')) 'GUI offers the CLI validation-only mode without enabling packet interception'
 Assert-True ($guiText.Contains('Request-GuiRestart') -and $guiText.Contains('Request-GuiStop') -and $guiText.Contains('F2')) 'GUI restart and keyboard actions route through managed shutdown'
 Assert-True ($guiText.Contains('$script:workerMode=if($CheckOnly){''check''}else{''start''}') -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI owns and tracks its CLI worker process'
-Assert-True ($guiText.Contains('PASS означает успешные HTTPS-попытки') -and $guiText.Contains('не доказывает работу VPN/Tor')) 'GUI labels network-test results without claiming tunnel or DPI-bypass proof'
+Assert-True ($guiText.Contains('BASELINE_PASS') -and $guiText.Contains('не доказывает VPN/Tor или обход DPI')) 'GUI distinguishes already-available YouTube from strategy PASS without claiming tunnel or DPI-bypass proof'
+Assert-True ($guiText.Contains('$profileListBox=New-Object System.Windows.Forms.ListBox') -and $guiText.Contains('$profileSearchBox.Add_TextChanged') -and $guiText.Contains('profileCountLabel')) 'GUI shows a persistent searchable strategy list'
+Assert-True ($guiText.Contains('AnalysisAttempts') -and $guiText.Contains('AnalysisTimeoutSeconds') -and $guiText.Contains('AnalysisThresholdKB')) 'GUI persists configurable YouTube attempts, timeout, and response threshold'
+Assert-True ($guiText.Contains("'-AnalysisAttempts',[string]`$attempts") -and $guiText.Contains("'-AnalysisTimeoutSeconds',[string]`$timeoutSeconds") -and $guiText.Contains("'-AnalysisThresholdKB',[string]`$thresholdKB")) 'GUI forwards analysis tuning settings to the CLI'
+Assert-True ($catalogueText.Contains('[int]$AnalysisAttempts=2') -and $catalogueText.Contains('[int]$AnalysisThresholdKB=100') -and $catalogueText.Contains('[int]$AnalysisTimeoutSeconds=15')) 'CLI supports bounded analysis tuning parameters'
+
 
 Assert-True ($guiText.Contains('(?:\s*-\s*([0-9]+))?')) 'GUI accepts a single strategy number or an inclusive numeric range'
 Assert-True ($coreText.Contains('Write-AntiDPIAnalysisSnapshot') -and $coreText.Contains('Get-AntiDPIAnalysisRow')) 'YouTube results are written after each strategy without parsing diagnostic Event fields'
+Assert-True ($coreText.Contains('Test-AntiDPIYoutubeBaseline') -and $coreText.Contains('$SourceAddress') -and $runtimeText.Contains('candidate.Client.Bind(new IPEndPoint(IPAddress.Parse(sourceAddress), 0))')) 'baseline HTTPS requests are bound to the selected physical adapter IPv4 address'
+$analysisSuccess = [pscustomobject]@{Successes=2;Cancelled=$false;Error=''}
+Assert-Equal 'BASELINE_PASS' (Get-AntiDPIAnalysisRow $analysisSuccess 1 2 2).Status 'strategy success is not reported as strategy-specific PASS when the control also succeeds'
+Assert-Equal 'PASS' (Get-AntiDPIAnalysisRow $analysisSuccess 1 0 2).Status 'strategy PASS requires success with a failing control'
+Assert-Equal 'INCONCLUSIVE' (Get-AntiDPIAnalysisRow $analysisSuccess 1 1 2).Status 'strategy success with an unstable control is inconclusive'
 Assert-True (-not $coreText.Contains('ReadAllLines($log') -and -not $coreText.Contains('$entry.Event -eq')) 'YouTube result export ignores diagnostic records without Event fields'
 Assert-True ($installerText.Contains('мастер установки') -and $installerText.Contains('-NonInteractiveInstaller') -and $installerText.Contains('Start-Process')) 'Windows uses a graphical installer with explicit options and progress logs'
 Assert-True ($installerText.Contains('-WindowStyle Normal') -and -not $installerText.Contains("'-WindowStyle','Hidden'")) 'Installer subprocesses are not hidden from the user'
