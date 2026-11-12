@@ -1,3 +1,4 @@
+# Осторожно! Вайбкод :)
 # AntiDPI — IPv4/IPv6, TCP/TLS и UDP/QUIC
 
 **AntiDPI** — оболочка для закреплённого движка [Zapret2 от bol-van](https://github.com/bol-van/zapret2). Она позволяет выбрать IP-семейство и проверенную стратегию обработки TCP/TLS или UDP/QUIC Initial. Поддерживаются Windows 10/11 x64 и Ubuntu/Debian x64.
