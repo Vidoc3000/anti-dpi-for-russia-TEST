@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.8**, **Windows 1.7**. Версии пакетов платформ ведутся независимо; общий релиз `v1.8` включает новые возможности Windows GUI для просмотра стратегий, аргументов движка и проверки конфигурации без запуска перехвата. Linux-пакет содержит актуальный каталог и версию CLI 1.8.
+Текущие версии исходников: **Linux 1.9**, **Windows 1.8**. Версии пакетов платформ ведутся независимо; общий релиз `v1.9` включает список стратегий с поиском, контрольный YouTube-запрос и дополнительные параметры анализа Windows. Linux-пакет содержит актуальный каталог и версию CLI 1.9.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.7_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.7_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.7.txt`
+- `dist/AntiDPI_CLI_v1.8_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.8_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.8.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.8_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.8.txt`
+- `dist/AntiDPI_CLI_v1.9_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.9.txt`
 
 Для пересборки:
 
@@ -127,7 +127,7 @@ bash packaging/linux/build.sh --force
 ```
 
 ```bash
-bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.8
+bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" --output-dir "$HOME/Builds/AntiDPI" --version 1.9
 ```
 
 `Version`/`--version` задаёт имена выходных файлов и метаданные EXE. Параметр не меняет текст версии внутри самой программы: его необходимо обновлять в исходниках отдельно. Linux-сборщик сверяет версию с `linux/data/release.json` и отклоняет несовпадение.
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.7_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.7_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.7.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.8_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.8_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.8.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.8.txt)
-tar -tzf dist/AntiDPI_CLI_v1.8_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.9.txt)
+tar -tzf dist/AntiDPI_CLI_v1.9_Linux_x64.tar.gz
 ```
 
 

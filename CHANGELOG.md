@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.9 — Windows strategy analysis and controls
+
+| English | Русский |
+| --- | --- |
+| Replace the Windows strategy selector with a searchable, family-filtered list. Compare YouTube checks with a direct baseline on the selected adapter; report BASELINE_PASS / INCONCLUSIVE when access is already available or the control is unstable. Add configurable attempts, HTTPS timeout, and response threshold. Linux carries the current source and strategy catalogue. | Селектор стратегий Windows заменён списком с поиском и фильтром семейств. Проверка YouTube сравнивается с контрольным запросом на выбранном адаптере; при уже доступном доступе или нестабильном контроле показываются BASELINE_PASS / INCONCLUSIVE. Добавлены настройки числа попыток, HTTPS-таймаута и порога ответа. Linux содержит актуальные исходники и каталог стратегий. |
+| Combined release: Linux package advances to 1.9; Windows GUI + CLI advances to 1.8. | Общий релиз: версия Linux-пакета повышена до 1.9; Windows GUI + CLI — до 1.8. |
+
 ## 1.7 — Windows icons and system-font console
 
 | English | Русский |
