@@ -453,14 +453,14 @@ function Write-AntiDPIDiagnostic([string]$Path,$Data) {
         [IO.File]::WriteAllText($fallback,$line+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
     }
 }
-function Get-AntiDPIAnalysisRow($Result,[int]$Number) {
+function Get-AntiDPIAnalysisRow($Result,[int]$Number,[int]$BaselineSuccesses=-1,[int]$ExpectedAttempts=2) {
     $successes=[int]$Result.Successes
-    $status=if($Result.Cancelled){'CANCELLED'}elseif($Result.Error){'ERROR'}elseif($successes -eq 2){'PASS'}elseif($successes -eq 1){'UNSTABLE'}else{'FAIL'}
-    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;Details=[string]$Result.Error}
+    if($Result.Cancelled){$status='CANCELLED'}elseif($Result.Error){$status='ERROR'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -ge $ExpectedAttempts){$status='BASELINE_PASS'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -gt 0){$status='INCONCLUSIVE'}elseif($successes -ge $ExpectedAttempts){$status='PASS'}elseif($successes -gt 0){$status='UNSTABLE'}else{$status='FAIL'}
+    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;ExpectedAttempts=$ExpectedAttempts;BaselineSuccesses=$BaselineSuccesses;Details=[string]$Result.Error}
 }
-function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0) {
+function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0,$Baseline=$null) {
     if(-not $Path){return}
-    $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;CurrentProfile=$CurrentProfile;Results=@($Results.Values|Sort-Object Number)}
+    $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;CurrentProfile=$CurrentProfile;Baseline=$Baseline;Results=@($Results.Values|Sort-Object Number)}
     $parent=Split-Path -Parent $Path
     [IO.Directory]::CreateDirectory($parent)|Out-Null
     $temporary=$Path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
@@ -620,7 +620,7 @@ function Read-AntiDPIYoutubeParallelism {
         if($answer -match '^[1-5]$'){return [int]$answer}
     }
 }
-function New-AntiDPIYoutubeJob($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$State,[string]$NativeLog,[int]$Slot) {
+function New-AntiDPIYoutubeJob($Row,[int]$Index,[string]$PortScope,[string]$Bundle,[string]$State,[string]$NativeLog,[int]$Slot,[int]$ThresholdBytes=102400,[int]$TimeoutMilliseconds=15000,[int]$Attempts=2) {
     $lease=[AntiDPI.Public10.ProbePortLease]::new(64)
     $published=$false
     try{
@@ -638,12 +638,15 @@ function New-AntiDPIYoutubeJob($Row,[int]$Index,[string]$PortScope,[string]$Bund
         $plan.NativeLog=$NativeLog
         $plan.RecordPath=Join-Path $State ('slot{0}_p{1}.json' -f $Slot,$Row.Number)
         $plan.Ports=$lease
+        $plan.Threshold=$ThresholdBytes
+        $plan.TimeoutMilliseconds=$TimeoutMilliseconds
+        $plan.Attempts=$Attempts
         $worker=[AntiDPI.Public10.YoutubeRecipeCheck]::new($plan)
         $published=$true
         return [pscustomobject]@{Number=[int]$Row.Number;Slot=$Slot;Ports=$lease.Ports;Worker=$worker}
     }finally{if(-not $published){$lease.Dispose()}}
 }
-function Receive-AntiDPIYoutubeJob($Job,[string]$Log,[switch]$RetryRequired) {
+function Receive-AntiDPIYoutubeJob($Job,[string]$Log,[switch]$RetryRequired,[int]$BaselineSuccesses=-1,[int]$ExpectedAttempts=2) {
     $result=$Job.Worker.Task.GetAwaiter().GetResult()
     for($attempt=0;$attempt -lt $result.Attempts.Length;$attempt++){
         Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$Job.Number;Slot=$Job.Slot;Attempt=($attempt+1);Result=$result.Attempts[$attempt]})
@@ -656,11 +659,34 @@ function Receive-AntiDPIYoutubeJob($Job,[string]$Log,[switch]$RetryRequired) {
         Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$Job.Number;Slot=$Job.Slot;Event='RETRY_AFTER_DRIVER_RECOVERY'})
         return
     }
-    $status=if($result.Successes -eq 2){'PASS'}elseif($result.Successes -eq 1){'UNSTABLE'}else{'FAIL'}
-    Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=$result.CompletedUtc.ToString('o');Profile=$Job.Number;Slot=$Job.Slot;Event='RESULT';Status=$status;Successes=$result.Successes})
+    $status=(Get-AntiDPIAnalysisRow $result ([int]$Job.Number) $BaselineSuccesses $ExpectedAttempts).Status
+    Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=$result.CompletedUtc.ToString('o');Profile=$Job.Number;Slot=$Job.Slot;Event='RESULT';Status=$status;Successes=$result.Successes;BaselineSuccesses=$BaselineSuccesses;ExpectedAttempts=$ExpectedAttempts})
+    if($status -eq 'BASELINE_PASS'){Write-Host ('{0}: HTTPS прошёл и в контрольном запуске без тестовой стратегии; эффект этой стратегии не подтверждён.' -f $Job.Number) -ForegroundColor DarkGray;return}
+    if($status -eq 'INCONCLUSIVE'){Write-Host ('{0}: контроль нестабилен; сравнение стратегии неубедительно.' -f $Job.Number) -ForegroundColor Yellow;return}
     if($result.Successes -gt 0){return ('{0} ({1})' -f $Job.Number,$status)}
 }
-function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]$PortScope,[string]$Bundle,[string]$State,[string]$Logs,[switch]$SkipTimestamps,[Parameter(Mandatory=$true)][ValidateRange(1,5)][int]$Parallelism,[string]$AnalysisResultPath='') {
+function Test-AntiDPIYoutubeBaseline([int]$Attempts,[int]$ThresholdBytes,[int]$TimeoutMilliseconds,[string]$Log,[string]$SourceAddress) {
+    $successes=0;$attemptRows=[Collections.Generic.List[object]]::new()
+    for($attempt=1;$attempt -le $Attempts;$attempt++){
+        Test-AntiDPIScanCancellation
+        $probe=[AntiDPI.Public10.YoutubeProbe]::new('https://www.youtube.com/','www.youtube.com',$ThresholdBytes,$TimeoutMilliseconds,$null,$SourceAddress)
+        try{
+            while(-not $probe.Task.IsCompleted){Test-AntiDPIScanCancellation;Start-Sleep -Milliseconds 25}
+            $result=$probe.Task.GetAwaiter().GetResult()
+            if($result.Success){$successes++}
+            $attemptRows.Add([pscustomobject]@{Attempt=$attempt;Success=[bool]$result.Success;Reason=[string]$result.Reason;Bytes=[long]$result.Bytes;Seconds=[double]$result.Seconds})
+            Write-AntiDPIDiagnostic $Log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='BASELINE_ATTEMPT';Attempt=$attempt;Success=[bool]$result.Success;Reason=[string]$result.Reason;Bytes=[long]$result.Bytes;RemoteIP=[string]$result.RemoteIP})
+        }finally{
+            $probe.Cancel()
+            if(-not $probe.Task.IsCompleted){$null=$probe.Task.Wait(3000)}
+            $probe.Dispose()
+        }
+    }
+    $status=if($successes -eq $Attempts){'PASS'}elseif($successes -gt 0){'UNSTABLE'}else{'FAIL'}
+    return [pscustomobject]@{Status=$status;Successes=$successes;Attempts=$Attempts;Details=@($attemptRows.ToArray())}
+}
+
+function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]$PortScope,[string]$Bundle,[string]$State,[string]$Logs,[switch]$SkipTimestamps,[Parameter(Mandatory=$true)][ValidateRange(1,5)][int]$Parallelism,[Parameter()][ValidateRange(1,5)][int]$Attempts=2,[Parameter()][ValidateRange(16,1048576)][int]$ThresholdBytes=102400,[Parameter()][ValidateRange(5000,120000)][int]$TimeoutMilliseconds=15000,[string]$AnalysisResultPath='') {
     Test-AntiDPINoOtherEngine
     Initialize-AntiDPIRuntime
     $tag=(Get-Date -Format 'yyyyMMdd_HHmmss_fff')+'_'+[guid]::NewGuid().ToString('N').Substring(0,8)
@@ -682,13 +708,21 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
     try{
         $script:AntiDPIScanControl=[AntiDPI.Public10.YoutubeScanControl]::new($inputState.Supported)
         $next=[int]$Range.First;$completed=0;$total=$Range.Last-$Range.First+1
-        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next}
+        $baseline=$null
+        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline}
+        $sourceAddresses=@(Get-NetIPAddress -InterfaceIndex ([int]$Adapter.ifIndex) -AddressFamily IPv4 -ErrorAction Stop|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $_.IPAddress -notlike '169.254.*'}|Select-Object -First 1 -ExpandProperty IPAddress)
+        if(-not $sourceAddresses.Count){throw 'Не найден IPv4-адрес выбранного адаптера для контрольного запроса.'}
+        $sourceAddress=[string]$sourceAddresses[0]
+        $baseline=Test-AntiDPIYoutubeBaseline $Attempts $ThresholdBytes $TimeoutMilliseconds $log $sourceAddress
+        Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='BASELINE';Status=$baseline.Status;Successes=$baseline.Successes;Attempts=$baseline.Attempts})
+        Write-Host ('Контроль без тестовой стратегии: {0}/{1} успешных запросов.' -f $baseline.Successes,$baseline.Attempts) -ForegroundColor Cyan
+        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline}
         Write-Host '----------------------'
         Write-Host 'Для остановки проверки нажмите клавишу Esc. Если нашлась рабочая стратегия, проверку можно остановить заранее.' -ForegroundColor Yellow
         if($null -ne $previousTitle){Write-Host 'Ход проверки отображается в заголовке окна.'}
         if(-not $inputState.Supported){Write-Host 'В этом хосте Esc недоступна; используйте обычное окно CMD/PowerShell.' -ForegroundColor Yellow}
         Write-Host ''
-        Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='START';First=$Range.First;Last=$Range.Last;Interface=[int]$Adapter.ifIndex;ThresholdBytes=102400;Attempts=2;TimeoutSeconds=15;ParallelSlots=$Parallelism;Isolation='exclusive IPv4 TCP source ports; AND WinDivert filter';URL='https://www.youtube.com/'})
+        Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='START';First=$Range.First;Last=$Range.Last;Interface=[int]$Adapter.ifIndex;SourceAddress=$sourceAddress;ThresholdBytes=$ThresholdBytes;Attempts=$Attempts;TimeoutSeconds=[int]($TimeoutMilliseconds/1000);ParallelSlots=$Parallelism;Isolation='exclusive IPv4 TCP source ports; AND WinDivert filter';URL='https://www.youtube.com/'})
         # This OS setting is shared. Configure it once before starting the workers.
         if(-not $SkipTimestamps){
             $needsTimestamps=$false
@@ -705,14 +739,14 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                 $jobResult=$job.Worker.Task.GetAwaiter().GetResult()
                 $driverFailure=[bool]$jobResult.DriverFailure
                 $driverReason=[string]$jobResult.DriverError
-                $entry=Receive-AntiDPIYoutubeJob $job $log -RetryRequired:$driverFailure
+                $entry=Receive-AntiDPIYoutubeJob $job $log -RetryRequired:$driverFailure -BaselineSuccesses $baseline.Successes -ExpectedAttempts $Attempts
                 if($driverFailure){
                     $retryQueue.Enqueue([int]$job.Number)
                     $recoveryPending=$true;$recoveryReason=$driverReason
                 }elseif($AnalysisResultPath){
-                    $analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number)
+                    $analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number) $baseline.Successes $Attempts
                     $current=if($retryQueue.Count){[int]$retryQueue.Peek()}else{[int]$next}
-                    Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $current
+                    Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $current $baseline
                 }
                 if($entry){
                     if($found.Count){Write-Host ', ' -NoNewline}
@@ -737,7 +771,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                 if($slot -eq 0){throw 'Не найден свободный слот проверки YouTube.'}
                 $nativeLog=Join-Path $Logs ('YouTube_winws2_{0}_s{1}_p{2}.log' -f $tag,$slot,$number)
                 try{
-                    $job=New-AntiDPIYoutubeJob $Profiles[$number] ([int]$Adapter.ifIndex) $PortScope $Bundle $scanState $nativeLog $slot
+                    $job=New-AntiDPIYoutubeJob $Profiles[$number] ([int]$Adapter.ifIndex) $PortScope $Bundle $scanState $nativeLog $slot $ThresholdBytes $TimeoutMilliseconds $Attempts
                     $jobs.Add($job)
                     $script:AntiDPIScanControl.Register($job.Worker)
                     Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$number;Slot=$slot;Event='RECIPE_START';SourcePorts=$job.Ports;NativeLog=$nativeLog})
@@ -764,8 +798,8 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                     $script:AntiDPIScanControl.Unregister($job.Worker)
                     $jobResult=$job.Worker.Task.GetAwaiter().GetResult()
                     $job.Worker.Dispose()
-                    $entry=Receive-AntiDPIYoutubeJob $job $log
-                    if($AnalysisResultPath){$analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number);Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0}
+                    $entry=Receive-AntiDPIYoutubeJob $job $log -BaselineSuccesses $baseline.Successes -ExpectedAttempts $Attempts
+                    if($AnalysisResultPath){$analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number) $baseline.Successes $Attempts;Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline}
                     if($entry){
                         if($found.Count){Write-Host ', ' -NoNewline}
                         Write-Host $entry -NoNewline -ForegroundColor Green
@@ -794,7 +828,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             if(-not @(Get-ChildItem -LiteralPath $scanState -Force).Count){Remove-Item -LiteralPath $scanState -Force}
         }
     }
-    if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0}
+    if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline}
     return ($script:AntiDPIScanSignal -eq 'Stop')
 }
 
@@ -851,6 +885,9 @@ function Invoke-AntiDPICatalogue {
         if($Protocol -ne 'tls' -or $AddressFamily -ne 'ipv4'){throw 'Анализ YouTube поддерживает только IPv4/TCP/TLS и не проверяет VPN/Tor-клиент.'}
         if($FirstProfile -lt 1 -or $LastProfile -lt $FirstProfile -or $LastProfile -gt $CatalogueInfo.ProfileCount){throw 'Укажите диапазон стратегий от 1 до 492.'}
         if($Parallelism -lt 1 -or $Parallelism -gt 5){throw 'Параллельность анализа должна быть от 1 до 5.'}
+        if($AnalysisAttempts -lt 1 -or $AnalysisAttempts -gt 5){throw 'Число попыток анализа должно быть от 1 до 5.'}
+        if($AnalysisThresholdKB -lt 16 -or $AnalysisThresholdKB -gt 1024){throw 'Порог ответа должен быть от 16 до 1024 КиБ.'}
+        if($AnalysisTimeoutSeconds -lt 5 -or $AnalysisTimeoutSeconds -gt 120){throw 'Таймаут HTTPS должен быть от 5 до 120 секунд.'}
         if(-not (Test-AntiDPIScopePort $Scope 443)){throw 'Для YouTube-анализа используется TCP-порт 443.'}
         if($InterfaceIndex -le 0){throw 'Для анализа выберите физический адаптер.'}
         if(-not $AnalysisResultPath){throw 'Не указан файл для результатов анализа.'}
@@ -870,7 +907,7 @@ function Invoke-AntiDPICatalogue {
             Push-Location -LiteralPath $bundle
             $locationPushed=$true
             $range=[pscustomobject]@{First=$FirstProfile;Last=$LastProfile}
-            $null=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter '443' $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $Parallelism -AnalysisResultPath $AnalysisResultPath
+            $null=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter '443' $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $Parallelism -Attempts $AnalysisAttempts -ThresholdBytes ($AnalysisThresholdKB*1024) -TimeoutMilliseconds ($AnalysisTimeoutSeconds*1000) -AnalysisResultPath $AnalysisResultPath
             return
         }finally{
             $script:AntiDPIScanCancelFile=$null
@@ -912,7 +949,7 @@ function Invoke-AntiDPICatalogue {
                 }
                 $range=Read-AntiDPIRecipeRange $profilesByNumber
                 $parallelism=Read-AntiDPIYoutubeParallelism
-                $stop=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter $Scope $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $parallelism
+                $stop=Invoke-AntiDPIYoutubeScan $profilesByNumber $range $adapter $Scope $bundle $state $logs -SkipTimestamps:$SkipTimestampSetup -Parallelism $parallelism -Attempts $AnalysisAttempts -ThresholdBytes ($AnalysisThresholdKB*1024) -TimeoutMilliseconds ($AnalysisTimeoutSeconds*1000)
                 if($stop){return}
                 $selection=if($Protocol -eq 'quic'){Read-AntiDPIQuicSelection}else{Read-AntiDPIStrategyNumber $profilesByNumber $CatalogueInfo.ProfileCount}
                 if($selection -eq 0){return}

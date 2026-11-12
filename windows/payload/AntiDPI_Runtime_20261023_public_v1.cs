@@ -503,7 +503,7 @@ namespace AntiDPI.Public10
             }
             return readBuffer[readPosition++];
         }
-        public static HttpConnection Open(Uri uri, int timeout, CancellationToken token, ProbePortLease lease)
+        public static HttpConnection Open(Uri uri, int timeout, CancellationToken token, ProbePortLease lease, string sourceAddress)
         {
             HttpConnection connection = new HttpConnection();
             connection.leased = lease != null;
@@ -517,6 +517,7 @@ namespace AntiDPI.Public10
                     token.ThrowIfCancellationRequested();
                     TcpClient candidate = lease == null ? new TcpClient(AddressFamily.InterNetwork) : lease.Rent();
                     try {
+                        if (lease == null && !String.IsNullOrEmpty(sourceAddress)) candidate.Client.Bind(new IPEndPoint(IPAddress.Parse(sourceAddress), 0));
                         using (token.Register(delegate { ProbePortLease.CloseSocket(candidate); })) {
                             Task connecting = candidate.ConnectAsync(address, uri.Port);
                             Stopwatch wait = Stopwatch.StartNew();
@@ -662,15 +663,18 @@ namespace AntiDPI.Public10
         public Task<ProbeResult> Task { get; private set; }
 
         public YoutubeProbe(string url, string allowedHost, int threshold, int timeoutMilliseconds)
-            : this(url, allowedHost, threshold, timeoutMilliseconds, null) { }
+            : this(url, allowedHost, threshold, timeoutMilliseconds, null, null) { }
 
         public YoutubeProbe(string url, string allowedHost, int threshold, int timeoutMilliseconds, ProbePortLease lease)
+            : this(url, allowedHost, threshold, timeoutMilliseconds, lease, null) { }
+
+        public YoutubeProbe(string url, string allowedHost, int threshold, int timeoutMilliseconds, ProbePortLease lease, string sourceAddress)
         {
             if (threshold < 1024 || threshold > 1048576) throw new ArgumentOutOfRangeException("threshold");
             if (timeoutMilliseconds < 1000 || timeoutMilliseconds > 120000) throw new ArgumentOutOfRangeException("timeoutMilliseconds");
             cancellation.CancelAfter(timeoutMilliseconds);
             Task = System.Threading.Tasks.Task.Run<ProbeResult>(delegate {
-                return Run(url, allowedHost, threshold, timeoutMilliseconds, cancellation.Token, lease);
+                return Run(url, allowedHost, threshold, timeoutMilliseconds, cancellation.Token, lease, sourceAddress);
             });
         }
 
@@ -733,7 +737,7 @@ namespace AntiDPI.Public10
             return Regex.IsMatch(html ?? "", @"(?is)<(?:form|div)[^>]*(?:id|class)\s*=\s*['"" ][^>]*\b(?:g-recaptcha|captcha-form)\b|<form[^>]*action\s*=\s*['""][^'""]*(?:/sorry/|consent\.google\.)");
         }
 
-        static ProbeResult Run(string url, string allowedHost, int threshold, int timeout, CancellationToken token, ProbePortLease lease)
+        static ProbeResult Run(string url, string allowedHost, int threshold, int timeout, CancellationToken token, ProbePortLease lease, string sourceAddress)
         {
             ProbeResult result = new ProbeResult { Reason = "NOT_STARTED", FinalUrl = url, ContentType = "", ContentEncoding = "", Error = "" };
             Stopwatch timer = Stopwatch.StartNew();
@@ -743,7 +747,7 @@ namespace AntiDPI.Public10
                     token.ThrowIfCancellationRequested();
                     result.FinalUrl = current.AbsoluteUri;
                     if (!Allowed(current, allowedHost)) { result.Reason = "UNEXPECTED_FINAL_DOMAIN"; return result; }
-                    using (HttpConnection connection = HttpConnection.Open(current, timeout, token, lease)) {
+                    using (HttpConnection connection = HttpConnection.Open(current, timeout, token, lease, sourceAddress)) {
                         result.RemoteIP = connection.RemoteIP;
                         result.SourcePort = connection.SourcePort;
                         result.HttpStatus = connection.Status;
@@ -858,10 +862,11 @@ namespace AntiDPI.Public10
         public int Threshold { get; set; }
         public int TimeoutMilliseconds { get; set; }
         public int WarmupMilliseconds { get; set; }
+        public int Attempts { get; set; }
         public YoutubeRecipePlan()
         {
             Url = "https://www.youtube.com/"; AllowedHost = "www.youtube.com";
-            Threshold = 102400; TimeoutMilliseconds = 15000; WarmupMilliseconds = 1000;
+            Threshold = 102400; TimeoutMilliseconds = 15000; WarmupMilliseconds = 1000; Attempts = 2;
         }
     }
 
@@ -996,7 +1001,7 @@ namespace AntiDPI.Public10
                 engine = StartChecked(false);
                 driverHealth = new WinDivertHealthMonitor(plan.Directory);
                 SaveIdentity(engine.Process);
-                for (int attempt = 0; attempt < 2; attempt++) {
+                for (int attempt = 0; attempt < plan.Attempts; attempt++) {
                     CheckAlive(engine);
                     YoutubeProbe probe;
                     lock (sync) {
