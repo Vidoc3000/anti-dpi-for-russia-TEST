@@ -148,6 +148,38 @@ function Update-AntiDPIDesktopDocuments($Manifest) {
     }
     $Manifest.Shortcut.Documents=$documents.ToArray()
 }
+function Restore-AntiDPIUpdateChanges($Applied) {
+    $errors=[Collections.Generic.List[string]]::new()
+    for($i=$Applied.Count-1;$i -ge 0;$i--){
+        $change=$Applied[$i]
+        try{
+            if($change.Existed){
+                if(-not (Test-Path -LiteralPath $change.Backup -PathType Leaf)){
+                    throw 'Резервная копия исходного файла отсутствует.'
+                }
+                if(Test-Path -LiteralPath $change.Destination -PathType Leaf){
+                    $currentHash=(Get-FileHash -LiteralPath $change.Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if($currentHash -cne [string]$change.UpdatedSha256){
+                        throw 'Файл изменён после обновления; текущий файл и резервная копия сохранены.'
+                    }
+                    [IO.File]::Replace($change.Backup,$change.Destination,[NullString]::Value)
+                }else{
+                    [IO.File]::Move($change.Backup,$change.Destination)
+                }
+            }elseif(Test-Path -LiteralPath $change.Destination -PathType Leaf){
+                $currentHash=(Get-FileHash -LiteralPath $change.Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($currentHash -cne [string]$change.UpdatedSha256){
+                    throw 'Новый файл изменён после обновления; он сохранён.'
+                }
+                Remove-Item -LiteralPath $change.Destination -Force -ErrorAction Stop
+            }
+        }catch{
+            $errors.Add(([string]$change.Destination+': '+$_.Exception.Message))
+        }
+    }
+    return [pscustomobject]@{Success=($errors.Count -eq 0);Errors=$errors.ToArray()}
+}
+
 function Update-AntiDPI {
     if(-not $InstallPath){throw 'Укажите папку установленной программы для обновления.'}
     $root=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
@@ -189,6 +221,7 @@ function Update-AntiDPI {
     $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
     [IO.Directory]::CreateDirectory($newRoot)|Out-Null;[IO.Directory]::CreateDirectory($backupRoot)|Out-Null
     $applied=[Collections.Generic.List[object]]::new()
+    $rollbackComplete=$true
     try{
         foreach($item in $updates){$staged=Join-Path $newRoot $item.Relative;[IO.Directory]::CreateDirectory((Split-Path -Parent $staged))|Out-Null;Copy-Item -LiteralPath $item.Source -Destination $staged}
         Write-Host ('Найдена AntiDPI '+[string]$manifest.DisplayVersion+' в '+$root+'. Обновляю файлы программы, настройки и папку zapret-winws будут сохранены.') -ForegroundColor Cyan
@@ -197,13 +230,14 @@ function Update-AntiDPI {
         foreach($item in $updates){
             $destination=Join-Path $root $item.Relative;$staged=Join-Path $newRoot $item.Relative;$backup=Join-Path $backupRoot $item.Relative
             [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))|Out-Null
+            $updatedHash=(Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash.ToLowerInvariant()
             if(Test-Path -LiteralPath $destination -PathType Leaf){
                 [IO.Directory]::CreateDirectory((Split-Path -Parent $backup))|Out-Null
                 [IO.File]::Replace($staged,$destination,$backup)
-                $applied.Add([pscustomobject]@{Destination=$destination;Backup=$backup;Existed=$true})
+                $applied.Add([pscustomobject]@{Destination=$destination;Backup=$backup;Existed=$true;UpdatedSha256=$updatedHash})
             }else{
                 [IO.File]::Move($staged,$destination)
-                $applied.Add([pscustomobject]@{Destination=$destination;Backup='';Existed=$false})
+                $applied.Add([pscustomobject]@{Destination=$destination;Backup='';Existed=$false;UpdatedSha256=$updatedHash})
             }
         }
         $fileMap=@{}
@@ -217,12 +251,17 @@ function Update-AntiDPI {
         Write-Host ('Обновление завершено: '+$manifest.DisplayVersion+'. Настройки, логи и скачанная сборка Zapret2 сохранены.') -ForegroundColor Green
     }catch{
         $failure=$_
-        for($i=$applied.Count-1;$i -ge 0;$i--){
-            $change=$applied[$i]
-            try{if($change.Existed -and (Test-Path -LiteralPath $change.Backup -PathType Leaf)){[IO.File]::Replace($change.Backup,$change.Destination,[NullString]::Value)}elseif(-not $change.Existed -and (Test-Path -LiteralPath $change.Destination -PathType Leaf)){Remove-Item -LiteralPath $change.Destination -Force}}catch{Write-Host ('Не удалось откатить '+$change.Destination+': '+$_.Exception.Message) -ForegroundColor Red}
+        $rollback=Restore-AntiDPIUpdateChanges $applied.ToArray()
+        if(-not $rollback.Success){
+            $rollbackComplete=$false
+            foreach($message in $rollback.Errors){Write-Host ('Не удалось безопасно откатить обновление: '+$message) -ForegroundColor Red}
+            Write-Host ('Резервные копии обновления оставлены для ручного восстановления: '+$stage) -ForegroundColor Yellow
         }
         throw $failure
-    }finally{Remove-AntiDPITemporaryDirectory $stage}
+    }finally{
+        if($rollbackComplete){Remove-AntiDPITemporaryDirectory $stage}
+        else{Write-Host ('Временная папка обновления сохранена: '+$stage) -ForegroundColor Yellow}
+    }
 }
 
 function Assert-AntiDPIPathLength([string]$Path,[switch]$Directory) {
