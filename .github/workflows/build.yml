@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.13'
+        default: '1.14'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.12'
+        default: '1.13'
         type: string
       publish_release:
         description: 'Publish a GitHub release (requires platform=all and ref=main)'
@@ -181,7 +181,7 @@ jobs:
 
           - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64).
           - Windows GUI + CLI package: v${{ inputs.windows_version }} (Windows 10/11 x64).
-          - Windows GUI + CLI v${{ inputs.windows_version }} presents a more compact, resizable interface with fewer forced scrollbars, and clearer verified installation results instead of alarming false-error feedback; it retains the existing analysis export and recovery safeguards.
+          - Windows GUI + CLI v${{ inputs.windows_version }} fixes an installer callback scope error that interrupted completion feedback, alongside the compact resizable interface, clearer verified installation results, analysis export, and recovery safeguards.
           - Linux CLI v${{ inputs.linux_version }} carries the unchanged application source and current strategy catalogue; only its package version advances for this combined release.
           - YouTube analysis checks only IPv4/TCP/TLS HTTPS access; it does not validate VPN/Tor clients or tunnels or prove DPI bypass.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.

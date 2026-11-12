@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии пакетов: **Linux 1.13**, **Windows 1.12**. Версии пакетов платформ ведутся независимо; общий релиз `v1.13` включает компактный адаптивный интерфейс Windows GUI v1.12 и более понятные сообщения установщика; Linux-пакет v1.13 содержит неизменённый код приложения и текущий каталог; версия CLI приложения остаётся 1.9.
+Текущие версии пакетов: **Linux 1.14**, **Windows 1.13**. Версии пакетов платформ ведутся независимо; общий релиз `v1.14` исправляет ошибку установщика Windows GUI v1.13 и включает улучшения интерфейса v1.12; Linux-пакет v1.14 содержит неизменённый код приложения и текущий каталог; версия CLI приложения остаётся 1.9.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.12_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.12_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.12.txt`
+- `dist/AntiDPI_CLI_v1.13_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.13_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.13.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.13_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.13.txt`
+- `dist/AntiDPI_CLI_v1.14_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.14.txt`
 
 Для пересборки:
 
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.12_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.12_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.12.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.13_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.13_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.13.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.13.txt)
-tar -tzf dist/AntiDPI_CLI_v1.13_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.14.txt)
+tar -tzf dist/AntiDPI_CLI_v1.14_Linux_x64.tar.gz
 ```
 
 
