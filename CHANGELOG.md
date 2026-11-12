@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.10 — Windows GUI/installer update and clearer diagnostics
+
+| English | Русский |
+| --- | --- |
+| Add installed-version and About information, meaningful strategy-check and YouTube-analysis diagnostics with per-attempt evidence, configurable error-detail dialogs, and faster live analysis updates. Allow safe in-place Windows updates while preserving settings, logs, and the Zapret2 bundle; protect locally modified files. Fix Cyrillic installer output and settings layout. | Добавлены версия и вкладка «О программе», осмысленные результаты проверки стратегий и YouTube-анализа с данными по каждой попытке, настройка показа ошибок и более быстрая обработка обновлений анализа. Установщик поддерживает безопасное обновление на месте с сохранением настроек, логов и Zapret2, защищая изменённые пользователем файлы. Исправлены вывод кириллицы и размещение настроек. |
+| Combined release: Linux package advances to 1.10; Windows GUI + CLI advances to 1.9. | Общий релиз: версия Linux-пакета повышена до 1.10; Windows GUI + CLI — до 1.9. |
+
 ## 1.9 — Windows strategy analysis and controls
 
 | English | Русский |

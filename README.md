@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.9](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.9)**: Windows GUI + CLI версии **1.8**, Linux CLI версии **1.9**.
+В **[релизе v1.10](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.10)**: Windows GUI + CLI версии **1.9**, Linux CLI версии **1.10**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.9/AntiDPI_CLI_v1.8_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.9/AntiDPI_CLI_v1.8_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.9/AntiDPI_CLI_v1.9_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.9/SHA256SUMS_Windows_v1.8.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.9/SHA256SUMS_Linux_v1.9.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.9_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.9_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.10_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/SHA256SUMS_Windows_v1.9.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/SHA256SUMS_Linux_v1.10.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -27,14 +27,14 @@
 
 ## Windows GUI
 
-Запустите графический мастер установки от имени администратора. В нём выберите пустую папку, совместимую или последнюю официальную сборку Zapret2 и создание ярлыков; ход установки и логи доступны в окне мастера. После установки откройте ярлык **AntiDPI**. GUI требует административных прав для запуска сетевого движка.
+Запустите графический мастер установки от имени администратора. Для новой установки выберите пустую папку и источник Zapret2; для обновления укажите существующую установку — настройки, логи и папка Zapret2 сохраняются. Ход операции и логи доступны в окне мастера. После установки откройте ярлык **AntiDPI**. GUI требует административных прав для запуска сетевого движка.
 
 ### Вкладки
 
 - **Стратегии** — выбрать IPv4/IPv6, TCP/TLS или UDP/QUIC, стратегию, физический сетевой адаптер и порты; затем запустить или штатно остановить обработку. В списке адаптеров показываются имена устройств.
 - **Анализ** — сравнивать выбранные стратегии с контрольным запросом без тестовой стратегии, настраивать параллельность, число попыток, HTTPS-таймаут и порог полученных данных. BASELINE_PASS означает, что YouTube прошёл и в контрольном запросе, поэтому эффект стратегии не подтверждён. Проверка ограничена YouTube по IPv4/TCP/TLS; она не доказывает работу VPN/Tor-туннеля или обход DPI.
 - **Настройки** — сохранить IP-семейство, режим TCP/TLS или UDP/QUIC, порты, диапазон и параллельность YouTube-анализа, предпочтение адаптера и режим без изменения TCP timestamps.
-- В списке стратегий доступны фильтр по семействам, просмотр рецепта и аргументов движка, проверка параметров без запуска перехвата, список интерфейсов и управляемый перезапуск.
+- Во вкладке «О программе» отображается версия и ссылка на релизы. В списке стратегий доступны фильтр по семействам, просмотр рецепта и аргументов движка, проверка параметров без запуска перехвата, список интерфейсов и управляемый перезапуск.
 
 Анализ YouTube **не проверяет VPN/Tor-туннель, конфигурацию, авторизацию или сторонний клиент**. Для оценки VPN/Tor выберите стратегию, включите её и проверьте соединение средствами своего клиента. Успешный YouTube-тест не означает, что эта стратегия лучше для VPN, и обратное тоже верно.
 
@@ -49,8 +49,8 @@
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.9_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.9_Linux_x64
+tar -xzf AntiDPI_CLI_v1.10_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.10_Linux_x64
 bash INSTALL.sh
 ```
 
