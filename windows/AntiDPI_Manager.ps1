@@ -25,16 +25,41 @@ function Test-AntiDPIInstallCancellation {
         throw [OperationCanceledException]::new('Пользователь отменил загрузку установщика.')
     }
 }
+function Assert-AntiDPIInstallPath([string]$Root,[string]$RelativePath) {
+    $rootPath=[IO.Path]::GetFullPath($Root)
+    if($rootPath.TrimEnd('\','/') -ieq ([IO.Path]::GetPathRoot($rootPath)).TrimEnd('\','/')){throw 'Корень диска нельзя использовать как папку установки.'}
+    $rootPath=$rootPath.TrimEnd('\','/')
+    if([IO.Path]::IsPathRooted($RelativePath)){throw 'В маркере указан абсолютный путь установки.'}
+    $candidate=[IO.Path]::GetFullPath((Join-Path $rootPath $RelativePath))
+    $rootPrefix=$rootPath+[IO.Path]::DirectorySeparatorChar
+    if(-not $candidate.StartsWith($rootPrefix,[StringComparison]::OrdinalIgnoreCase)){
+        throw 'Путь установки выходит за пределы корневой папки.'
+    }
+    if(-not (Test-Path -LiteralPath $rootPath -PathType Container)){throw 'Корневая папка установки недоступна.'}
+    $rootItem=Get-Item -LiteralPath $rootPath -Force
+    if(($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Корневая папка установки является ссылкой; операция отменена.'}
+    $current=$rootPath
+    foreach($part in $candidate.Substring($rootPrefix.Length).Split([IO.Path]::DirectorySeparatorChar)){
+        if(-not $part){continue}
+        $current=Join-Path $current $part
+        $item=Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+            throw ('Путь установки содержит ссылку или junction: '+$current)
+        }
+    }
+    return $candidate
+}
+
 function Read-InstallManifest {
-    $root=Split-Path -Parent $PSScriptRoot;$path=Join-Path $root '.antidpi-install.json'
+    $root=Split-Path -Parent $PSScriptRoot;$path=Assert-AntiDPIInstallPath $root '.antidpi-install.json'
     if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'Маркер установки не найден. Автоматическое удаление не выполняется.'}
     $m=Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json
     if($m.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath($m.InstallRoot) -ine [IO.Path]::GetFullPath($root)){throw 'Маркер установки не соответствует этой папке.'}
-    foreach($f in $m.Files){if([IO.Path]::IsPathRooted($f.Path) -or -not (Test-ChildPath $root (Join-Path $root $f.Path))){throw 'Некорректный путь в списке установленных файлов.'}}
+    foreach($f in $m.Files){Assert-AntiDPIInstallPath $root ([string]$f.Path)|Out-Null}
     return $m
 }
 function Stop-OwnedWinws($Manifest) {
-    $record=Join-Path $Manifest.InstallRoot 'AntiDPI\_state\owned_process.json'
+    $record=Assert-AntiDPIInstallPath ([string]$Manifest.InstallRoot) 'AntiDPI\_state\owned_process.json'
     if(-not (Test-Path -LiteralPath $record)){return}
     try{$r=Get-Content -LiteralPath $record -Raw|ConvertFrom-Json}
     catch{if(-not (Test-Path -LiteralPath $record)){return};throw}
@@ -184,7 +209,7 @@ function Update-AntiDPI {
     if(-not $InstallPath){throw 'Укажите папку установленной программы для обновления.'}
     $root=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
     if($root -eq [IO.Path]::GetPathRoot($root)){throw 'Нельзя обновить корень диска.'}
-    $marker=Join-Path $root '.antidpi-install.json'
+    $marker=Assert-AntiDPIInstallPath $root '.antidpi-install.json'
     if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){throw 'В выбранной папке нет маркера установленной AntiDPI. Выберите новую пустую папку для чистой установки.'}
     $manifest=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
     if($manifest.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath([string]$manifest.InstallRoot) -ine $root){throw 'Маркер установки повреждён или относится к другой папке; обновление отменено.'}
@@ -193,7 +218,7 @@ function Update-AntiDPI {
         throw 'Установка неполная: не найдены движок или состояние AntiDPI. Используйте восстановление/чистую установку.'
     }
     foreach($entry in @($manifest.Files)){
-        if([IO.Path]::IsPathRooted([string]$entry.Path) -or -not (Test-ChildPath $root (Join-Path $root ([string]$entry.Path)))){throw 'Некорректный путь в маркере установки; обновление отменено.'}
+        Assert-AntiDPIInstallPath $root ([string]$entry.Path)|Out-Null
     }
 
     $updates=[Collections.Generic.List[object]]::new()
@@ -209,7 +234,7 @@ function Update-AntiDPI {
     foreach($name in @('ips-exclude.txt','ips6-exclude.txt')){$source=Join-Path (Join-Path $payload 'lists') $name;if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует список '+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\lists\'+$name)})}
     # Do not overwrite user-modified files or untracked collisions without warning.
     foreach($item in $updates){
-        $destination=Join-Path $root $item.Relative
+        $destination=Assert-AntiDPIInstallPath $root ([string]$item.Relative)
         $owned=@($manifest.Files|Where-Object {[string]::Equals([string]$_.Path,[string]$item.Relative,[StringComparison]::OrdinalIgnoreCase)}|Select-Object -First 1)
         if((Test-Path -LiteralPath $destination -PathType Leaf) -and $owned.Count -and (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$owned[0].Sha256){
             throw ('Файл был изменён после установки: '+$item.Relative+'. Сохраните свою копию и повторите обновление.')
