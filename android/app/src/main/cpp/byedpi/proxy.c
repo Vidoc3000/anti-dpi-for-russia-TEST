@@ -144,7 +144,19 @@ static int resolve(const char *chost, int len,
     if (getaddrinfo(host, 0, &hints, &res) || !res) {
         return -1;
     }
-    memcpy(addr, res->ai_addr, SA_SIZE(res->ai_addr));
+    // Prefer IPv4 on dual-stack Android networks: a number of mobile/Wi-Fi
+    // networks advertise IPv6 DNS answers without a working IPv6 route. Keep
+    // IPv6 as a fallback for IPv6-only destinations when IPv6 is enabled.
+    struct addrinfo *selected = res;
+    if (params.ipv6) {
+        for (struct addrinfo *candidate = res; candidate; candidate = candidate->ai_next) {
+            if (candidate->ai_family == AF_INET) {
+                selected = candidate;
+                break;
+            }
+        }
+    }
+    memcpy(addr, selected->ai_addr, SA_SIZE(selected->ai_addr));
     freeaddrinfo(res);
     
     return 0;
