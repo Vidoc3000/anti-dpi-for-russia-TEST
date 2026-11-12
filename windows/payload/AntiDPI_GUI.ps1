@@ -10,6 +10,8 @@ $state=Join-Path $PSScriptRoot '_state'
 $catalogue=Join-Path $PSScriptRoot 'Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
 $script:analysisWorker=$null
 $script:analysisResultPath=''
+$script:analysisCurrentData=$null
+$script:analysisExportButton=$null
 $script:analysisCancelFile=''
 $script:guiSettingsPath=Join-Path $state 'gui-settings.json'
 $script:programVersion='Версия не определена'
@@ -99,6 +101,75 @@ function Get-GuiFailureLine([string]$StdoutPath,[string]$StderrPath) {
     }
     return 'Подробности не записаны.'
 }
+function Get-GuiAnalysisRecommendation([string]$Status) {
+    switch($Status){
+        'PASS' {'Сработала только при провале контроля'}
+        'BASELINE_PASS' {'YouTube доступен и без выбранной стратегии'}
+        'INCONCLUSIVE' {'Неоднозначно: контроль уже успешен'}
+        'UNSTABLE' {'Нестабильно — повторите тест'}
+        'FAIL' {'Не прошла тест YouTube'}
+        'ERROR' {'Ошибка проверки'}
+        'CANCELLED' {'Остановлено до завершения'}
+        default {'Проверка выполняется'}
+    }
+}
+function Get-GuiObjectProperty($Object,[string]$Name,$Default='') {
+    if($null -eq $Object){return $Default}
+    $property=$Object.PSObject.Properties[$Name]
+    if($null -ne $property -and $null -ne $property.Value){return $property.Value}
+    return $Default
+}
+function ConvertTo-GuiAnalysisCsv($Data) {
+    if($null -eq $Data){throw 'Нет результатов анализа для экспорта.'}
+    $results=@($Data.Results)
+    if($results.Count -eq 1 -and $null -eq $results[0]){$results=@()}
+    if(-not $results.Count){throw 'Нет результатов анализа для экспорта.'}
+    $baseline=Get-GuiObjectProperty $Data 'Baseline' $null
+    $createdUtc=[string](Get-GuiObjectProperty $Data 'CreatedUtc' '')
+    $test=[string](Get-GuiObjectProperty $Data 'Test' 'YouTube HTTPS')
+    $addressFamily=[string](Get-GuiObjectProperty $Data 'AddressFamily' '')
+    $protocol=[string](Get-GuiObjectProperty $Data 'Protocol' '')
+    $rows=foreach($result in $results){
+        $number=[int](Get-GuiObjectProperty $result 'Number' 0)
+        $profile=@($profileRows|Where-Object {[int]$_.Number -eq $number}|Select-Object -First 1)
+        $name=if($profile.Count){[string]$profile[0].Name}else{('Стратегия '+$number)}
+        $status=[string](Get-GuiObjectProperty $result 'Status' '')
+        [pscustomobject][ordered]@{
+            CreatedUtc=$createdUtc
+            Test=$test
+            AddressFamily=$addressFamily
+            Protocol=$protocol
+            FirstStrategy=[int](Get-GuiObjectProperty $Data 'FirstProfile' 0)
+            LastStrategy=[int](Get-GuiObjectProperty $Data 'LastProfile' 0)
+            BaselineSuccesses=[int](Get-GuiObjectProperty $baseline 'Successes' 0)
+            BaselineAttempts=[int](Get-GuiObjectProperty $baseline 'Attempts' 0)
+            StrategyNumber=$number
+            StrategyName=$name
+            Status=$status
+            Recommendation=(Get-GuiAnalysisRecommendation $status)
+            SuccessfulAttempts=[int](Get-GuiObjectProperty $result 'Successes' 0)
+            ExpectedAttempts=[int](Get-GuiObjectProperty $result 'ExpectedAttempts' 0)
+            AttemptDetails=[string](Get-GuiObjectProperty $result 'AttemptDetails' '')
+            Details=[string](Get-GuiObjectProperty $result 'Details' '')
+        }
+    }
+    return (($rows|ConvertTo-Csv -NoTypeInformation -Delimiter ';') -join [Environment]::NewLine)
+}
+function Write-GuiAnalysisCsv($Data,[string]$Path) {
+    if([string]::IsNullOrWhiteSpace($Path)){throw 'Не задан путь сохранения CSV.'}
+    $fullPath=[IO.Path]::GetFullPath($Path)
+    $directory=Split-Path -Parent $fullPath
+    if(-not (Test-Path -LiteralPath $directory -PathType Container)){throw 'Папка для сохранения CSV не найдена.'}
+    $temporary=$fullPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try{
+        $csv=ConvertTo-GuiAnalysisCsv $Data
+        [IO.File]::WriteAllText($temporary,($csv+[Environment]::NewLine),[Text.UTF8Encoding]::new($true))
+        if(Test-Path -LiteralPath $fullPath -PathType Leaf){[IO.File]::Replace($temporary,$fullPath,[NullString]::Value)}
+        elseif(Test-Path -LiteralPath $fullPath){throw 'Путь экспорта занят не файлом.'}
+        else{[IO.File]::Move($temporary,$fullPath)}
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
+}
+
 function Get-GuiProfiles([string]$Protocol='tls') {
     if($Protocol -eq 'quic'){
         $json=(& $catalogue -ListQuicProfilesJson|Out-String).Trim()
@@ -321,6 +392,8 @@ function Set-GuiAnalysisResults([string]$Path) {
     if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){return 0}
     try{$file=Get-Item -LiteralPath $Path -ErrorAction Stop;$identity=('{0}:{1}' -f $file.Length,$file.LastWriteTimeUtc.Ticks);if($identity -ceq $script:analysisSnapshotIdentity){return @($analysisGrid.Rows.Count)};$data=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop}catch{return 0}
     $script:analysisSnapshotIdentity=$identity
+    $script:analysisCurrentData=$data
+    if($null -ne $script:analysisExportButton){$script:analysisExportButton.Enabled=(@($data.Results).Count -gt 0)}
     $results=@($data.Results)
     if($results.Count -eq 1 -and $null -eq $results[0]){$results=@()}
     $rowByNumber=@{}
@@ -339,16 +412,7 @@ function Set-GuiAnalysisResults([string]$Path) {
             $rowByNumber[$number]=$row
         }
         $status=[string]$result.Status
-        $recommendation=switch($status){
-            'PASS' {'Сработала только при провале контроля'}
-            'BASELINE_PASS' {'YouTube доступен и без выбранной стратегии'}
-            'INCONCLUSIVE' {'Неоднозначно: контроль уже успешен'}
-            'UNSTABLE' {'Нестабильно — повторите тест'}
-            'FAIL' {'Не прошла тест YouTube'}
-            'ERROR' {'Ошибка проверки'}
-            'CANCELLED' {'Остановлено до завершения'}
-            default {'Проверка выполняется'}
-        }
+        $recommendation=Get-GuiAnalysisRecommendation $status
         $row.Cells['Status'].Value=$status
         $attemptText=if($result.PSObject.Properties['AttemptDetails']){[string]$result.AttemptDetails}else{''}
         if(-not $attemptText -and $result.PSObject.Properties['Successes']){$attemptText=('{0}/{1} успешных попыток' -f [int]$result.Successes,[int]$result.ExpectedAttempts)}
@@ -403,6 +467,8 @@ function Start-GuiAnalysis {
         $script:analysisCancelFile=Join-Path $resultDirectory ('cancel_'+$stamp+'.request')
         $analysisGrid.Rows.Clear()
         $script:analysisSnapshotIdentity=''
+        $script:analysisCurrentData=$null
+        $script:analysisExportButton.Enabled=$false
         $analysisStatusLabel.Text=('Подготовка контрольного HTTPS-запроса; затем стратегии {0}-{1}, {2} параллельно…' -f $first,$last,$parallelism)
         $stdout=Join-Path $logs ('analysis_'+$stamp+'.out.log')
         $stderr=Join-Path $logs ('analysis_'+$stamp+'.err.log')
@@ -425,6 +491,23 @@ function Request-GuiAnalysisCancel {
         $analysisStatusLabel.Text='Останавливаем анализ и ждём завершения тестовых процессов…'
     }catch{Show-GuiError ('Не удалось запросить остановку анализа: '+$_.Exception.Message)}
 }
+function Export-GuiAnalysisResults {
+    if($null -eq $script:analysisCurrentData -or @($script:analysisCurrentData.Results).Count -eq 0){
+        Show-GuiError 'Нет результатов анализа для экспорта.';return
+    }
+    $dialog=New-Object System.Windows.Forms.SaveFileDialog
+    $dialog.Title='Экспорт результатов анализа'
+    $dialog.Filter='CSV для Excel (*.csv)|*.csv|Все файлы (*.*)|*.*'
+    $dialog.FilterIndex=1;$dialog.DefaultExt='csv';$dialog.AddExtension=$true;$dialog.OverwritePrompt=$true
+    $dialog.FileName=('AntiDPI_analysis_'+(Get-Date -Format 'yyyyMMdd_HHmmss')+'.csv')
+    try{
+        if($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK){return}
+        Write-GuiAnalysisCsv $script:analysisCurrentData $dialog.FileName
+        $analysisStatusLabel.Text=('Результаты CSV сохранены: '+[IO.Path]::GetFileName($dialog.FileName))
+    }catch{Show-GuiError ('Не удалось экспортировать результаты анализа: '+$_.Exception.Message)}
+    finally{$dialog.Dispose()}
+}
+
 function Save-GuiSettings {
     $family=[string]$settingsFamilyBox.SelectedItem.Value
     $protocol=[string]$settingsProtocolBox.SelectedItem.Value
@@ -623,6 +706,9 @@ try{
     $analysisCancelButton=New-Object System.Windows.Forms.Button
     $analysisCancelButton.Text='Остановить';$analysisCancelButton.Location=[System.Drawing.Point]::new(475,118);$analysisCancelButton.Size=[System.Drawing.Size]::new(130,36);$analysisCancelButton.Enabled=$false
     $analysisTab.Controls.Add($analysisCancelButton)
+    $script:analysisExportButton=New-Object System.Windows.Forms.Button
+    $script:analysisExportButton.Text='Экспорт CSV';$script:analysisExportButton.Location=[System.Drawing.Point]::new(615,118);$script:analysisExportButton.Size=[System.Drawing.Size]::new(96,36);$script:analysisExportButton.Enabled=$false
+    $script:analysisExportButton.Add_Click({Export-GuiAnalysisResults});$analysisTab.Controls.Add($script:analysisExportButton)
     $analysisGrid=New-Object System.Windows.Forms.DataGridView
     $analysisGrid.Location=[System.Drawing.Point]::new(20,166);$analysisGrid.Size=[System.Drawing.Size]::new(690,365);$analysisGrid.Anchor='Top,Bottom,Left,Right'
     $analysisGrid.ReadOnly=$true;$analysisGrid.AllowUserToAddRows=$false;$analysisGrid.AllowUserToDeleteRows=$false;$analysisGrid.RowHeadersVisible=$false

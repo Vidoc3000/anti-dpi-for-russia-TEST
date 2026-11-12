@@ -92,6 +92,8 @@ Assert-True ($guiText.Contains('$script:programVersion') -and $guiText.Contains(
 Assert-True ($guiText.Contains('Save-GuiSettings') -and $guiText.Contains("'gui-settings.json'")) 'GUI persists settings'
 Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiText.Contains('$adapterBox.Items.Add($item)')) 'adapter dropdown displays a name-only wrapper'
 Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
+Assert-True ($guiText.Contains('function ConvertTo-GuiAnalysisCsv') -and $guiText.Contains('ConvertTo-Csv -NoTypeInformation -Delimiter '';''') -and $guiText.Contains('UTF8Encoding]::new($true)')) 'GUI exports analysis results as Excel-friendly UTF-8 CSV'
+Assert-True ($guiText.Contains('Экспорт CSV') -and $guiText.Contains('SaveFileDialog') -and $guiText.Contains('Export-GuiAnalysisResults')) 'GUI exposes an explicit save dialog for analysis CSV exports'
 Assert-True ($guiText.Contains('$profileListBox.ScrollAlwaysVisible=$true') -and $guiText.Contains('AutoScrollMinSize=')) 'GUI keeps the strategy ListBox scrollable on compact displays'
 Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
 Assert-True ($guiText.Contains('$parallelism=[int]$analysisParallelismBox.Value') -and $guiText.Contains("'-Parallelism',[string]`$parallelism")) 'GUI forwards the user-selected analysis parallelism to the CLI'
@@ -360,6 +362,47 @@ try {
     if(Test-Path -LiteralPath $rootJunction){[IO.Directory]::Delete($rootJunction)}
     if(Test-Path -LiteralPath $junctionPath){[IO.Directory]::Delete($junctionPath)}
     if(Test-Path -LiteralPath $pathSafetyRoot){Remove-Item -LiteralPath $pathSafetyRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
+# Exercise CSV quoting, UTF-8 BOM output, replacement, and temporary-file cleanup.
+$guiTokens = $null
+$guiParseErrors = $null
+$guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
+Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
+foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv')){
+    $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
+    Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
+    . ([scriptblock]::Create($functionAst.Extent.Text))
+}
+$profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
+$csvData=[pscustomobject]@{
+    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
+    Baseline=[pscustomobject]@{Successes=0;Attempts=2}
+    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='ошибка; строка "две"'})
+}
+$csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($csvRoot)|Out-Null
+    $csvPath=Join-Path $csvRoot 'analysis.csv'
+    Write-GuiAnalysisCsv $csvData $csvPath
+    $csvBytes=[IO.File]::ReadAllBytes($csvPath)
+    Assert-Equal '239' ([string]$csvBytes[0]) 'CSV UTF-8 BOM first byte'
+    Assert-Equal '187' ([string]$csvBytes[1]) 'CSV UTF-8 BOM second byte'
+    Assert-Equal '191' ([string]$csvBytes[2]) 'CSV UTF-8 BOM third byte'
+    $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
+    $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
+    Assert-Equal 1 $csvRows.Count 'CSV export row count'
+    Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
+    Assert-Equal 'Попытка 1; HTTP 200, текст "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
+    Assert-Equal 'ошибка; строка "две"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
+    Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
+    $csvData.Results[0].Status='UNSTABLE'
+    Write-GuiAnalysisCsv $csvData $csvPath
+    $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
+    Assert-Equal 'UNSTABLE' $replacedRows[0].Status 're-export atomically replaces an existing CSV'
+    Assert-Equal 0 @(Get-ChildItem -LiteralPath $csvRoot -Filter 'analysis.csv.*.tmp' -File).Count 'CSV export removes temporary files'
+} finally {
+    if(Test-Path -LiteralPath $csvRoot){Remove-Item -LiteralPath $csvRoot -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
 Write-Host 'Windows regression checks passed.' -ForegroundColor Green
