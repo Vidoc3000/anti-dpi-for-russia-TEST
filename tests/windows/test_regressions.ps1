@@ -64,6 +64,12 @@ $guiProfileJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver
 $guiProfiles = @($guiProfileJson | ConvertFrom-Json)
 if ($guiProfiles.Count -eq 1 -and $guiProfiles[0] -is [array]) { $guiProfiles = @($guiProfiles[0]) }
 Assert-Equal 492 $guiProfiles.Count 'GUI JSON profile list count'
+$familyMatch = [regex]::Match($catalogueText, '(?s)\$FamilyRows = @''\r?\n(.*?)\r?\n''@ \| ConvertFrom-Json')
+Assert-True $familyMatch.Success 'catalogue family metadata can be read for GUI group filtering'
+$guiFamilies = @($familyMatch.Groups[1].Value | ConvertFrom-Json)
+if ($guiFamilies.Count -eq 1 -and $guiFamilies[0] -is [array]) { $guiFamilies = @($guiFamilies[0]) }
+Assert-Equal 24 $guiFamilies.Count 'GUI family/group count'
+Assert-Equal 492 (($guiFamilies | Measure-Object -Property Count -Sum).Sum) 'family ranges cover all GUI profiles'
 $quicJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -ListQuicProfilesJson | Out-String)
 $quicProfiles = @($quicJson | ConvertFrom-Json)
 if ($quicProfiles.Count -eq 1 -and $quicProfiles[0] -is [array]) { $quicProfiles = @($quicProfiles[0]) }
@@ -80,7 +86,17 @@ Assert-True ($guiText.Contains('$adapterBox.DisplayMember=''Name''') -and $guiTe
 Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Request-GuiAnalysisCancel')) 'GUI runs and safely cancels analysis'
 Assert-True ($guiText.Contains('MaxDropDownItems=12') -and $guiText.Contains('DropDownHeight=') -and $guiText.Contains('AutoScroll=$true')) 'GUI clips strategy list to the screen and scrolls on compact displays'
 Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
-Assert-True ($guiText.Contains('$parallelism=1') -and $guiText.Contains('Проверка по одной')) 'GUI analysis runs strategy numbers sequentially'
+Assert-True ($guiText.Contains('$parallelism=[int]$analysisParallelismBox.Value') -and $guiText.Contains("'-Parallelism',[string]`$parallelism")) 'GUI forwards the user-selected analysis parallelism to the CLI'
+Assert-True ($guiText.Contains('AnalysisParallelism=1') -and $guiText.Contains('SkipTimestampSetup=$false') -and $guiText.Contains('$arguments+= ''-SkipTimestampSetup''')) 'GUI saves and applies the analysis concurrency and timestamp opt-out settings'
+Assert-True ($guiText.Contains('Maximum=5') -and $guiText.Contains('Параллельность анализа')) 'GUI constrains configurable parallelism to the CLI supported range'
+Assert-True ($guiText.Contains('Get-GuiFamilies') -and $guiText.Contains('$FamilyRows') -and $guiText.Contains('familyFilterBox')) 'GUI provides catalogue family browsing equivalent to CLI group listing'
+Assert-True ($guiText.Contains('Show-GuiInterfaces') -and $guiText.Contains('Список всех интерфейсов')) 'GUI provides an all-network-interface inventory equivalent to the CLI listing'
+Assert-True ($guiText.Contains('Show-GuiProfileDetails') -and $guiText.Contains('Get-AntiDPIArguments') -and $guiText.Contains('ConvertTo-Json -Depth 20')) 'GUI exposes CLI recipe and resolved engine-argument inspection'
+Assert-True ($guiText.Contains('$launchArguments+= ''-Check''') -and $guiText.Contains('CheckOnly') -and $guiText.Contains('перехват не запускался')) 'GUI offers the CLI validation-only mode without enabling packet interception'
+Assert-True ($guiText.Contains('Request-GuiRestart') -and $guiText.Contains('Request-GuiStop') -and $guiText.Contains('F2')) 'GUI restart and keyboard actions route through managed shutdown'
+Assert-True ($guiText.Contains('$script:workerMode=if($CheckOnly){''check''}else{''start''}') -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI owns and tracks its CLI worker process'
+Assert-True ($guiText.Contains('PASS означает успешные HTTPS-попытки') -and $guiText.Contains('не доказывает работу VPN/Tor')) 'GUI labels network-test results without claiming tunnel or DPI-bypass proof'
+
 Assert-True ($guiText.Contains('(?:\s*-\s*([0-9]+))?')) 'GUI accepts a single strategy number or an inclusive numeric range'
 Assert-True ($coreText.Contains('Write-AntiDPIAnalysisSnapshot') -and $coreText.Contains('Get-AntiDPIAnalysisRow')) 'YouTube results are written after each strategy without parsing diagnostic Event fields'
 Assert-True (-not $coreText.Contains('ReadAllLines($log') -and -not $coreText.Contains('$entry.Event -eq')) 'YouTube result export ignores diagnostic records without Event fields'
