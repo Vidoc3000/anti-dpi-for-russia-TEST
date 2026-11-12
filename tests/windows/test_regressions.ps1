@@ -61,6 +61,7 @@ Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('Ярлык уже существует и будет сохранён')) 'install rollback cleans its firewall rule and preserves pre-existing desktop items'
 Assert-True ($managerText.Contains('function Restore-AntiDPIUpdateChanges') -and $managerText.Contains('UpdatedSha256') -and $managerText.Contains('if($rollbackComplete){Remove-AntiDPITemporaryDirectory $stage}')) 'failed updates verify rollback ownership and retain recovery backups if rollback is incomplete'
+Assert-True ($managerText.Contains('function Assert-AntiDPIInstallPath') -and $managerText.Contains('Assert-AntiDPIInstallPath $root') -and $managerText.Contains('Assert-AntiDPIInstallPath ([string]$Manifest.InstallRoot)')) 'manifest-driven update, uninstall, and owned-process paths reject links and junctions'
 Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
 $launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
 Assert-True ($launchLines.Count -eq 1) 'primary Windows launcher opens GUI'
@@ -330,6 +331,35 @@ try {
     Assert-Equal 'preserved-original' ([IO.File]::ReadAllText($backup)) 'failed rollback leaves the original backup available'
 } finally {
     if(Test-Path -LiteralPath $updateRollbackRoot){Remove-Item -LiteralPath $updateRollbackRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
+# Reject reparse points inside an installation tree and lexical escapes from its root.
+$pathSafetyAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-AntiDPIInstallPath' }, $true)
+Assert-True ($null -ne $pathSafetyAst) 'install path safety helper can be isolated for tests'
+. ([scriptblock]::Create($pathSafetyAst.Extent.Text))
+$pathSafetyRoot = Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-path-safety-test-' + [guid]::NewGuid().ToString('N'))
+$installRoot = Join-Path $pathSafetyRoot 'install'
+$outsideRoot = Join-Path $pathSafetyRoot 'outside'
+$junctionPath = Join-Path $installRoot 'linked'
+$rootJunction = Join-Path $pathSafetyRoot 'install-alias'
+try {
+    [IO.Directory]::CreateDirectory($installRoot) | Out-Null
+    [IO.Directory]::CreateDirectory($outsideRoot) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $outsideRoot 'outside.txt'), 'outside-data')
+    $junctionCommand = 'mklink /J "' + $junctionPath + '" "' + $outsideRoot + '"'
+    & $env:ComSpec /d /c $junctionCommand | Out-Null
+    Assert-Equal 0 $LASTEXITCODE 'test junction creation'
+    Assert-Throws { Assert-AntiDPIInstallPath $installRoot 'linked\outside.txt' } 'reject a manifest path through a junction'
+    Assert-Throws { Assert-AntiDPIInstallPath $installRoot '..\outside\outside.txt' } 'reject a lexical escape from the install root'
+    Assert-True (Test-Path -LiteralPath (Join-Path $outsideRoot 'outside.txt')) 'path validation leaves data behind a junction untouched'
+    $aliasCommand = 'mklink /J "' + $rootJunction + '" "' + $installRoot + '"'
+    & $env:ComSpec /d /c $aliasCommand | Out-Null
+    Assert-Equal 0 $LASTEXITCODE 'test installation-root junction creation'
+    Assert-Throws { Assert-AntiDPIInstallPath $rootJunction 'outside.txt' } 'reject a reparse point used as the installation root'
+} finally {
+    if(Test-Path -LiteralPath $rootJunction){[IO.Directory]::Delete($rootJunction)}
+    if(Test-Path -LiteralPath $junctionPath){[IO.Directory]::Delete($junctionPath)}
+    if(Test-Path -LiteralPath $pathSafetyRoot){Remove-Item -LiteralPath $pathSafetyRoot -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
 Write-Host 'Windows regression checks passed.' -ForegroundColor Green
