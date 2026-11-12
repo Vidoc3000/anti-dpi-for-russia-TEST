@@ -6,11 +6,11 @@
 
 ## Скачать
 
-В **[релизе v1.7](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.7)**: Windows GUI + CLI версии **1.6**, Linux CLI версии **1.7**.
+В **[релизе v1.8](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.8)**: Windows GUI + CLI версии **1.7**, Linux CLI версии **1.8**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.7/AntiDPI_CLI_v1.6_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.7/AntiDPI_CLI_v1.6_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.7/AntiDPI_CLI_v1.7_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.7/SHA256SUMS_Windows_v1.6.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.7/SHA256SUMS_Linux_v1.7.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.8/AntiDPI_CLI_v1.7_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.8/AntiDPI_CLI_v1.7_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.8/AntiDPI_CLI_v1.8_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.8/SHA256SUMS_Windows_v1.7.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.8/SHA256SUMS_Linux_v1.8.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -31,8 +31,9 @@
 ### Вкладки
 
 - **Стратегии** — выбрать IPv4/IPv6, TCP/TLS или UDP/QUIC, стратегию, физический сетевой адаптер и порты; затем запустить или штатно остановить обработку. В списке адаптеров показываются имена устройств.
-- **Анализ** — последовательно проверять номера стратегий по одному на доступность YouTube и сразу видеть PASS, UNSTABLE, FAIL или техническую ошибку. Проверка использует IPv4/TCP/TLS и HTTPS-запросы к YouTube; результаты сохраняются и обновляются прямо во время анализа.
-- **Настройки** — сохранить IP-семейство, режим TCP/TLS или UDP/QUIC, порты, диапазон YouTube-анализа по умолчанию и предпочтение запоминать физический адаптер.
+- **Анализ** — проверять выбранные стратегии с настраиваемой параллельностью 1–5 и сразу видеть PASS, UNSTABLE, FAIL или техническую ошибку. Проверка использует IPv4/TCP/TLS и HTTPS-запросы к YouTube; результаты сохраняются и обновляются прямо во время анализа.
+- **Настройки** — сохранить IP-семейство, режим TCP/TLS или UDP/QUIC, порты, диапазон и параллельность YouTube-анализа, предпочтение адаптера и режим без изменения TCP timestamps.
+- В списке стратегий доступны фильтр по семействам, просмотр рецепта и аргументов движка, проверка параметров без запуска перехвата, список интерфейсов и управляемый перезапуск.
 
 Анализ YouTube **не проверяет VPN/Tor-туннель, конфигурацию, авторизацию или сторонний клиент**. Для оценки VPN/Tor выберите стратегию, включите её и проверьте соединение средствами своего клиента. Успешный YouTube-тест не означает, что эта стратегия лучше для VPN, и обратное тоже верно.
 
@@ -47,8 +48,8 @@
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.7_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.7_Linux_x64
+tar -xzf AntiDPI_CLI_v1.8_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.8_Linux_x64
 bash INSTALL.sh
 ```
 
