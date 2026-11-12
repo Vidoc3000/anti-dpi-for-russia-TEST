@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.10](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.10)**: Windows GUI + CLI версии **1.9**, Linux CLI версии **1.10**.
+В **[релизе v1.11](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.11)**: Windows GUI + CLI версии **1.10**, Linux CLI версии **1.11**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.9_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.9_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/AntiDPI_CLI_v1.10_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/SHA256SUMS_Windows_v1.9.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.10/SHA256SUMS_Linux_v1.10.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.10_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.10_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/AntiDPI_CLI_v1.11_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/SHA256SUMS_Windows_v1.10.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.11/SHA256SUMS_Linux_v1.11.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -49,8 +49,8 @@
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.10_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.10_Linux_x64
+tar -xzf AntiDPI_CLI_v1.11_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.11_Linux_x64
 bash INSTALL.sh
 ```
 
