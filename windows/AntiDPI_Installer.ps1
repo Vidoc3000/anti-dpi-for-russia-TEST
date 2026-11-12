@@ -25,6 +25,7 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
 }
 
 $script:installProcess=$null
+$script:installAction=''
 $script:stdoutPath=''
 $script:stderrPath=''
 $script:cancelFile=''
@@ -178,6 +179,7 @@ $installButton.Add_Click({
         $script:lastLog=''
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $action=if($updateCheck.Checked){'Update'}else{'Install'}
+        $script:installAction=$action
         $args=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action',$action,'-InstallPath',$target,'-NonInteractiveInstaller','-SkipHeader')
         if($action -eq 'Install'){$args+=@('-CancelFile',$script:cancelFile)}
         if(-not $updateCheck.Checked){
@@ -210,7 +212,7 @@ $timer.Add_Tick({
         $cancelButton.Enabled=$false
         if($script:cancelFile -and (Test-Path -LiteralPath $script:cancelFile)){Remove-Item -LiteralPath $script:cancelFile -Force -ErrorAction SilentlyContinue}
         if($script:cancelFile -and (Test-Path -LiteralPath ($script:cancelFile+'.closed'))){Remove-Item -LiteralPath ($script:cancelFile+'.closed') -Force -ErrorAction SilentlyContinue}
-        $verifiedInstall=($action -eq 'Install' -and (Test-InstallerExistingInstall $pathBox.Text))
+        $verifiedInstall=($script:installAction -eq 'Install' -and (Test-InstallerExistingInstall $pathBox.Text))
         $progress.Style=[System.Windows.Forms.ProgressBarStyle]::Blocks;$progress.MarqueeAnimationSpeed=0;$progress.Value=if($code -eq 0 -or $verifiedInstall){100}else{0}
         $openLogsButton.Enabled=$true
         $recent=@()
