@@ -1,9 +1,11 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
- [ValidateSet('Install','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
+ [ValidateSet('Install','Update','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
  [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$OutputEncoding=[Console]::OutputEncoding
 $payload=if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'payload')){Join-Path $PSScriptRoot 'payload'}else{$PSScriptRoot}
 $AntiDPILibraryOnly=$true
 . (Join-Path $payload 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
@@ -36,6 +38,126 @@ function Stop-OwnedWinws($Manifest) {
     }
     Remove-Item -LiteralPath $record -Force
 }
+function Save-AntiDPIManifest($Manifest) {
+    $path=Join-Path $Manifest.InstallRoot '.antidpi-install.json'
+    $temporary=$path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try{
+        [IO.File]::WriteAllText($temporary,($Manifest|ConvertTo-Json -Depth 14),[Text.UTF8Encoding]::new($false))
+        if(Test-Path -LiteralPath $path -PathType Leaf){[IO.File]::Replace($temporary,$path,[NullString]::Value)}else{[IO.File]::Move($temporary,$path)}
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
+}
+function Update-AntiDPIDesktopDocuments($Manifest) {
+    if($null -eq $Manifest.PSObject.Properties['Shortcut'] -or $null -eq $Manifest.Shortcut){return}
+    $desktop=Get-AntiDPIDesktopDirectory
+    $expected=Join-Path $desktop 'AntiDPI'
+    if([IO.Path]::GetFullPath([string]$Manifest.Shortcut.Directory) -ine [IO.Path]::GetFullPath($expected)){throw 'Некорректная папка ярлыков в маркере обновления.'}
+    if(-not (Test-Path -LiteralPath $expected -PathType Container)){return}
+    $documents=[Collections.Generic.List[object]]::new()
+    $targets=[Collections.Generic.List[object]]::new()
+    foreach($name in @('README_Установка_Windows_v1.8.txt','README_Стратегии_Windows_v1.8.txt')){
+        $source=Join-Path $PSScriptRoot $name
+        if(-not (Test-Path -LiteralPath $source -PathType Leaf)){$source=Join-Path (Split-Path -Parent $PSScriptRoot) $name}
+        if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('Не найдена инструкция новой версии: '+$name)}
+        $target=Join-Path $expected $name
+        if(Test-Path -LiteralPath $target -PathType Leaf){
+            $oldRecord=@($Manifest.Shortcut.Documents|Where-Object {[IO.Path]::GetFullPath([string]$_.Path) -ieq [IO.Path]::GetFullPath($target)}|Select-Object -First 1)
+            if(-not $oldRecord.Count -or (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$oldRecord[0].Sha256){throw ('Инструкция на рабочем столе изменена или не принадлежит AntiDPI: '+$name)}
+        }
+        $targets.Add([pscustomobject]@{Source=$source;Target=$target})
+    }
+    foreach($item in $targets){
+        Copy-Item -LiteralPath $item.Source -Destination $item.Target -Force
+        $documents.Add([pscustomobject]@{Path=$item.Target;Sha256=(Get-FileHash -LiteralPath $item.Target -Algorithm SHA256).Hash.ToLowerInvariant()})
+    }
+    foreach($old in @($Manifest.Shortcut.Documents)){
+        $oldPath=[string]$old.Path
+        if([IO.Path]::GetFullPath($oldPath).StartsWith([IO.Path]::GetFullPath($expected).TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -and
+            [IO.Path]::GetFileName($oldPath) -match '^README_(Установка|Стратегии)_Windows_v[0-9.]+\.txt$' -and
+            (Test-Path -LiteralPath $oldPath -PathType Leaf) -and
+            (Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq [string]$old.Sha256 -and
+            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.8.txt','README_Стратегии_Windows_v1.8.txt')){
+            Remove-Item -LiteralPath $oldPath -Force
+        }
+    }
+    $Manifest.Shortcut.Documents=$documents.ToArray()
+}
+function Update-AntiDPI {
+    if(-not $InstallPath){throw 'Укажите папку установленной программы для обновления.'}
+    $root=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
+    if($root -eq [IO.Path]::GetPathRoot($root)){throw 'Нельзя обновить корень диска.'}
+    $marker=Join-Path $root '.antidpi-install.json'
+    if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){throw 'В выбранной папке нет маркера установленной AntiDPI. Выберите новую пустую папку для чистой установки.'}
+    $manifest=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
+    if($manifest.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath([string]$manifest.InstallRoot) -ine $root){throw 'Маркер установки повреждён или относится к другой папке; обновление отменено.'}
+    $bundle=Join-Path $root 'zapret-winws'
+    if(-not (Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'AntiDPI\AntiDPI_Manager.ps1') -PathType Leaf)){
+        throw 'Установка неполная: не найдены движок или состояние AntiDPI. Используйте восстановление/чистую установку.'
+    }
+    foreach($entry in @($manifest.Files)){
+        if([IO.Path]::IsPathRooted([string]$entry.Path) -or -not (Test-ChildPath $root (Join-Path $root ([string]$entry.Path)))){throw 'Некорректный путь в маркере установки; обновление отменено.'}
+    }
+
+    $updates=[Collections.Generic.List[object]]::new()
+    foreach($name in @('README_Установка_Windows_v1.8.txt','README_Стратегии_Windows_v1.8.txt','LICENSE.txt')){
+        $source=Join-Path $PSScriptRoot $name
+        if(-not (Test-Path -LiteralPath $source -PathType Leaf)){$source=Join-Path (Split-Path -Parent $PSScriptRoot) $name}
+        if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует '+$name)}
+        $updates.Add([pscustomobject]@{Source=$source;Relative=$name})
+    }
+    $updates.Add([pscustomobject]@{Source=$PSCommandPath;Relative='AntiDPI\AntiDPI_Manager.ps1'})
+    $appNames=@('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')
+    foreach($name in $appNames){$source=Join-Path $payload $name;if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует payload\'+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\'+$name)})}
+    foreach($name in @('ips-exclude.txt','ips6-exclude.txt')){$source=Join-Path (Join-Path $payload 'lists') $name;if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует список '+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\lists\'+$name)})}
+    # Do not overwrite user-modified files or untracked collisions without warning.
+    foreach($item in $updates){
+        $destination=Join-Path $root $item.Relative
+        $owned=@($manifest.Files|Where-Object {[string]::Equals([string]$_.Path,[string]$item.Relative,[StringComparison]::OrdinalIgnoreCase)}|Select-Object -First 1)
+        if((Test-Path -LiteralPath $destination -PathType Leaf) -and $owned.Count -and (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$owned[0].Sha256){
+            throw ('Файл был изменён после установки: '+$item.Relative+'. Сохраните свою копию и повторите обновление.')
+        }
+        if((Test-Path -LiteralPath $destination -PathType Leaf) -and -not $owned.Count){throw ('В папке есть неучтённый файл, который мешает безопасному обновлению: '+$item.Relative)}
+    }
+
+    $stage=Join-Path $root ('.u-'+[guid]::NewGuid().ToString('N').Substring(0,8))
+    $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
+    [IO.Directory]::CreateDirectory($newRoot)|Out-Null;[IO.Directory]::CreateDirectory($backupRoot)|Out-Null
+    $applied=[Collections.Generic.List[object]]::new()
+    try{
+        foreach($item in $updates){$staged=Join-Path $newRoot $item.Relative;[IO.Directory]::CreateDirectory((Split-Path -Parent $staged))|Out-Null;Copy-Item -LiteralPath $item.Source -Destination $staged}
+        Write-Host ('Найдена AntiDPI '+[string]$manifest.DisplayVersion+' в '+$root+'. Обновляю файлы программы, настройки и папку zapret-winws будут сохранены.') -ForegroundColor Cyan
+        try{Initialize-AntiDPIRuntime;$null=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)}catch{Write-Host ('Не удалось отправить команду остановки движка: '+$_.Exception.Message) -ForegroundColor Yellow}
+        Stop-OwnedWinws $manifest
+        foreach($item in $updates){
+            $destination=Join-Path $root $item.Relative;$staged=Join-Path $newRoot $item.Relative;$backup=Join-Path $backupRoot $item.Relative
+            [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))|Out-Null
+            if(Test-Path -LiteralPath $destination -PathType Leaf){
+                [IO.Directory]::CreateDirectory((Split-Path -Parent $backup))|Out-Null
+                [IO.File]::Replace($staged,$destination,$backup)
+                $applied.Add([pscustomobject]@{Destination=$destination;Backup=$backup;Existed=$true})
+            }else{
+                [IO.File]::Move($staged,$destination)
+                $applied.Add([pscustomobject]@{Destination=$destination;Backup='';Existed=$false})
+            }
+        }
+        $fileMap=@{}
+        foreach($entry in @($manifest.Files)){$fileMap[[string]$entry.Path]=$entry}
+        foreach($item in $updates){$destination=Join-Path $root $item.Relative;$fileMap[$item.Relative]=[pscustomobject]@{Path=$item.Relative;Sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()}}
+        $manifest.Files=@($fileMap.Values|Sort-Object Path)
+        $manifest.Version='GUI_CLI_1.8';$manifest.DisplayVersion='GUI + CLI Version 1.8'
+        try{Update-AntiDPIDesktopDocuments $manifest}catch{Write-Host ('Основные файлы обновлены; не удалось обновить копии инструкций на рабочем столе: '+$_.Exception.Message) -ForegroundColor Yellow}
+        Save-AntiDPIManifest $manifest
+        $script:AntiDPIInstalledRoot=$root
+        Write-Host ('Обновление завершено: '+$manifest.DisplayVersion+'. Настройки, логи и скачанная сборка Zapret2 сохранены.') -ForegroundColor Green
+    }catch{
+        $failure=$_
+        for($i=$applied.Count-1;$i -ge 0;$i--){
+            $change=$applied[$i]
+            try{if($change.Existed -and (Test-Path -LiteralPath $change.Backup -PathType Leaf)){[IO.File]::Replace($change.Backup,$change.Destination,[NullString]::Value)}elseif(-not $change.Existed -and (Test-Path -LiteralPath $change.Destination -PathType Leaf)){Remove-Item -LiteralPath $change.Destination -Force}}catch{Write-Host ('Не удалось откатить '+$change.Destination+': '+$_.Exception.Message) -ForegroundColor Red}
+        }
+        throw $failure
+    }finally{Remove-AntiDPITemporaryDirectory $stage}
+}
+
 function Assert-AntiDPIPathLength([string]$Path,[switch]$Directory) {
     $limit=if($Directory){247}else{259}
     if([IO.Path]::GetFullPath($Path).Length -gt $limit){
@@ -716,7 +838,7 @@ function Show-AntiDPIHeader {
 }
 function Start-AntiDPISessionLog {
     if($script:AntiDPITranscriptActive){return}
-    $directory=if($Action -eq 'Install'){Join-Path ([IO.Path]::GetTempPath()) 'AntiDPI_Install_Logs'}else{Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'}
+    $directory=if($Action -in @('Install','Update')){Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'AntiDPI_Install_Logs'}else{Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'}
     [IO.Directory]::CreateDirectory($directory)|Out-Null
     $script:AntiDPITranscriptPath=Join-Path $directory ('AntiDPI_{0}_{1}_{2}.log' -f $Action,(Get-Date -Format 'yyyyMMdd_HHmmss_fff'),$PID)
     Start-Transcript -LiteralPath $script:AntiDPITranscriptPath -Force|Out-Null
@@ -724,7 +846,7 @@ function Start-AntiDPISessionLog {
 }
 function Complete-AntiDPISessionLog {
     if($script:AntiDPITranscriptActive){Stop-Transcript|Out-Null;$script:AntiDPITranscriptActive=$false}
-    if($Action -eq 'Install' -and $script:AntiDPIInstalledRoot -and $script:AntiDPITranscriptPath){
+    if($Action -in @('Install','Update') -and $script:AntiDPIInstalledRoot -and $script:AntiDPITranscriptPath){
         $logs=Join-Path $script:AntiDPIInstalledRoot 'logs'
         [IO.Directory]::CreateDirectory($logs)|Out-Null
         $target=Join-Path $logs (Split-Path -Leaf $script:AntiDPITranscriptPath)
@@ -878,10 +1000,10 @@ function Remove-AntiDPIDesktopShortcut($Manifest) {
     }
     $documents=@()
     if($null -ne $bundle.PSObject.Properties['Documents']){$documents=@($bundle.Documents)}
-    $documentNames=@('README_Установка_Windows_v1.8.txt','README_Стратегии_Windows_v1.8.txt');$seenDocuments=@{}
+    $documentPattern='^README_(Установка|Стратегии)_Windows_v[0-9.]+\.txt$';$seenDocuments=@{}
     foreach($document in $documents){
         $name=[IO.Path]::GetFileName([string]$document.Path)
-        if($name -notin $documentNames -or $seenDocuments.ContainsKey($name) -or [IO.Path]::GetFullPath($document.Path) -ine [IO.Path]::GetFullPath((Join-Path $directory $name))){
+        if($name -notmatch $documentPattern -or $seenDocuments.ContainsKey($name) -or [IO.Path]::GetFullPath($document.Path) -ine [IO.Path]::GetFullPath((Join-Path $directory $name))){
             throw 'Некорректный путь инструкции в папке ярлыков.'
         }
         $seenDocuments[$name]=$true
@@ -928,7 +1050,7 @@ try{
     if(-not $SkipHeader -and $Action -ne 'GUI'){
         Show-AntiDPIHeader
     }
-    switch($Action){'Install'{Install-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
+    switch($Action){'Install'{Install-AntiDPI};'Update'{Update-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
 }
 catch [OperationCanceledException]{Write-Host ''}
 catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
