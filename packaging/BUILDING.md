@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.9**, **Windows 1.8**. Версии пакетов платформ ведутся независимо; общий релиз `v1.9` включает список стратегий с поиском, контрольный YouTube-запрос и дополнительные параметры анализа Windows. Linux-пакет содержит актуальный каталог и версию CLI 1.9.
+Текущие версии исходников: **Linux 1.10**, **Windows 1.9**. Версии пакетов платформ ведутся независимо; общий релиз `v1.10` включает обновлённый Windows GUI/установщик с вкладкой «О программе», обновлением поверх установки, диагностикой и анализом с понятными результатами; Linux-пакет содержит актуальный каталог и версию CLI 1.10.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.8_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.8_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.8.txt`
+- `dist/AntiDPI_CLI_v1.9_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.9_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.9.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.9_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.9.txt`
+- `dist/AntiDPI_CLI_v1.10_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.10.txt`
 
 Для пересборки:
 
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.8_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.8_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.8.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.9_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.9_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.9.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.9.txt)
-tar -tzf dist/AntiDPI_CLI_v1.9_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.10.txt)
+tar -tzf dist/AntiDPI_CLI_v1.10_Linux_x64.tar.gz
 ```
 
 

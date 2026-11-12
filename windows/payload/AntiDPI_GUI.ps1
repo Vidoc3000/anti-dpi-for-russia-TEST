@@ -778,7 +778,7 @@ try{
             if($code -eq 0 -and $script:workerMode -eq 'check'){
                 $output=Get-GuiProcessOutput $script:workerStdoutPath $script:workerStderrPath
                 $checkLine=Get-GuiFailureLine $script:workerStdoutPath ''
-                Set-GuiStatus ('Проверка завершена успешно: '+$checkLine) ([System.Drawing.Color]::DarkGreen)
+                Set-GuiStatus ('Проверка завершена успешно: '+$checkLine+'; перехват не запускался.') ([System.Drawing.Color]::DarkGreen)
                 Show-GuiTextDialog ('Результат проверки стратегии '+[int]$script:runningProfile) $output
             }elseif($code -eq 0){Set-GuiStatus 'Остановлено. Можно выбрать другую стратегию и запустить снова.' ([System.Drawing.Color]::DarkGreen)}
             else{
