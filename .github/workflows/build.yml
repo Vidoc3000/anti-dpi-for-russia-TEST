@@ -24,7 +24,7 @@ on:
         default: '1.10'
         type: string
       publish_release:
-        description: 'Publish a GitHub release from this build (requires platform=all)'
+        description: 'Publish a GitHub release (requires platform=all and ref=main)'
         required: true
         default: false
         type: boolean
@@ -144,7 +144,7 @@ jobs:
 
   release:
     name: Publish GitHub release
-    if: inputs.publish_release && inputs.platform == 'all'
+    if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'
     needs: [windows, linux]
     runs-on: ubuntu-24.04
     permissions:
