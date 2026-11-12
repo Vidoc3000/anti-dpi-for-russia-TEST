@@ -60,6 +60,7 @@ Assert-True ($buildWorkflowText.Contains("if: inputs.publish_release && inputs.p
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('Ярлык уже существует и будет сохранён')) 'install rollback cleans its firewall rule and preserves pre-existing desktop items'
+Assert-True ($managerText.Contains('function Restore-AntiDPIUpdateChanges') -and $managerText.Contains('UpdatedSha256') -and $managerText.Contains('if($rollbackComplete){Remove-AntiDPITemporaryDirectory $stage}')) 'failed updates verify rollback ownership and retain recovery backups if rollback is incomplete'
 Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
 $launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
 Assert-True ($launchLines.Count -eq 1) 'primary Windows launcher opens GUI'
@@ -301,6 +302,34 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $markerPath)) 'rollback removes only its matching installation marker'
 } finally {
     if(Test-Path -LiteralPath $rollbackRoot){Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
+# Test update rollback ownership and verify that failed restoration keeps its backup.
+$updateRollbackAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Restore-AntiDPIUpdateChanges' }, $true)
+Assert-True ($null -ne $updateRollbackAst) 'update rollback helper can be isolated for tests'
+. ([scriptblock]::Create($updateRollbackAst.Extent.Text))
+$updateRollbackRoot = Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-update-rollback-test-' + [guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($updateRollbackRoot) | Out-Null
+    $destination = Join-Path $updateRollbackRoot 'application.txt'
+    $backup = Join-Path $updateRollbackRoot 'backup.txt'
+    [IO.File]::WriteAllText($destination, 'updated')
+    [IO.File]::WriteAllText($backup, 'original')
+    $updatedHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    $change = [pscustomobject]@{Destination=$destination;Backup=$backup;Existed=$true;UpdatedSha256=$updatedHash}
+    $restoreResult = Restore-AntiDPIUpdateChanges @($change)
+    Assert-True $restoreResult.Success 'rollback restores a verified update from its backup'
+    Assert-Equal 'original' ([IO.File]::ReadAllText($destination)) 'rollback restores original bytes'
+    Assert-True (-not (Test-Path -LiteralPath $backup)) 'successful rollback consumes its recovery backup'
+
+    [IO.File]::WriteAllText($destination, 'changed-after-update')
+    [IO.File]::WriteAllText($backup, 'preserved-original')
+    $restoreResult = Restore-AntiDPIUpdateChanges @($change)
+    Assert-True (-not $restoreResult.Success) 'rollback refuses to overwrite a file changed after the update'
+    Assert-Equal 'changed-after-update' ([IO.File]::ReadAllText($destination)) 'rollback preserves the post-update user change'
+    Assert-Equal 'preserved-original' ([IO.File]::ReadAllText($backup)) 'failed rollback leaves the original backup available'
+} finally {
+    if(Test-Path -LiteralPath $updateRollbackRoot){Remove-Item -LiteralPath $updateRollbackRoot -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
 Write-Host 'Windows regression checks passed.' -ForegroundColor Green
