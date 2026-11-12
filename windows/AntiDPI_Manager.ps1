@@ -45,14 +45,74 @@ function Stop-OwnedWinws($Manifest) {
     }
     Remove-Item -LiteralPath $record -Force
 }
-function Save-AntiDPIManifest($Manifest) {
-    $path=Join-Path $Manifest.InstallRoot '.antidpi-install.json'
+function Save-AntiDPIManifest($Manifest,[string]$Path='') {
+    $path=if($Path){[IO.Path]::GetFullPath($Path)}else{Join-Path $Manifest.InstallRoot '.antidpi-install.json'}
     $temporary=$path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     try{
         [IO.File]::WriteAllText($temporary,($Manifest|ConvertTo-Json -Depth 14),[Text.UTF8Encoding]::new($false))
         if(Test-Path -LiteralPath $path -PathType Leaf){[IO.File]::Replace($temporary,$path,[NullString]::Value)}else{[IO.File]::Move($temporary,$path)}
     }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
 }
+function Remove-AntiDPIPartialInstallation($Manifest) {
+    $root=[IO.Path]::GetFullPath([string]$Manifest.InstallRoot)
+    if($root -eq [IO.Path]::GetPathRoot($root)){throw 'Отказ от отката: недопустимый корень установки.'}
+    if(-not (Test-Path -LiteralPath $root -PathType Container)){return}
+    $rootItem=Get-Item -LiteralPath $root -Force
+    if(($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){Write-Host ('Оставляю установку, так как путь ведёт через ссылку: '+$root) -ForegroundColor Yellow;return}
+    $rootPrefix=$root.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+    $directories=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($entry in @($Manifest.Files)){
+        $relative=[string]$entry.Path
+        if([IO.Path]::IsPathRooted($relative)){continue}
+        $candidate=[IO.Path]::GetFullPath((Join-Path $root $relative))
+        if(-not $candidate.StartsWith($rootPrefix,[StringComparison]::OrdinalIgnoreCase)){continue}
+        $safe=$true
+        if(Test-Path -LiteralPath $candidate){
+            $item=Get-Item -LiteralPath $candidate -Force
+            if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){$safe=$false}
+        }
+        $parent=Split-Path -Parent $candidate
+        while($safe -and $parent -and $parent.StartsWith($rootPrefix,[StringComparison]::OrdinalIgnoreCase)){
+            if(Test-Path -LiteralPath $parent -PathType Container){
+                $directoryItem=Get-Item -LiteralPath $parent -Force
+                if(($directoryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){$safe=$false;break}
+            }
+            $null=$directories.Add($parent)
+            $next=Split-Path -Parent $parent
+            if($next -ieq $parent){break}
+            $parent=$next
+        }
+        if(-not $safe){Write-Host ('Не удаляю путь, заменённый ссылкой: '+$relative) -ForegroundColor Yellow;continue}
+        if(Test-Path -LiteralPath $candidate -PathType Leaf){
+            try{
+                if((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -ceq [string]$entry.Sha256){Remove-Item -LiteralPath $candidate -Force -ErrorAction Stop}
+                else{Write-Host ('Сохраняю изменённый файл после неудачной установки: '+$relative) -ForegroundColor Yellow}
+            }catch{Write-Host ('Не удалось очистить файл '+$relative+': '+$_.Exception.Message) -ForegroundColor Yellow}
+        }
+    }
+    $marker=Join-Path $root '.antidpi-install.json'
+    if(Test-Path -LiteralPath $marker -PathType Leaf){
+        try{
+            $markerData=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
+            if($markerData.Schema -eq 'antidpi.zapret.install.v1' -and
+                [IO.Path]::GetFullPath([string]$markerData.InstallRoot) -ieq $root -and
+                [string]$markerData.InstallID -ceq [string]$Manifest.InstallID){Remove-Item -LiteralPath $marker -Force -ErrorAction Stop}
+        }catch{Write-Host ('Не удалось безопасно удалить маркер частичной установки: '+$_.Exception.Message) -ForegroundColor Yellow}
+    }
+    $orderedDirectories=@($directories|Sort-Object {$_.Length} -Descending)
+    foreach($directory in $orderedDirectories){
+        if(Test-Path -LiteralPath $directory -PathType Container){
+            try{
+                $item=Get-Item -LiteralPath $directory -Force
+                if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and -not @(Get-ChildItem -LiteralPath $directory -Force).Count){Remove-Item -LiteralPath $directory -Force -ErrorAction Stop}
+            }catch{Write-Host ('Не удалось очистить папку '+$directory+': '+$_.Exception.Message) -ForegroundColor Yellow}
+        }
+    }
+    if((Test-Path -LiteralPath $root -PathType Container) -and -not @(Get-ChildItem -LiteralPath $root -Force).Count){
+        try{Remove-Item -LiteralPath $root -Force -ErrorAction Stop}catch{Write-Host ('Не удалось удалить пустую папку установки '+$root+': '+$_.Exception.Message) -ForegroundColor Yellow}
+    }
+}
+
 function Update-AntiDPIDesktopDocuments($Manifest) {
     if($null -eq $Manifest.PSObject.Properties['Shortcut'] -or $null -eq $Manifest.Shortcut){return}
     $desktop=Get-AntiDPIDesktopDirectory
@@ -705,7 +765,7 @@ function Install-AntiDPI {
                 $files=@(Get-ChildItem -LiteralPath $ready -Recurse -File -Force|ForEach-Object {[pscustomobject]@{Path=$_.FullName.Substring($ready.TrimEnd('\','/').Length+1);Sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
                 $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='GUI_CLI_1.10';DisplayVersion='GUI + CLI Version 1.10';OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
                 $manifest['Firewall']=Get-AntiDPIFirewallIdentity ([pscustomobject]$manifest)
-                [IO.File]::WriteAllText((Join-Path $ready '.antidpi-install.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+                Save-AntiDPIManifest ([pscustomobject]$manifest) (Join-Path $ready '.antidpi-install.json')
                 # Only destination/commit failures return to folder selection.
                 # Missing payload, checksum and extraction errors remain real errors.
                 try{
@@ -742,15 +802,26 @@ function Install-AntiDPI {
             break
         }
         $installed=Join-Path $finalRoot 'AntiDPI'
-        $installedManifest=Get-Content -LiteralPath (Join-Path $finalRoot '.antidpi-install.json') -Raw -Encoding UTF8|ConvertFrom-Json
+        $installedManifest=[pscustomobject]$manifest
         $script:AntiDPIInstalledRoot=$finalRoot
-        Write-Host ''
-        Write-Host '----------------------'
-        Set-AntiDPIFirewallRule $installedManifest
-        Write-Host '----------------------'
-        if($createShortcut){
-            $installedManifest.Shortcut=New-AntiDPIDesktopShortcut $finalRoot
-            [IO.File]::WriteAllText((Join-Path $finalRoot '.antidpi-install.json'),($installedManifest|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
+        try{
+            Write-Host ''
+            Write-Host '----------------------'
+            Set-AntiDPIFirewallRule $installedManifest
+            Write-Host '----------------------'
+            if($createShortcut){
+                $installedManifest.Shortcut=New-AntiDPIDesktopShortcut $finalRoot
+                Save-AntiDPIManifest $installedManifest
+            }
+        }catch{
+            $failure=$_
+            if($null -ne $installedManifest.Shortcut){
+                try{Remove-AntiDPIDesktopShortcut $installedManifest}catch{Write-Host ('Откат ярлыков не выполнен: '+$_.Exception.Message) -ForegroundColor Yellow}
+            }
+            try{Remove-AntiDPIFirewallRule $installedManifest}catch{Write-Host ('Не удалось удалить правило Firewall при откате: '+$_.Exception.Message) -ForegroundColor Yellow}
+            try{Remove-AntiDPIPartialInstallation $installedManifest}catch{Write-Host ('Откат файлов установки завершился не полностью: '+$_.Exception.Message) -ForegroundColor Yellow}
+            $script:AntiDPIInstalledRoot=''
+            throw $failure
         }
         Write-Host ("Установлено в:`r`n{0}`r`nИсходные файлы запуска и удаления находятся в этой корневой папке." -f $finalRoot) -ForegroundColor Yellow
         Write-Host '----------------------'
@@ -961,6 +1032,14 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
     }
     if((Test-Path -LiteralPath $directory) -and -not (Test-Path -LiteralPath $directory -PathType Container)){
         throw ('Невозможно создать папку ярлыков: путь занят файлом '+$directory)
+    }
+    foreach($spec in $specs){
+        $path=Join-Path $directory $spec.Name
+        if(Test-Path -LiteralPath $path){throw ('Ярлык уже существует и будет сохранён: '+$path)}
+    }
+    foreach($name in @('README_Установка_Windows_v1.10.txt','README_Стратегии_Windows_v1.10.txt')){
+        $path=Join-Path $directory $name
+        if(Test-Path -LiteralPath $path){throw ('Инструкция уже существует и будет сохранена: '+$path)}
     }
     $created=-not (Test-Path -LiteralPath $directory -PathType Container)
     $records=[Collections.Generic.List[object]]::new()

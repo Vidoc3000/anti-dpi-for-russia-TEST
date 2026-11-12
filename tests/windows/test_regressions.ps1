@@ -58,6 +58,8 @@ $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТ�
 $buildWorkflowText = [IO.File]::ReadAllText((Join-Path $repoRoot '.github\workflows\build.yml'))
 Assert-True ($buildWorkflowText.Contains("if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'")) 'stable release publishing is gated to the main branch'
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
+Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
+Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('Ярлык уже существует и будет сохранён')) 'install rollback cleans its firewall rule and preserves pre-existing desktop items'
 Assert-True ($managerText.Contains("'GUI'{& (Join-Path `$PSScriptRoot 'AntiDPI_GUI.ps1')")) 'manager dispatches GUI action'
 $launchLines = @($managerText -split '\r?\n' | Where-Object { $_.Contains("New-UserCommand (Join-Path `$ready '") -and $_.EndsWith("') 'GUI'") })
 Assert-True ($launchLines.Count -eq 1) 'primary Windows launcher opens GUI'
@@ -260,5 +262,45 @@ $probeArgs = @(Get-AntiDPIArguments -Row $row -Index 12 -PortScope '443' -ProbeP
 $rawFilter = $probeArgs | Where-Object { $_ -like '--wf-raw-filter=*' }
 Assert-True ($rawFilter -like '*tcp.SrcPort == 45001*' -and $rawFilter -like '*tcp.SrcPort == 45002*') 'probe source-port isolation'
 Assert-True ($rawFilter -like '*tcp.DstPort == 45001*' -and $rawFilter -like '*tcp.DstPort == 45002*') 'probe reverse-flow isolation'
+
+# Exercise the partial-install rollback helper without invoking the full elevated installer.
+$rollbackTokens = $null
+$rollbackParseErrors = $null
+$managerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\AntiDPI_Manager.ps1'), [ref]$rollbackTokens, [ref]$rollbackParseErrors)
+Assert-Equal 0 $rollbackParseErrors.Count 'rollback helper source parses successfully'
+$rollbackAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Remove-AntiDPIPartialInstallation' }, $true)
+Assert-True ($null -ne $rollbackAst) 'partial installation rollback helper can be isolated for tests'
+. ([scriptblock]::Create($rollbackAst.Extent.Text))
+$rollbackRoot = Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-rollback-test-' + [guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($rollbackRoot) | Out-Null
+    $ownedPath = Join-Path $rollbackRoot 'owned.txt'
+    $modifiedPath = Join-Path $rollbackRoot 'modified.txt'
+    $extraPath = Join-Path $rollbackRoot 'user-extra.txt'
+    $emptyUserDirectory = Join-Path $rollbackRoot 'user-empty'
+    [IO.File]::WriteAllText($ownedPath, 'installer-owned')
+    [IO.File]::WriteAllText($modifiedPath, 'installer-original')
+    [IO.File]::WriteAllText($extraPath, 'do-not-delete')
+    [IO.Directory]::CreateDirectory($emptyUserDirectory) | Out-Null
+    $ownedHash = (Get-FileHash -LiteralPath $ownedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $modifiedHash = (Get-FileHash -LiteralPath $modifiedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText($modifiedPath, 'user-modified')
+    $installId = [guid]::NewGuid().ToString()
+    $rollbackManifest = [pscustomobject]@{
+        Schema='antidpi.zapret.install.v1'; InstallID=$installId; InstallRoot=$rollbackRoot
+        Files=@([pscustomobject]@{Path='owned.txt';Sha256=$ownedHash},[pscustomobject]@{Path='modified.txt';Sha256=$modifiedHash})
+    }
+    $markerPath = Join-Path $rollbackRoot '.antidpi-install.json'
+    $markerData = [ordered]@{Schema='antidpi.zapret.install.v1';InstallID=$installId;InstallRoot=$rollbackRoot}
+    [IO.File]::WriteAllText($markerPath,($markerData|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+    Remove-AntiDPIPartialInstallation $rollbackManifest
+    Assert-True (-not (Test-Path -LiteralPath $ownedPath)) 'rollback removes an unchanged installer-owned file'
+    Assert-True (Test-Path -LiteralPath $modifiedPath) 'rollback preserves an installer-owned file modified by the user'
+    Assert-True (Test-Path -LiteralPath $extraPath) 'rollback preserves an untracked user file'
+    Assert-True (Test-Path -LiteralPath $emptyUserDirectory) 'rollback preserves an unrelated empty user directory'
+    Assert-True (-not (Test-Path -LiteralPath $markerPath)) 'rollback removes only its matching installation marker'
+} finally {
+    if(Test-Path -LiteralPath $rollbackRoot){Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
 
 Write-Host 'Windows regression checks passed.' -ForegroundColor Green
