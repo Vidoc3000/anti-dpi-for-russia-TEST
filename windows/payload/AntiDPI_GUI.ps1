@@ -562,8 +562,9 @@ try{
     $form.Text=('AntiDPI — управление стратегиями ('+$script:programVersion+')')
     $form.StartPosition='CenterScreen'
     $workingArea=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $form.Size=[System.Drawing.Size]::new([Math]::Min(900,[Math]::Max(640,$workingArea.Width-32)),[Math]::Min(760,[Math]::Max(520,$workingArea.Height-32)))
-    $form.MinimumSize=[System.Drawing.Size]::new([Math]::Min(640,$workingArea.Width),[Math]::Min(520,$workingArea.Height))
+    $form.Size=[System.Drawing.Size]::new([Math]::Min(980,[Math]::Max(640,$workingArea.Width-32)),[Math]::Min(840,[Math]::Max(520,$workingArea.Height-24)))
+    $form.MinimumSize=[System.Drawing.Size]::new([Math]::Min(760,$workingArea.Width),[Math]::Min(520,$workingArea.Height))
+    $form.MaximizeBox=$true
     $form.AutoScaleMode=[System.Windows.Forms.AutoScaleMode]::Dpi
     $form.Padding=[System.Windows.Forms.Padding]::new(12)
     $form.Font=[System.Drawing.Font]::new('Segoe UI',10)
@@ -575,112 +576,117 @@ try{
     $analysisTab=[System.Windows.Forms.TabPage]::new('Анализ')
     $settingsTab=[System.Windows.Forms.TabPage]::new('Настройки')
     $aboutTab=[System.Windows.Forms.TabPage]::new('О программе')
-    foreach($page in @($strategyTab,$analysisTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.AutoScrollMinSize=[System.Drawing.Size]::new(740,740)}
+    foreach($page in @($strategyTab,$analysisTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
+    $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,610)
+    $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,590)
+    $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,610)
+    $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,390)
     $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$settingsTab,$aboutTab))
     $form.Controls.Add($tabs)
 
     $header=New-Object System.Windows.Forms.Label
     $header.Text='AntiDPI'
     $header.Font=[System.Drawing.Font]::new('Segoe UI Semibold',22,[System.Drawing.FontStyle]::Bold)
-    $header.Location=[System.Drawing.Point]::new(26,18);$header.Size=[System.Drawing.Size]::new(680,42)
+    $header.Location=[System.Drawing.Point]::new(26,8);$header.Size=[System.Drawing.Size]::new(680,38)
+    $header.ForeColor=[System.Drawing.Color]::FromArgb(31,91,160)
     $strategyTab.Controls.Add($header)
     $versionLabel=New-Object System.Windows.Forms.Label
-    $versionLabel.Text=$script:programVersion;$versionLabel.Location=[System.Drawing.Point]::new(470,30);$versionLabel.Size=[System.Drawing.Size]::new(235,28);$versionLabel.TextAlign=[System.Drawing.ContentAlignment]::MiddleRight;$versionLabel.ForeColor=[System.Drawing.Color]::DimGray
+    $versionLabel.Text=$script:programVersion;$versionLabel.Location=[System.Drawing.Point]::new(470,18);$versionLabel.Size=[System.Drawing.Size]::new(235,28);$versionLabel.TextAlign=[System.Drawing.ContentAlignment]::MiddleRight;$versionLabel.ForeColor=[System.Drawing.Color]::DimGray
     $strategyTab.Controls.Add($versionLabel)
     $subtitle=New-Object System.Windows.Forms.Label
     $subtitle.Text='TCP/TLS и UDP/QUIC для IPv4 или IPv6. Не доказывает работу VPN/Tor-туннеля или авторизацию.'
-    $subtitle.Location=[System.Drawing.Point]::new(29,62);$subtitle.Size=[System.Drawing.Size]::new(680,25)
+    $subtitle.Location=[System.Drawing.Point]::new(29,48);$subtitle.Size=[System.Drawing.Size]::new(680,25)
     $strategyTab.Controls.Add($subtitle)
 
     $familyLabel=New-Object System.Windows.Forms.Label
-    $familyLabel.Text='IP-семейство';$familyLabel.Location=[System.Drawing.Point]::new(30,100);$familyLabel.Size=[System.Drawing.Size]::new(250,24)
+    $familyLabel.Text='IP-семейство';$familyLabel.Location=[System.Drawing.Point]::new(30,78);$familyLabel.Size=[System.Drawing.Size]::new(250,24)
     $strategyTab.Controls.Add($familyLabel)
     $addressFamilyBox=New-Object System.Windows.Forms.ComboBox
-    $addressFamilyBox.DropDownStyle='DropDownList';$addressFamilyBox.Location=[System.Drawing.Point]::new(30,128);$addressFamilyBox.Size=[System.Drawing.Size]::new(250,32)
+    $addressFamilyBox.DropDownStyle='DropDownList';$addressFamilyBox.Location=[System.Drawing.Point]::new(30,106);$addressFamilyBox.Size=[System.Drawing.Size]::new(250,32)
     $addressFamilyBox.DisplayMember='Label';$addressFamilyBox.Items.Add([pscustomobject]@{Label='IPv4';Value='ipv4'})|Out-Null;$addressFamilyBox.Items.Add([pscustomobject]@{Label='IPv6';Value='ipv6'})|Out-Null
     $addressFamilyBox.SelectedIndex=if($script:guiSettings.AddressFamily -eq 'ipv6'){1}else{0};$strategyTab.Controls.Add($addressFamilyBox)
     $protocolLabel=New-Object System.Windows.Forms.Label
-    $protocolLabel.Text='Транспорт и распознаваемый протокол';$protocolLabel.Location=[System.Drawing.Point]::new(310,100);$protocolLabel.Size=[System.Drawing.Size]::new(400,24)
+    $protocolLabel.Text='Транспорт и распознаваемый протокол';$protocolLabel.Location=[System.Drawing.Point]::new(310,78);$protocolLabel.Size=[System.Drawing.Size]::new(400,24)
     $strategyTab.Controls.Add($protocolLabel)
     $protocolBox=New-Object System.Windows.Forms.ComboBox
-    $protocolBox.DropDownStyle='DropDownList';$protocolBox.Location=[System.Drawing.Point]::new(310,128);$protocolBox.Size=[System.Drawing.Size]::new(400,32)
+    $protocolBox.DropDownStyle='DropDownList';$protocolBox.Location=[System.Drawing.Point]::new(310,106);$protocolBox.Size=[System.Drawing.Size]::new(400,32)
     $protocolBox.DisplayMember='Label';$protocolBox.Items.Add([pscustomobject]@{Label='TCP + TLS ClientHello';Value='tls'})|Out-Null;$protocolBox.Items.Add([pscustomobject]@{Label='UDP + QUIC Initial (HTTP/3)';Value='quic'})|Out-Null
     $protocolBox.SelectedIndex=if($script:guiSettings.Protocol -eq 'quic'){1}else{0};$strategyTab.Controls.Add($protocolBox)
 
     $familyFilterLabel=New-Object System.Windows.Forms.Label
-    $familyFilterLabel.Text='Группа / семейство';$familyFilterLabel.Location=[System.Drawing.Point]::new(530,178);$familyFilterLabel.Size=[System.Drawing.Size]::new(180,24)
+    $familyFilterLabel.Text='Группа / семейство';$familyFilterLabel.Location=[System.Drawing.Point]::new(530,144);$familyFilterLabel.Size=[System.Drawing.Size]::new(180,24)
     $strategyTab.Controls.Add($familyFilterLabel)
     $familyFilterBox=New-Object System.Windows.Forms.ComboBox
-    $familyFilterBox.DropDownStyle='DropDownList';$familyFilterBox.DisplayMember='Label';$familyFilterBox.Location=[System.Drawing.Point]::new(530,206);$familyFilterBox.Size=[System.Drawing.Size]::new(180,32)
+    $familyFilterBox.DropDownStyle='DropDownList';$familyFilterBox.DisplayMember='Label';$familyFilterBox.Location=[System.Drawing.Point]::new(530,172);$familyFilterBox.Size=[System.Drawing.Size]::new(180,32)
     $familyFilterBox.Add_SelectedIndexChanged({if($null -ne $familyFilterBox.SelectedItem){Update-GuiProfileFilter}})
     $strategyTab.Controls.Add($familyFilterBox)
     $profileLabel=New-Object System.Windows.Forms.Label
-    $profileLabel.Text='Стратегии — список, поиск по номеру или названию';$profileLabel.Location=[System.Drawing.Point]::new(30,178);$profileLabel.Size=[System.Drawing.Size]::new(490,24)
+    $profileLabel.Text='Стратегии — поиск по номеру или названию';$profileLabel.Location=[System.Drawing.Point]::new(30,144);$profileLabel.Size=[System.Drawing.Size]::new(490,24)
     $strategyTab.Controls.Add($profileLabel)
     $profileSearchBox=New-Object System.Windows.Forms.TextBox
-    $profileSearchBox.Location=[System.Drawing.Point]::new(30,206);$profileSearchBox.Size=[System.Drawing.Size]::new(390,30);$profileSearchBox.Anchor='Top,Left,Right'
+    $profileSearchBox.Location=[System.Drawing.Point]::new(30,172);$profileSearchBox.Size=[System.Drawing.Size]::new(390,30);$profileSearchBox.Anchor='Top,Left,Right'
     $strategyTab.Controls.Add($profileSearchBox)
     $profileCountLabel=New-Object System.Windows.Forms.Label
-    $profileCountLabel.Text='492 стратегии';$profileCountLabel.Location=[System.Drawing.Point]::new(428,209);$profileCountLabel.Size=[System.Drawing.Size]::new(92,24);$profileCountLabel.ForeColor=[System.Drawing.Color]::DimGray
+    $profileCountLabel.Text='492 стратегии';$profileCountLabel.Location=[System.Drawing.Point]::new(428,175);$profileCountLabel.Size=[System.Drawing.Size]::new(92,24);$profileCountLabel.ForeColor=[System.Drawing.Color]::DimGray
     $strategyTab.Controls.Add($profileCountLabel)
     $profileListBox=New-Object System.Windows.Forms.ListBox
-    $profileListBox.Location=[System.Drawing.Point]::new(30,242);$profileListBox.Size=[System.Drawing.Size]::new(490,116);$profileListBox.Anchor='Top,Left,Right'
+    $profileListBox.Location=[System.Drawing.Point]::new(30,208);$profileListBox.Size=[System.Drawing.Size]::new(490,82);$profileListBox.Anchor='Top,Left,Right'
     $profileListBox.DisplayMember='Label';$profileListBox.IntegralHeight=$false;$profileListBox.ScrollAlwaysVisible=$true
     $strategyTab.Controls.Add($profileListBox)
     $details=New-Object System.Windows.Forms.Label
-    $details.Location=[System.Drawing.Point]::new(32,363);$details.Size=[System.Drawing.Size]::new(675,34);$details.ForeColor=[System.Drawing.Color]::DimGray
+    $details.Location=[System.Drawing.Point]::new(32,294);$details.Size=[System.Drawing.Size]::new(675,28);$details.ForeColor=[System.Drawing.Color]::DimGray
     $details.Anchor='Top,Left,Right';$strategyTab.Controls.Add($details)
     $profileListBox.Add_SelectedIndexChanged({if($null -ne $profileListBox.SelectedItem){$p=$profileListBox.SelectedItem;$details.Text=if($p.Protocol -eq 'quic'){('UDP/QUIC Initial; стратегия: {0}' -f $p.Chain)}else{('Семейство {0}    Обработка: {1}    Цепочка: {2}' -f $p.Family,$p.Processing,$p.Chain)}}})
     $profileSearchBox.Add_TextChanged({Update-GuiProfileFilter})
 
     $adapterLabel=New-Object System.Windows.Forms.Label
-    $adapterLabel.Text='Активный физический адаптер с адресом выбранного IP-семейства';$adapterLabel.Location=[System.Drawing.Point]::new(30,404);$adapterLabel.Size=[System.Drawing.Size]::new(500,24)
+    $adapterLabel.Text='Активный физический адаптер с адресом выбранного IP-семейства';$adapterLabel.Location=[System.Drawing.Point]::new(30,330);$adapterLabel.Size=[System.Drawing.Size]::new(500,24)
     $strategyTab.Controls.Add($adapterLabel)
     $adapterBox=New-Object System.Windows.Forms.ComboBox
-    $adapterBox.DropDownStyle='DropDownList';$adapterBox.Location=[System.Drawing.Point]::new(30,432);$adapterBox.Size=[System.Drawing.Size]::new(500,32);$adapterBox.Anchor='Top,Left,Right'
+    $adapterBox.DropDownStyle='DropDownList';$adapterBox.Location=[System.Drawing.Point]::new(30,358);$adapterBox.Size=[System.Drawing.Size]::new(500,32);$adapterBox.Anchor='Top,Left,Right'
     $strategyTab.Controls.Add($adapterBox)
     $refreshButton=New-Object System.Windows.Forms.Button
-    $refreshButton.Text='Обновить';$refreshButton.Location=[System.Drawing.Point]::new(544,431);$refreshButton.Size=[System.Drawing.Size]::new(166,34);$refreshButton.Anchor='Top,Right'
+    $refreshButton.Text='Обновить';$refreshButton.Location=[System.Drawing.Point]::new(544,357);$refreshButton.Size=[System.Drawing.Size]::new(166,34);$refreshButton.Anchor='Top,Right'
     $strategyTab.Controls.Add($refreshButton)
     $refreshButton.Add_Click({try{Refresh-GuiAdapters}catch{Show-GuiError $_.Exception.Message}})
     $addressFamilyBox.Add_SelectedIndexChanged({try{Refresh-GuiAdapters}catch{Show-GuiError $_.Exception.Message}})
 
     $portsLabel=New-Object System.Windows.Forms.Label
-    $portsLabel.Text='Порты назначения';$portsLabel.Location=[System.Drawing.Point]::new(30,484);$portsLabel.Size=[System.Drawing.Size]::new(260,24)
+    $portsLabel.Text='Порты назначения';$portsLabel.Location=[System.Drawing.Point]::new(30,402);$portsLabel.Size=[System.Drawing.Size]::new(260,24)
     $strategyTab.Controls.Add($portsLabel)
     $portsBox=New-Object System.Windows.Forms.TextBox
-    $portsBox.Text='443';$portsBox.Location=[System.Drawing.Point]::new(30,512);$portsBox.Size=[System.Drawing.Size]::new(300,30)
+    $portsBox.Text='443';$portsBox.Location=[System.Drawing.Point]::new(30,430);$portsBox.Size=[System.Drawing.Size]::new(300,30)
     $strategyTab.Controls.Add($portsBox)
     $portsHint=New-Object System.Windows.Forms.Label
-    $portsHint.Text='';$portsHint.Location=[System.Drawing.Point]::new(344,515);$portsHint.Size=[System.Drawing.Size]::new(365,34);$portsHint.Anchor='Top,Left,Right';$portsHint.ForeColor=[System.Drawing.Color]::DimGray
+    $portsHint.Text='';$portsHint.Location=[System.Drawing.Point]::new(344,433);$portsHint.Size=[System.Drawing.Size]::new(365,34);$portsHint.Anchor='Top,Left,Right';$portsHint.ForeColor=[System.Drawing.Color]::DimGray
     $strategyTab.Controls.Add($portsHint)
     Set-GuiProfileItems $script:guiSettings.Protocol
     $portsBox.Text=$script:guiSettings.Ports
     $protocolBox.Add_SelectedIndexChanged({if($null -ne $protocolBox.SelectedItem){Set-GuiProfileItems ([string]$protocolBox.SelectedItem.Value)}})
 
     $recipeButton=New-Object System.Windows.Forms.Button
-    $recipeButton.Text='Показать рецепт';$recipeButton.Location=[System.Drawing.Point]::new(30,562);$recipeButton.Size=[System.Drawing.Size]::new(150,36)
+    $recipeButton.Text='Показать рецепт';$recipeButton.Location=[System.Drawing.Point]::new(30,474);$recipeButton.Size=[System.Drawing.Size]::new(150,34)
     $recipeButton.Add_Click({Show-GuiProfileDetails 'recipe'});$strategyTab.Controls.Add($recipeButton)
     $argumentsButton=New-Object System.Windows.Forms.Button
-    $argumentsButton.Text='Аргументы движка';$argumentsButton.Location=[System.Drawing.Point]::new(190,562);$argumentsButton.Size=[System.Drawing.Size]::new(160,36)
+    $argumentsButton.Text='Аргументы движка';$argumentsButton.Location=[System.Drawing.Point]::new(190,474);$argumentsButton.Size=[System.Drawing.Size]::new(160,34)
     $argumentsButton.Add_Click({Show-GuiProfileDetails 'arguments'});$strategyTab.Controls.Add($argumentsButton)
     $checkButton=New-Object System.Windows.Forms.Button
-    $checkButton.Text='Проверить, не запускать';$checkButton.Location=[System.Drawing.Point]::new(360,562);$checkButton.Size=[System.Drawing.Size]::new(200,36)
+    $checkButton.Text='Проверить, не запускать';$checkButton.Location=[System.Drawing.Point]::new(360,474);$checkButton.Size=[System.Drawing.Size]::new(200,34)
     $checkButton.Add_Click({Start-GuiStrategy -CheckOnly});$strategyTab.Controls.Add($checkButton)
     $startButton=New-Object System.Windows.Forms.Button
-    $startButton.Text='Запустить стратегию';$startButton.Location=[System.Drawing.Point]::new(30,610);$startButton.Size=[System.Drawing.Size]::new(210,42);$startButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$startButton.ForeColor=[System.Drawing.Color]::White;$startButton.FlatStyle='Flat'
+    $startButton.Text='Запустить стратегию';$startButton.Location=[System.Drawing.Point]::new(30,518);$startButton.Size=[System.Drawing.Size]::new(210,40);$startButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$startButton.ForeColor=[System.Drawing.Color]::White;$startButton.FlatStyle='Flat'
     $startButton.Add_Click({Start-GuiStrategy});$strategyTab.Controls.Add($startButton)
     $stopButton=New-Object System.Windows.Forms.Button
-    $stopButton.Text='Остановить';$stopButton.Location=[System.Drawing.Point]::new(251,610);$stopButton.Size=[System.Drawing.Size]::new(145,42);$stopButton.Enabled=$false
+    $stopButton.Text='Остановить';$stopButton.Location=[System.Drawing.Point]::new(251,518);$stopButton.Size=[System.Drawing.Size]::new(145,40);$stopButton.Enabled=$false
     $stopButton.Add_Click({Request-GuiStop});$strategyTab.Controls.Add($stopButton)
     $logsButton=New-Object System.Windows.Forms.Button
-    $logsButton.Text='Открыть логи';$logsButton.Location=[System.Drawing.Point]::new(407,610);$logsButton.Size=[System.Drawing.Size]::new(145,42)
+    $logsButton.Text='Открыть логи';$logsButton.Location=[System.Drawing.Point]::new(407,518);$logsButton.Size=[System.Drawing.Size]::new(145,40)
     $logsButton.Add_Click({try{$directory=Get-AntiDPILogDirectory $bundle;Start-Process explorer.exe -ArgumentList (ConvertTo-WindowsArgument $directory)}catch{Show-GuiError $_.Exception.Message}});$strategyTab.Controls.Add($logsButton)
     $restartButton=New-Object System.Windows.Forms.Button
-    $restartButton.Text='Перезапустить';$restartButton.Location=[System.Drawing.Point]::new(560,610);$restartButton.Size=[System.Drawing.Size]::new(150,42);$restartButton.Enabled=$false
+    $restartButton.Text='Перезапустить';$restartButton.Location=[System.Drawing.Point]::new(560,518);$restartButton.Size=[System.Drawing.Size]::new(150,40);$restartButton.Enabled=$false
     $restartButton.Add_Click({Request-GuiRestart});$strategyTab.Controls.Add($restartButton)
     $statusLabel=New-Object System.Windows.Forms.Label
-    $statusLabel.Text='Готово к запуску';$statusLabel.Location=[System.Drawing.Point]::new(30,666);$statusLabel.Size=[System.Drawing.Size]::new(680,25);$statusLabel.Anchor='Left,Right,Bottom';$statusLabel.ForeColor=[System.Drawing.Color]::DarkGreen
+    $statusLabel.Text='Готово к запуску';$statusLabel.Location=[System.Drawing.Point]::new(30,566);$statusLabel.Size=[System.Drawing.Size]::new(680,25);$statusLabel.Anchor='Left,Right,Bottom';$statusLabel.ForeColor=[System.Drawing.Color]::DarkGreen
     $strategyTab.Controls.Add($statusLabel)
 
     $analysisInfo=New-Object System.Windows.Forms.Label

@@ -36,7 +36,13 @@ function Test-InstallerExistingInstall([string]$Path) {
         $marker=Join-Path $root '.antidpi-install.json'
         if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){return $false}
         $data=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
-        return ($data.Schema -eq 'antidpi.zapret.install.v1' -and [IO.Path]::GetFullPath([string]$data.InstallRoot) -ieq $root -and (Test-Path -LiteralPath (Join-Path $root 'AntiDPI\AntiDPI_Manager.ps1') -PathType Leaf) -and (Test-Path -LiteralPath (Join-Path $root 'zapret-winws\winws2.exe') -PathType Leaf))
+        $requiredFiles=@(
+            'AntiDPI\AntiDPI_Manager.ps1',
+            'AntiDPI\AntiDPI_GUI.ps1',
+            'AntiDPI\AntiDPI_Launcher_Core_20261023_public_v1.ps1',
+            'zapret-winws\winws2.exe'
+        )
+        return ($data.Schema -eq 'antidpi.zapret.install.v1' -and [IO.Path]::GetFullPath([string]$data.InstallRoot) -ieq $root -and -not [string]::IsNullOrWhiteSpace([string]$data.DisplayVersion) -and @($requiredFiles|Where-Object {-not (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)}).Count -eq 0)
     }catch{return $false}
 }
 $manager=Join-Path $PSScriptRoot 'AntiDPI_Manager.ps1'
@@ -204,22 +210,29 @@ $timer.Add_Tick({
         $cancelButton.Enabled=$false
         if($script:cancelFile -and (Test-Path -LiteralPath $script:cancelFile)){Remove-Item -LiteralPath $script:cancelFile -Force -ErrorAction SilentlyContinue}
         if($script:cancelFile -and (Test-Path -LiteralPath ($script:cancelFile+'.closed'))){Remove-Item -LiteralPath ($script:cancelFile+'.closed') -Force -ErrorAction SilentlyContinue}
-        $progress.Style=[System.Windows.Forms.ProgressBarStyle]::Blocks;$progress.MarqueeAnimationSpeed=0;$progress.Value=if($code -eq 0){100}else{0}
+        $verifiedInstall=($action -eq 'Install' -and (Test-InstallerExistingInstall $pathBox.Text))
+        $progress.Style=[System.Windows.Forms.ProgressBarStyle]::Blocks;$progress.MarqueeAnimationSpeed=0;$progress.Value=if($code -eq 0 -or $verifiedInstall){100}else{0}
         $openLogsButton.Enabled=$true
         $recent=@()
-        foreach($logPath in @($script:stderrPath,$script:stdoutPath)){
+        $logPaths=if($code -eq 0){@($script:stdoutPath)}else{@($script:stderrPath,$script:stdoutPath)}
+        foreach($logPath in $logPaths){
             if($logPath -and (Test-Path -LiteralPath $logPath -PathType Leaf)){try{$recent+=@(Get-Content -LiteralPath $logPath -Tail 18 -Encoding UTF8 -ErrorAction Stop)}catch{}}
         }
         $recent=@($recent|Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
         if($recent.Count){$logBox.Text=($recent -join [Environment]::NewLine);$logBox.SelectionStart=$logBox.TextLength;$logBox.ScrollToCaret()}
+        if($code -eq 0){$logBox.Text='Успешно. Подробные журналы доступны по кнопке «Открыть логи».'}
         if($code -eq 2){
             $status.Text='Установка отменена. Временные файлы очищены; можно повторить.';$status.ForeColor=[System.Drawing.Color]::DarkOrange
             $installButton.Text='Повторить установку';$installButton.Enabled=$true;$pathBox.Enabled=$true;$browseButton.Enabled=$true;$updateCheck.Enabled=$true
             $bundleGroup.Enabled=(-not $updateCheck.Checked);$shortcutCheck.Enabled=(-not $updateCheck.Checked)
         }elseif($code -eq 0){
             $verb=if($updateCheck.Checked){'Обновление'}else{'Установка'}
-            $status.Text=($verb+' завершено: '+$pathBox.Text);$status.ForeColor=[System.Drawing.Color]::DarkGreen
-            $installButton.Text=if($updateCheck.Checked){'Обновлено'}else{'Установлено'};$installButton.Enabled=$false
+            $status.Text=('✓ '+$verb+' завершено: '+$pathBox.Text);$status.ForeColor=[System.Drawing.Color]::DarkGreen
+            $installButton.Text='Готово';$installButton.Enabled=$false
+        }elseif($verifiedInstall){
+            $status.Text=('Установка выполнена: файлы программы и движок на месте. Код завершения помощника: '+$code+'. Подробности — в логах.');$status.ForeColor=[System.Drawing.Color]::FromArgb(150,95,0)
+            $logBox.Text='Основные файлы и движок найдены. Для диагностики откройте сохранённые логи.'
+            $installButton.Text='Готово';$installButton.Enabled=$false
         }else{
             $detail=if($recent.Count){[string]$recent[$recent.Count-1]}else{'Подробности смотрите в файлах логов.'}
             $status.Text=('Ошибка: '+$detail);$status.ForeColor=[System.Drawing.Color]::Firebrick
