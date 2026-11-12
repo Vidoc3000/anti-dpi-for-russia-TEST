@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.11 — UTF-8 Windows strategy logs
+
+| English | Русский |
+| --- | --- |
+| Write redirected Windows strategy-catalogue output as UTF-8 so Cyrillic diagnostics remain readable in GUI logs. | Вывод каталога стратегий Windows перенаправляется в UTF-8, поэтому кириллические сообщения остаются читаемыми в логах GUI. |
+| Combined release: Linux package advances to 1.11; Windows GUI + CLI advances to 1.10. | Общий релиз: версия пакета Linux повышена до 1.11; Windows GUI + CLI — до 1.10. |
+
 ## 1.10 — Windows GUI/installer update and clearer diagnostics
 
 | English | Русский |

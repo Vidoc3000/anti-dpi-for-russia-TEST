@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии исходников: **Linux 1.10**, **Windows 1.9**. Версии пакетов платформ ведутся независимо; общий релиз `v1.10` включает обновлённый Windows GUI/установщик с вкладкой «О программе», обновлением поверх установки, диагностикой и анализом с понятными результатами; Linux-пакет содержит актуальный каталог и версию CLI 1.10.
+Текущие версии исходников: **Linux 1.11**, **Windows 1.10**. Версии пакетов платформ ведутся независимо; общий релиз `v1.11` включает обновлённый Windows GUI/установщик с вкладкой «О программе», обновлением поверх установки, диагностикой и анализом с понятными результатами; Linux-пакет содержит актуальный каталог; версия CLI приложения остаётся 1.9.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.9_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.9_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.9.txt`
+- `dist/AntiDPI_CLI_v1.10_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.10_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.10.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.10_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.10.txt`
+- `dist/AntiDPI_CLI_v1.11_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.11.txt`
 
 Для пересборки:
 
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.9_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.9_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.9.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.10_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.10_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.10.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.10.txt)
-tar -tzf dist/AntiDPI_CLI_v1.10_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.11.txt)
+tar -tzf dist/AntiDPI_CLI_v1.11_Linux_x64.tar.gz
 ```
 
 
