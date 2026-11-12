@@ -10,6 +10,9 @@ param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [ValidateRange(1,5)][int]$AnalysisAttempts=2,[ValidateRange(16,1024)][int]$AnalysisThresholdKB=100,[ValidateRange(5,120)][int]$AnalysisTimeoutSeconds=15,
  [string]$AnalysisResultPath='', [string]$AnalysisCancelFile='')
 
+# GUI captures redirected stdout/stderr as UTF-8; use the same encoding for Cyrillic.
+try{[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding}catch{}
+
 $CatalogueInfo = @'
 {
   "Schema": "antidpi.tls.catalogue.v1",
