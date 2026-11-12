@@ -57,7 +57,7 @@ $title.Font=[System.Drawing.Font]::new('Segoe UI Semibold',22,[System.Drawing.Fo
 $title.Location=[System.Drawing.Point]::new(28,20);$title.Size=[System.Drawing.Size]::new(620,42)
 $form.Controls.Add($title)
 $intro=New-Object System.Windows.Forms.Label
-$intro.Text='Выберите папку и вариант официального Zapret2. Установщик проверит SHA-256, установит программу и настроит разрешение Firewall только для winws2.exe.'
+$intro.Text='Выберите папку и источник Zapret2. Для закреплённой версии SHA-256 сверяется с манифестом; Latest использует текущую ветку master.'
 $intro.Location=[System.Drawing.Point]::new(30,70);$intro.Size=[System.Drawing.Size]::new(660,48);$intro.Anchor='Top,Left,Right'
 $form.Controls.Add($intro)
 
@@ -90,11 +90,11 @@ $bundleGroup=New-Object System.Windows.Forms.GroupBox
 $bundleGroup.Text='Источник Zapret2';$bundleGroup.Location=[System.Drawing.Point]::new(30,232);$bundleGroup.Size=[System.Drawing.Size]::new(660,116);$bundleGroup.Anchor='Top,Left,Right'
 $form.Controls.Add($bundleGroup)
 $compatibleRadio=New-Object System.Windows.Forms.RadioButton
-$compatibleRadio.Text='Совместимая закреплённая версия (рекомендуется)'
+$compatibleRadio.Text='Закреплённая версия — SHA-256 сверяется с манифестом (рекомендуется)'
 $compatibleRadio.Checked=$true;$compatibleRadio.Location=[System.Drawing.Point]::new(18,28);$compatibleRadio.Size=[System.Drawing.Size]::new(610,26)
 $bundleGroup.Controls.Add($compatibleRadio)
 $latestRadio=New-Object System.Windows.Forms.RadioButton
-$latestRadio.Text='Последняя версия официальной ветки master'
+$latestRadio.Text='Текущая master — SHA-256 заранее не закреплён'
 $latestRadio.Location=[System.Drawing.Point]::new(18,64);$latestRadio.Size=[System.Drawing.Size]::new(610,26)
 $bundleGroup.Controls.Add($latestRadio)
 $shortcutCheck=New-Object System.Windows.Forms.CheckBox
@@ -102,7 +102,7 @@ $shortcutCheck.Text='Создать ярлыки запуска и удален�
 $shortcutCheck.Checked=$true;$shortcutCheck.Location=[System.Drawing.Point]::new(32,358);$shortcutCheck.Size=[System.Drawing.Size]::new(640,28)
 $form.Controls.Add($shortcutCheck)
 $warning=New-Object System.Windows.Forms.Label
-$warning.Text='Установка требует прав администратора. Не отключайте антивирус автоматически: при необходимости настройте его исключения вручную. Запуск анализа YouTube не проверяет VPN/Tor-туннель.'
+$warning.Text='Установка требует прав администратора. В Latest нет доверенной SHA-256 до скачивания; используйте его, только если принимаете этот риск. Не отключайте антивирус автоматически.'
 $warning.Location=[System.Drawing.Point]::new(32,396);$warning.Size=[System.Drawing.Size]::new(650,48);$warning.ForeColor=[System.Drawing.Color]::FromArgb(120,74,0);$warning.Anchor='Top,Left,Right'
 $form.Controls.Add($warning)
 
