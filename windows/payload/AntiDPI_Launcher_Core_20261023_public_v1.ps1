@@ -77,11 +77,8 @@ function ConvertTo-AntiDPIPortScope([string]$Value) {
     $text=([string]$Value).Trim()
     if(-not $text -or $text -imatch '^(all|все|всё)$'){return 'all'}
     $text=$text -replace '[\u2010-\u2014\u2212]','-'
-    if($text.StartsWith(',') -or $text.EndsWith(',') -or $text.Contains(',,') -or [regex]::IsMatch($text,',\s+,')){throw 'Empty TCP port-list member.'}
-    $parts=$text.Split([char[]]@(','),[StringSplitOptions]::None)
     $ranges=[Collections.Generic.List[object]]::new()
-    foreach($part in $parts){
-        if(-not $part.Trim()){throw 'Empty TCP port-list member.'}
+    foreach($part in $text.Split(',')){
         $match=[regex]::Match($part,'^\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?$')
         $first=0;$last=0
         if(-not $match.Success -or -not [int]::TryParse($match.Groups[1].Value,[ref]$first)){

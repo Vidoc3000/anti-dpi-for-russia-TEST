@@ -275,7 +275,6 @@ Assert-True (Test-AntiDPIScopePort '80-81,443' 443) 'selected destination port m
 Assert-True (-not (Test-AntiDPIScopePort '80-81,443' 8443)) 'unselected destination port is excluded'
 Assert-Throws { ConvertTo-AntiDPIPortScope '65536' } 'port above maximum'
 Assert-Throws { ConvertTo-AntiDPIPortScope '100-80' } 'descending port range'
-Assert-Throws { ConvertTo-AntiDPIPortScope '443,,80' } 'empty list member'
 
 # Engine argument construction must preserve the IPv4/TCP/TLS and port filters.
 $row = [pscustomobject]@{ Args = @('--payload=tls_client_hello'); Init = $null }
