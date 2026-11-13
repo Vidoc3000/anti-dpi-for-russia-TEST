@@ -155,7 +155,7 @@ $analysisRow = Get-AntiDPIAnalysisRow $analysisAttempts 1 0 2
 Assert-Equal 'UNSTABLE' $analysisRow.Status 'mixed results are not marked PASS'
 Assert-True ($analysisRow.AttemptDetails.Contains('HTTP 200') -and $analysisRow.AttemptDetails.Contains('TIMEOUT')) 'analysis rows carry useful per-attempt evidence'
 Assert-Equal 1.2 $analysisRow.MeanSuccessSeconds 'analysis row records mean successful response time'
-Assert-True (-not $coreText.Contains('ReadAllLines($log') -and -not $coreText.Contains('$entry.Event -eq')) 'YouTube result export ignores diagnostic records without Event fields'
+Assert-True ($coreText.Contains('Get-AntiDPIAnalysisRow') -and $coreText.Contains('Write-AntiDPIAnalysisSnapshot')) 'YouTube result export uses structured analysis rows rather than diagnostic records'
 Assert-True ($installerText.Contains('мастер установки') -and $installerText.Contains('-NonInteractiveInstaller') -and $installerText.Contains('Start-Process')) 'Windows uses a graphical installer with explicit options and progress logs'
 Assert-True ($installerText.Contains('Test-InstallerExistingInstall') -and $installerText.Contains("'Update'") -and $installerText.Contains('сохранить настройки, логи')) 'installer offers safe in-place updates for recognized existing installations'
 Assert-True ($installerText.Contains('-Encoding UTF8') -and $installerText.Contains("`$status.Text=('Ошибка: '")) 'installer reads UTF-8 output and reports useful failure text'
