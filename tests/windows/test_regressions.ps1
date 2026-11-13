@@ -446,6 +446,7 @@ try {
 } catch {
     throw ('QUIC connection-profile fixture failed: '+$_.Exception.Message)
 }
+Write-Output ('::error title=Temporary connection profile diagnostic::'+($connectionProfile|ConvertTo-Json -Compress))
 Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
 Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
 Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
