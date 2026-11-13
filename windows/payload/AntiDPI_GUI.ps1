@@ -13,12 +13,18 @@ $script:analysisResultPath=''
 $script:analysisCurrentData=$null
 $script:analysisExportButton=$null
 $script:analysisCancelFile=''
+$script:historyPath=Join-Path $state 'gui\history.jsonl'
+$script:historyGrid=$null
+$script:dashboardLabel=$null
+$script:historySearchBox=$null
+$script:historyStatusLabel=$null
+$script:favoritesOnly=$false
 $script:guiSettingsPath=Join-Path $state 'gui-settings.json'
 $script:programVersion='Версия не определена'
 $script:analysisSnapshotIdentity=''
 $script:workerStdoutPath='';$script:workerStderrPath=''
 $script:analysisStdoutPath='';$script:analysisStderrPath=''
-$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true}
+$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;Favorites=@();RecentProfiles=@();FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false}
 $guiLog=Join-Path $state 'gui\startup.log'
 function Write-GuiLog([string]$Message) {
     try {
@@ -45,6 +51,11 @@ if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){
         if($saved.PSObject.Properties['AnalysisAttempts']){$savedAttempts=0;if([int]::TryParse([string]$saved.AnalysisAttempts,[ref]$savedAttempts) -and $savedAttempts -ge 1 -and $savedAttempts -le 5){$script:guiSettings.AnalysisAttempts=$savedAttempts}}
         if($saved.PSObject.Properties['AnalysisTimeoutSeconds']){$savedTimeout=0;if([int]::TryParse([string]$saved.AnalysisTimeoutSeconds,[ref]$savedTimeout) -and $savedTimeout -ge 5 -and $savedTimeout -le 120){$script:guiSettings.AnalysisTimeoutSeconds=$savedTimeout}}
         if($saved.PSObject.Properties['AnalysisThresholdKB']){$savedThreshold=0;if([int]::TryParse([string]$saved.AnalysisThresholdKB,[ref]$savedThreshold) -and $savedThreshold -ge 16 -and $savedThreshold -le 1024){$script:guiSettings.AnalysisThresholdKB=$savedThreshold}}
+        if($saved.PSObject.Properties['Favorites']){$script:guiSettings.Favorites=@($saved.Favorites|ForEach-Object {$number=0;if([int]::TryParse([string]$_,[ref]$number) -and $number -ge 1 -and $number -le 494){$number}}|Where-Object {$_}|Select-Object -Unique)}
+        if($saved.PSObject.Properties['RecentProfiles']){$script:guiSettings.RecentProfiles=@($saved.RecentProfiles|ForEach-Object {$number=0;if([int]::TryParse([string]$_,[ref]$number) -and $number -ge 1 -and $number -le 494){$number}}|Where-Object {$_}|Select-Object -Unique|Select-Object -First 20)}
+        if($saved.PSObject.Properties['FirstRunComplete']){$script:guiSettings.FirstRunComplete=[bool]$saved.FirstRunComplete}
+        if($saved.PSObject.Properties['WindowBounds'] -and $null -ne $saved.WindowBounds){$script:guiSettings.WindowBounds=$saved.WindowBounds}
+        if($saved.PSObject.Properties['WindowMaximized']){$script:guiSettings.WindowMaximized=[bool]$saved.WindowMaximized}
     }catch{Write-GuiLog ('Ignoring invalid GUI settings: '+$_.Exception.Message)}
 }
 Write-GuiLog 'GUI script entry'
@@ -100,6 +111,38 @@ function Get-GuiFailureLine([string]$StdoutPath,[string]$StderrPath) {
         }
     }
     return 'Подробности не записаны.'
+}
+function Add-GuiHistory([string]$Kind,[string]$Status,[string]$Summary) {
+    try {
+        $directory=Split-Path -Parent $script:historyPath
+        [IO.Directory]::CreateDirectory($directory)|Out-Null
+        $record=[ordered]@{Time=(Get-Date).ToString('o');Kind=$Kind;Status=$Status;Summary=$Summary}
+        [IO.File]::AppendAllText($script:historyPath,(($record|ConvertTo-Json -Compress)+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+        $lines=@(Get-Content -LiteralPath $script:historyPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+        if($lines.Count -gt 1000){[IO.File]::WriteAllLines($script:historyPath,[string[]]$lines[($lines.Count-1000)..($lines.Count-1)],[Text.UTF8Encoding]::new($false))}
+        if($null -ne $script:historyGrid){Update-GuiHistory}
+    } catch {Write-GuiLog ('Could not append activity history: '+$_.Exception.Message)}
+}
+function Save-GuiUiPreferences {
+    try {
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null
+        $temporary=$script:guiSettingsPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+        try{[IO.File]::WriteAllText($temporary,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false));if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){[IO.File]::Replace($temporary,$script:guiSettingsPath,[NullString]::Value)}else{[IO.File]::Move($temporary,$script:guiSettingsPath)}}finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
+    }catch{Write-GuiLog ('Could not save GUI preferences: '+$_.Exception.Message);throw}
+}
+function Update-GuiHistory {
+    if($null -eq $script:historyGrid){return}
+    $script:historyGrid.Rows.Clear()
+    if(-not (Test-Path -LiteralPath $script:historyPath -PathType Leaf)){return}
+    $query='';if($null -ne $script:historySearchBox){$query=[string]$script:historySearchBox.Text.Trim()}
+    foreach($line in @(Get-Content -LiteralPath $script:historyPath -Encoding UTF8 -ErrorAction SilentlyContinue)){
+        try{$entry=$line|ConvertFrom-Json -ErrorAction Stop;$values=@([string]$entry.Time,[string]$entry.Kind,[string]$entry.Status,[string]$entry.Summary);if(-not $query -or (($values -join ' ').IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0)){$null=$script:historyGrid.Rows.Add([object[]]$values)}}catch{}
+    }
+}
+function Export-GuiHistory {
+    if($script:historyGrid.Rows.Count -eq 0){Show-GuiError 'История пока пуста.';return}
+    $dialog=New-Object System.Windows.Forms.SaveFileDialog;$dialog.Title='Экспорт истории';$dialog.Filter='CSV для Excel (*.csv)|*.csv|Все файлы (*.*)|*.*';$dialog.DefaultExt='csv';$dialog.AddExtension=$true;$dialog.FileName=('AntiDPI_history_'+(Get-Date -Format 'yyyyMMdd_HHmmss')+'.csv')
+    try{if($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK){return};$rows=foreach($row in $script:historyGrid.Rows){[pscustomobject][ordered]@{Time=$row.Cells[0].Value;Kind=$row.Cells[1].Value;Status=$row.Cells[2].Value;Summary=$row.Cells[3].Value}};[IO.File]::WriteAllText($dialog.FileName,(($rows|ConvertTo-Csv -NoTypeInformation -Delimiter ';') -join [Environment]::NewLine)+[Environment]::NewLine,[Text.UTF8Encoding]::new($true));$historyStatusLabel.Text='История экспортирована.'}catch{Show-GuiError ('Не удалось экспортировать историю: '+$_.Exception.Message)}finally{$dialog.Dispose()}
 }
 function Get-GuiAnalysisRecommendation([string]$Status) {
     switch($Status){
@@ -200,7 +243,8 @@ function Show-GuiTextDialog([string]$Title,[string]$Content) {
     $buttons=[System.Windows.Forms.FlowLayoutPanel]::new();$buttons.Dock='Bottom';$buttons.Height=48;$buttons.FlowDirection='RightToLeft'
     $close=[System.Windows.Forms.Button]::new();$close.Text='Закрыть';$close.Width=100;$close.DialogResult='OK'
     $copy=[System.Windows.Forms.Button]::new();$copy.Text='Копировать';$copy.Width=120;$copy.Add_Click({[Windows.Forms.Clipboard]::SetText($box.Text)})
-    $buttons.Controls.Add($close);$buttons.Controls.Add($copy);$dialog.Controls.Add($buttons);$dialog.AcceptButton=$close
+    $openLogs=New-Object System.Windows.Forms.Button;$openLogs.Text='Открыть логи';$openLogs.Width=120;$openLogs.Add_Click({try{$directory=Get-AntiDPILogDirectory $bundle;Start-Process explorer.exe -ArgumentList (ConvertTo-WindowsArgument $directory)}catch{Show-GuiError $_.Exception.Message}})
+    $buttons.Controls.Add($close);$buttons.Controls.Add($copy);$buttons.Controls.Add($openLogs);$dialog.Controls.Add($buttons);$dialog.AcceptButton=$close
     [void]$dialog.ShowDialog($form)
 }
 function Show-GuiInterfaces {
@@ -219,9 +263,21 @@ $script:quicProfileRows=@(Get-GuiProfiles 'quic')
 function Get-ProfileLabel($Profile) {
     return ('{0}  [№ {1}]' -f [string]$Profile.Name,[int]$Profile.Number)
 }
+function Update-GuiDashboard {
+    if($null -eq $script:dashboardLabel){return}
+    $profile=if($null -ne $profileListBox -and $null -ne $profileListBox.SelectedItem){$profileListBox.SelectedItem}else{$null}
+    $profileText=if($null -ne $profile){('#{0} {1}' -f $profile.Number,$profile.Name)}else{'стратегия не выбрана'}
+    $familyText=if($null -ne $addressFamilyBox -and $null -ne $addressFamilyBox.SelectedItem){[string]$addressFamilyBox.SelectedItem.Label}else{'IP не выбран'}
+    $protocolText=if($null -ne $protocolBox -and $null -ne $protocolBox.SelectedItem){[string]$protocolBox.SelectedItem.Label}else{'транспорт не выбран'}
+    $adapterText=if($null -ne $adapterBox -and $null -ne $adapterBox.SelectedItem){[string]$adapterBox.SelectedItem.Name}else{'адаптер не выбран'}
+    $portText=if($null -ne $portsBox){[string]$portsBox.Text}else{'443'}
+    $stateText=if($null -ne $statusLabel){[string]$statusLabel.Text}else{'Готово к запуску'}
+    $script:dashboardLabel.Text=('{0}  |  {1}  |  {2}  |  {3}  |  порты {4}  |  {5}' -f $stateText,$profileText,$familyText,$protocolText,$portText,$adapterText)
+}
 function Set-GuiStatus([string]$Text,[System.Drawing.Color]$Color) {
     $statusLabel.Text=$Text
     $statusLabel.ForeColor=$Color
+    Update-GuiDashboard
 }
 function Get-GuiSelectedProfile {
     $profileText=$profileSearchBox.Text.Trim()
@@ -278,12 +334,14 @@ function Start-GuiStrategy([switch]$CheckOnly) {
 
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $selectedProfileNumber=[int]$selectedProfile.Number
+        if(-not $CheckOnly){$script:guiSettings.RecentProfiles=@($selectedProfileNumber)+@($script:guiSettings.RecentProfiles|Where-Object {$_ -ne $selectedProfileNumber}|Select-Object -First 19);Save-GuiUiPreferences}
         $script:runningProfile=$selectedProfileNumber
 $launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$catalogue,'-ProfileNumber',[string]$selectedProfileNumber,'-InterfaceIndex',[string]$selectedAdapter.ifIndex,'-Scope',$scope,'-AddressFamily',$addressFamily,'-Protocol',$protocol,'-ZapretDirectory',$bundle,'-StateDirectory',$state)
         if($CheckOnly){$launchArguments+= '-Check'}
         if($script:guiSettings.SkipTimestampSetup){$launchArguments+= '-SkipTimestampSetup'}
         $joined=(@($launchArguments|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
         $script:worker=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        if(-not $CheckOnly){Add-GuiHistory 'Стратегия' 'ЗАПУСК' ('№{0} {1}; {2}; {3}; адаптер {4}; порты {5}' -f $selectedProfileNumber,$selectedProfile.Name,$addressFamily,$protocol,$selectedAdapter.Name,$scope)}
         $script:stopPending=$false
         $script:workerMode=if($CheckOnly){'check'}else{'start'}
         $startButton.Enabled=$false
@@ -294,7 +352,7 @@ $launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowSt
         $adapterBox.Enabled=$false;$refreshButton.Enabled=$false;$addressFamilyBox.Enabled=$false;$protocolBox.Enabled=$false
         $portsBox.Enabled=$false
         Set-GuiStatus $(if($CheckOnly){'Проверка параметров стратегии '+$selectedProfileNumber+'…'}else{'Запуск стратегии '+$selectedProfileNumber+'…'}) ([System.Drawing.Color]::DarkOrange)
-    }catch{Show-GuiError $_.Exception.Message}
+    }catch{$message=$_.Exception.Message;Set-GuiStatus ('Ошибка запуска: '+$message+' Проверьте адаптер и права администратора; откройте логи.') ([System.Drawing.Color]::Firebrick);Add-GuiHistory 'Стратегия' 'ОШИБКА' $message;Show-GuiError ($message+[Environment]::NewLine+[Environment]::NewLine+'Дальше: проверьте выбранный физический адаптер, права администратора и журналы AntiDPI. Остановка активного процесса остаётся управляемой кнопкой «Остановить».')}
 }
 function Request-GuiStop {
     if($null -eq $script:worker -or $script:worker.HasExited){return}
@@ -347,6 +405,7 @@ function Update-GuiProfileFilter {
         $familyValue=[string]$familyFilterBox.SelectedItem.Value
         $query=[string]$profileSearchBox.Text.Trim()
         $visible=if($familyValue -eq 'all'){@($script:allProfileItems)}else{@($script:allProfileItems|Where-Object {[string]$_.Family -ceq $familyValue})}
+        if($script:favoritesOnly){$visible=@($visible|Where-Object {[int]$_.Number -in @($script:guiSettings.Favorites)})}
         if($query){$visible=@($visible|Where-Object {([string]$_.Number).IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -or ([string]$_.Name).IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0})}
         $script:profileItems=@($visible)
         foreach($item in $script:profileItems){$null=$profileListBox.Items.Add($item)}
@@ -478,6 +537,7 @@ function Start-GuiAnalysis {
         if($script:guiSettings.SkipTimestampSetup){$arguments+= '-SkipTimestampSetup'}
         $joined=(@($arguments|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
         $script:analysisWorker=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        Add-GuiHistory 'Анализ YouTube' 'ЗАПУСК' ('Стратегии {0}-{1}; адаптер {2}; параллельность {3}' -f $first,$last,$selectedAdapter.Name,$parallelism)
         $analysisButton.Enabled=$false;$analysisCancelButton.Enabled=$true;$startButton.Enabled=$false;$settingsSaveButton.Enabled=$false
         $analysisRangeBox.Enabled=$false
         $analysisStatusLabel.Text=('Контроль и YouTube IPv4/TCP/TLS: стратегии {0}-{1}; параллельно {2}, {3} попытки × {4} КиБ, таймаут {5} сек.' -f $first,$last,$parallelism,$attempts,$thresholdKB,$timeoutSeconds)
@@ -526,7 +586,7 @@ function Save-GuiSettings {
     if($attempts -lt 1 -or $attempts -gt 5){throw 'Число попыток должно быть от 1 до 5.'}
     if($timeoutSeconds -lt 5 -or $timeoutSeconds -gt 120){throw 'Таймаут должен быть от 5 до 120 секунд.'}
     if($thresholdKB -lt 16 -or $thresholdKB -gt 1024){throw 'Порог ответа должен быть от 16 до 1024 КиБ.'}
-    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked}
+    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked;Favorites=@($script:guiSettings.Favorites);RecentProfiles=@($script:guiSettings.RecentProfiles);FirstRunComplete=$true;WindowBounds=$script:guiSettings.WindowBounds;WindowMaximized=$script:guiSettings.WindowMaximized}
     [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null
     $temporary=$script:guiSettingsPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     try{
@@ -563,7 +623,8 @@ try{
     $form.StartPosition='CenterScreen'
     $workingArea=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $form.Size=[System.Drawing.Size]::new([Math]::Min(980,[Math]::Max(640,$workingArea.Width-32)),[Math]::Min(840,[Math]::Max(520,$workingArea.Height-24)))
-    $form.MinimumSize=[System.Drawing.Size]::new([Math]::Min(760,$workingArea.Width),[Math]::Min(520,$workingArea.Height))
+    $form.MinimumSize=[System.Drawing.Size]::new([Math]::Min(640,$workingArea.Width),[Math]::Min(480,$workingArea.Height))
+    if($null -ne $script:guiSettings.WindowBounds){try{$savedBounds=$script:guiSettings.WindowBounds;$candidate=[System.Drawing.Rectangle]::new([int]$savedBounds.X,[int]$savedBounds.Y,[int]$savedBounds.Width,[int]$savedBounds.Height);$visible=$false;foreach($screen in [System.Windows.Forms.Screen]::AllScreens){if($screen.WorkingArea.IntersectsWith($candidate)){$visible=$true;break}};if($visible){$form.StartPosition='Manual';$form.Bounds=$candidate}}catch{Write-GuiLog 'Ignoring invalid saved window bounds'}};if($script:guiSettings.WindowMaximized){$form.WindowState='Maximized'}
     $form.MaximizeBox=$true
     $form.AutoScaleMode=[System.Windows.Forms.AutoScaleMode]::Dpi
     $form.Padding=[System.Windows.Forms.Padding]::new(12)
@@ -574,14 +635,16 @@ try{
     $tabs.Dock=[System.Windows.Forms.DockStyle]::Fill
     $strategyTab=[System.Windows.Forms.TabPage]::new('Стратегии')
     $analysisTab=[System.Windows.Forms.TabPage]::new('Анализ')
+    $historyTab=[System.Windows.Forms.TabPage]::new('История')
     $settingsTab=[System.Windows.Forms.TabPage]::new('Настройки')
     $aboutTab=[System.Windows.Forms.TabPage]::new('О программе')
-    foreach($page in @($strategyTab,$analysisTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
-    $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,610)
+    foreach($page in @($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
+    $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,660)
     $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,590)
+    $historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,520)
     $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,610)
     $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,390)
-    $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$settingsTab,$aboutTab))
+    $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab))
     $form.Controls.Add($tabs)
 
     $header=New-Object System.Windows.Forms.Label
@@ -633,61 +696,72 @@ try{
     $profileListBox.Location=[System.Drawing.Point]::new(30,208);$profileListBox.Size=[System.Drawing.Size]::new(490,82);$profileListBox.Anchor='Top,Left,Right'
     $profileListBox.DisplayMember='Label';$profileListBox.IntegralHeight=$false;$profileListBox.ScrollAlwaysVisible=$true
     $strategyTab.Controls.Add($profileListBox)
-    $details=New-Object System.Windows.Forms.Label
-    $details.Location=[System.Drawing.Point]::new(32,294);$details.Size=[System.Drawing.Size]::new(675,28);$details.ForeColor=[System.Drawing.Color]::DimGray
+    $favoritesCheck=New-Object System.Windows.Forms.CheckBox;$favoritesCheck.Text='Только избранное';$favoritesCheck.Location=[System.Drawing.Point]::new(530,212);$favoritesCheck.Size=[System.Drawing.Size]::new(180,28);$favoritesCheck.Add_CheckedChanged({$script:favoritesOnly=[bool]$favoritesCheck.Checked;Update-GuiProfileFilter});$strategyTab.Controls.Add($favoritesCheck)
+    $profileMenu=New-Object System.Windows.Forms.ContextMenuStrip
+    $favoriteMenuItem=$profileMenu.Items.Add('Добавить / убрать из избранного')
+    $favoriteMenuItem.Add_Click({try{$p=Get-GuiSelectedProfile;$number=[int]$p.Number;if($number -in $script:guiSettings.Favorites){$script:guiSettings.Favorites=@($script:guiSettings.Favorites|Where-Object {$_ -ne $number})}else{$script:guiSettings.Favorites=@($script:guiSettings.Favorites)+$number};Save-GuiUiPreferences;Update-GuiProfileFilter}catch{Show-GuiError $_.Exception.Message}})
+    $recentMenuItem=$profileMenu.Items.Add('Выбрать недавно использованную')
+    $recentMenuItem.Add_Click({$number=@($script:guiSettings.RecentProfiles|Select-Object -First 1);if($number.Count){$profileSearchBox.Text=[string]$number[0];Update-GuiProfileFilter;if($profileListBox.Items.Count){$profileListBox.SelectedIndex=0}}})
+    $profileListBox.ContextMenuStrip=$profileMenu
+    $profileListBox.Add_MouseDown({param($sender,$eventArgs) if($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Right){$index=$profileListBox.IndexFromPoint($eventArgs.Location);if($index -ge 0){$profileListBox.SelectedIndex=$index}}})
+    $details=New-Object System.Windows.Forms.TextBox
+    $details.Location=[System.Drawing.Point]::new(32,294);$details.Size=[System.Drawing.Size]::new(675,46);$details.ForeColor=[System.Drawing.Color]::DimGray;$details.BackColor=[System.Drawing.Color]::FromArgb(248,250,252);$details.Multiline=$true;$details.ReadOnly=$true;$details.ScrollBars='Vertical'
     $details.Anchor='Top,Left,Right';$strategyTab.Controls.Add($details)
-    $profileListBox.Add_SelectedIndexChanged({if($null -ne $profileListBox.SelectedItem){$p=$profileListBox.SelectedItem;$details.Text=if($p.Protocol -eq 'quic'){('UDP/QUIC Initial; стратегия: {0}' -f $p.Chain)}else{('Семейство {0}    Обработка: {1}    Цепочка: {2}' -f $p.Family,$p.Processing,$p.Chain)}}})
+    $profileListBox.Add_SelectedIndexChanged({if($null -ne $profileListBox.SelectedItem){$p=$profileListBox.SelectedItem;$details.Text=if($p.Protocol -eq 'quic'){('Стратегия №{0}: {1}{2}Цепочка: {3}{2}Параметры: {4}' -f $p.Number,$p.Name,[Environment]::NewLine,$p.Chain,(@($p.Args)-join ' '))}else{('Стратегия №{0}: {1}{2}Семейство {3} · обработка: {4}{2}Цепочка: {5}{2}Параметры: {6}' -f $p.Number,$p.Name,[Environment]::NewLine,$p.Family,$p.Processing,$p.Chain,(@($p.Args)-join ' '))};Update-GuiDashboard}})
     $profileSearchBox.Add_TextChanged({Update-GuiProfileFilter})
 
     $adapterLabel=New-Object System.Windows.Forms.Label
-    $adapterLabel.Text='Активный физический адаптер с адресом выбранного IP-семейства';$adapterLabel.Location=[System.Drawing.Point]::new(30,330);$adapterLabel.Size=[System.Drawing.Size]::new(500,24)
+    $adapterLabel.Text='Активный физический адаптер с адресом выбранного IP-семейства';$adapterLabel.Location=[System.Drawing.Point]::new(30,350);$adapterLabel.Size=[System.Drawing.Size]::new(500,24)
     $strategyTab.Controls.Add($adapterLabel)
     $adapterBox=New-Object System.Windows.Forms.ComboBox
-    $adapterBox.DropDownStyle='DropDownList';$adapterBox.Location=[System.Drawing.Point]::new(30,358);$adapterBox.Size=[System.Drawing.Size]::new(500,32);$adapterBox.Anchor='Top,Left,Right'
+    $adapterBox.DropDownStyle='DropDownList';$adapterBox.Location=[System.Drawing.Point]::new(30,378);$adapterBox.Size=[System.Drawing.Size]::new(500,32);$adapterBox.Anchor='Top,Left,Right'
     $strategyTab.Controls.Add($adapterBox)
     $refreshButton=New-Object System.Windows.Forms.Button
-    $refreshButton.Text='Обновить';$refreshButton.Location=[System.Drawing.Point]::new(544,357);$refreshButton.Size=[System.Drawing.Size]::new(166,34);$refreshButton.Anchor='Top,Right'
+    $refreshButton.Text='Обновить';$refreshButton.Location=[System.Drawing.Point]::new(544,377);$refreshButton.Size=[System.Drawing.Size]::new(166,34);$refreshButton.Anchor='Top,Right'
     $strategyTab.Controls.Add($refreshButton)
     $refreshButton.Add_Click({try{Refresh-GuiAdapters}catch{Show-GuiError $_.Exception.Message}})
     $addressFamilyBox.Add_SelectedIndexChanged({try{Refresh-GuiAdapters}catch{Show-GuiError $_.Exception.Message}})
 
     $portsLabel=New-Object System.Windows.Forms.Label
-    $portsLabel.Text='Порты назначения';$portsLabel.Location=[System.Drawing.Point]::new(30,402);$portsLabel.Size=[System.Drawing.Size]::new(260,24)
+    $portsLabel.Text='Порты назначения';$portsLabel.Location=[System.Drawing.Point]::new(30,422);$portsLabel.Size=[System.Drawing.Size]::new(260,24)
     $strategyTab.Controls.Add($portsLabel)
     $portsBox=New-Object System.Windows.Forms.TextBox
-    $portsBox.Text='443';$portsBox.Location=[System.Drawing.Point]::new(30,430);$portsBox.Size=[System.Drawing.Size]::new(300,30)
+    $portsBox.Text='443';$portsBox.Location=[System.Drawing.Point]::new(30,450);$portsBox.Size=[System.Drawing.Size]::new(300,30)
     $strategyTab.Controls.Add($portsBox)
     $portsHint=New-Object System.Windows.Forms.Label
-    $portsHint.Text='';$portsHint.Location=[System.Drawing.Point]::new(344,433);$portsHint.Size=[System.Drawing.Size]::new(365,34);$portsHint.Anchor='Top,Left,Right';$portsHint.ForeColor=[System.Drawing.Color]::DimGray
+    $portsHint.Text='';$portsHint.Location=[System.Drawing.Point]::new(344,453);$portsHint.Size=[System.Drawing.Size]::new(365,34);$portsHint.Anchor='Top,Left,Right';$portsHint.ForeColor=[System.Drawing.Color]::DimGray
     $strategyTab.Controls.Add($portsHint)
     Set-GuiProfileItems $script:guiSettings.Protocol
     $portsBox.Text=$script:guiSettings.Ports
     $protocolBox.Add_SelectedIndexChanged({if($null -ne $protocolBox.SelectedItem){Set-GuiProfileItems ([string]$protocolBox.SelectedItem.Value)}})
 
     $recipeButton=New-Object System.Windows.Forms.Button
-    $recipeButton.Text='Показать рецепт';$recipeButton.Location=[System.Drawing.Point]::new(30,474);$recipeButton.Size=[System.Drawing.Size]::new(150,34)
+    $recipeButton.Text='Показать рецепт';$recipeButton.Location=[System.Drawing.Point]::new(30,494);$recipeButton.Size=[System.Drawing.Size]::new(150,34)
     $recipeButton.Add_Click({Show-GuiProfileDetails 'recipe'});$strategyTab.Controls.Add($recipeButton)
+    $favoriteButton=New-Object System.Windows.Forms.Button;$favoriteButton.Text='★ Избранное';$favoriteButton.Location=[System.Drawing.Point]::new(565,494);$favoriteButton.Size=[System.Drawing.Size]::new(145,34);$favoriteButton.Add_Click({try{$p=Get-GuiSelectedProfile;$number=[int]$p.Number;if($number -in $script:guiSettings.Favorites){$script:guiSettings.Favorites=@($script:guiSettings.Favorites|Where-Object {$_ -ne $number})}else{$script:guiSettings.Favorites=@($script:guiSettings.Favorites)+$number};Save-GuiUiPreferences;Update-GuiProfileFilter}catch{Show-GuiError $_.Exception.Message}});$strategyTab.Controls.Add($favoriteButton)
     $argumentsButton=New-Object System.Windows.Forms.Button
-    $argumentsButton.Text='Аргументы движка';$argumentsButton.Location=[System.Drawing.Point]::new(190,474);$argumentsButton.Size=[System.Drawing.Size]::new(160,34)
+    $argumentsButton.Text='Аргументы движка';$argumentsButton.Location=[System.Drawing.Point]::new(190,494);$argumentsButton.Size=[System.Drawing.Size]::new(160,34)
     $argumentsButton.Add_Click({Show-GuiProfileDetails 'arguments'});$strategyTab.Controls.Add($argumentsButton)
     $checkButton=New-Object System.Windows.Forms.Button
-    $checkButton.Text='Проверить, не запускать';$checkButton.Location=[System.Drawing.Point]::new(360,474);$checkButton.Size=[System.Drawing.Size]::new(200,34)
+    $checkButton.Text='Проверить, не запускать';$checkButton.Location=[System.Drawing.Point]::new(360,494);$checkButton.Size=[System.Drawing.Size]::new(200,34)
     $checkButton.Add_Click({Start-GuiStrategy -CheckOnly});$strategyTab.Controls.Add($checkButton)
     $startButton=New-Object System.Windows.Forms.Button
-    $startButton.Text='Запустить стратегию';$startButton.Location=[System.Drawing.Point]::new(30,518);$startButton.Size=[System.Drawing.Size]::new(210,40);$startButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$startButton.ForeColor=[System.Drawing.Color]::White;$startButton.FlatStyle='Flat'
+    $startButton.Text='Запустить стратегию';$startButton.Location=[System.Drawing.Point]::new(30,538);$startButton.Size=[System.Drawing.Size]::new(210,40);$startButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$startButton.ForeColor=[System.Drawing.Color]::White;$startButton.FlatStyle='Flat'
     $startButton.Add_Click({Start-GuiStrategy});$strategyTab.Controls.Add($startButton)
     $stopButton=New-Object System.Windows.Forms.Button
-    $stopButton.Text='Остановить';$stopButton.Location=[System.Drawing.Point]::new(251,518);$stopButton.Size=[System.Drawing.Size]::new(145,40);$stopButton.Enabled=$false
+    $stopButton.Text='Остановить';$stopButton.Location=[System.Drawing.Point]::new(251,538);$stopButton.Size=[System.Drawing.Size]::new(145,40);$stopButton.Enabled=$false
     $stopButton.Add_Click({Request-GuiStop});$strategyTab.Controls.Add($stopButton)
     $logsButton=New-Object System.Windows.Forms.Button
-    $logsButton.Text='Открыть логи';$logsButton.Location=[System.Drawing.Point]::new(407,518);$logsButton.Size=[System.Drawing.Size]::new(145,40)
+    $logsButton.Text='Открыть логи';$logsButton.Location=[System.Drawing.Point]::new(407,538);$logsButton.Size=[System.Drawing.Size]::new(145,40)
     $logsButton.Add_Click({try{$directory=Get-AntiDPILogDirectory $bundle;Start-Process explorer.exe -ArgumentList (ConvertTo-WindowsArgument $directory)}catch{Show-GuiError $_.Exception.Message}});$strategyTab.Controls.Add($logsButton)
     $restartButton=New-Object System.Windows.Forms.Button
-    $restartButton.Text='Перезапустить';$restartButton.Location=[System.Drawing.Point]::new(560,518);$restartButton.Size=[System.Drawing.Size]::new(150,40);$restartButton.Enabled=$false
+    $restartButton.Text='Перезапустить';$restartButton.Location=[System.Drawing.Point]::new(560,538);$restartButton.Size=[System.Drawing.Size]::new(150,40);$restartButton.Enabled=$false
     $restartButton.Add_Click({Request-GuiRestart});$strategyTab.Controls.Add($restartButton)
     $statusLabel=New-Object System.Windows.Forms.Label
-    $statusLabel.Text='Готово к запуску';$statusLabel.Location=[System.Drawing.Point]::new(30,566);$statusLabel.Size=[System.Drawing.Size]::new(680,25);$statusLabel.Anchor='Left,Right,Bottom';$statusLabel.ForeColor=[System.Drawing.Color]::DarkGreen
+    $statusLabel.Text='Готово к запуску';$statusLabel.Location=[System.Drawing.Point]::new(30,586);$statusLabel.Size=[System.Drawing.Size]::new(680,25);$statusLabel.Anchor='Left,Right,Bottom';$statusLabel.ForeColor=[System.Drawing.Color]::DarkGreen
     $strategyTab.Controls.Add($statusLabel)
+    $script:dashboardLabel=New-Object System.Windows.Forms.Label;$script:dashboardLabel.Text='Готово к запуску';$script:dashboardLabel.Location=[System.Drawing.Point]::new(30,630);$script:dashboardLabel.Size=[System.Drawing.Size]::new(680,32);$script:dashboardLabel.Anchor='Left,Right,Bottom';$script:dashboardLabel.BorderStyle='FixedSingle';$script:dashboardLabel.BackColor=[System.Drawing.Color]::FromArgb(242,246,250);$strategyTab.Controls.Add($script:dashboardLabel)
+    $addressFamilyBox.Add_SelectedIndexChanged({Update-GuiDashboard});$protocolBox.Add_SelectedIndexChanged({Update-GuiDashboard});$adapterBox.Add_SelectedIndexChanged({Update-GuiDashboard});$portsBox.Add_TextChanged({Update-GuiDashboard})
 
     $analysisInfo=New-Object System.Windows.Forms.Label
     $analysisInfo.Text='Контроль без тестовой стратегии сравнивается с каждой стратегией: если оба проходят, статус будет BASELINE_PASS, а не PASS. Число попыток, таймаут и порог ответа настраиваются во вкладке «Настройки». Тест только YouTube IPv4/TCP/TLS; не доказывает VPN/Tor или обход DPI.'
@@ -737,6 +811,14 @@ try{
     $analysisStatusLabel.Location=[System.Drawing.Point]::new(22,535);$analysisStatusLabel.Size=[System.Drawing.Size]::new(690,40);$analysisStatusLabel.Anchor='Bottom,Left,Right'
     $analysisTab.Controls.Add($analysisStatusLabel)
 
+    $historySearchLabel=New-Object System.Windows.Forms.Label;$historySearchLabel.Text='Поиск истории';$historySearchLabel.Location=[System.Drawing.Point]::new(22,24);$historySearchLabel.Size=[System.Drawing.Size]::new(105,24);$historyTab.Controls.Add($historySearchLabel)
+    $historySearchBox=New-Object System.Windows.Forms.TextBox;$script:historySearchBox=$historySearchBox;$historySearchBox.Location=[System.Drawing.Point]::new(130,20);$historySearchBox.Size=[System.Drawing.Size]::new(352,30);$historySearchBox.Anchor='Top,Left,Right';$historySearchBox.Add_TextChanged({Update-GuiHistory});$historyTab.Controls.Add($historySearchBox)
+    $historyExportButton=New-Object System.Windows.Forms.Button;$historyExportButton.Text='Экспорт CSV';$historyExportButton.Location=[System.Drawing.Point]::new(500,18);$historyExportButton.Size=[System.Drawing.Size]::new(130,34);$historyExportButton.Anchor='Top,Right';$historyExportButton.Add_Click({Export-GuiHistory});$historyTab.Controls.Add($historyExportButton)
+    $historyRefreshButton=New-Object System.Windows.Forms.Button;$historyRefreshButton.Text='Обновить';$historyRefreshButton.Location=[System.Drawing.Point]::new(642,18);$historyRefreshButton.Size=[System.Drawing.Size]::new(80,34);$historyRefreshButton.Anchor='Top,Right';$historyRefreshButton.Add_Click({Update-GuiHistory});$historyTab.Controls.Add($historyRefreshButton)
+    $script:historyGrid=New-Object System.Windows.Forms.DataGridView;$script:historyGrid.Location=[System.Drawing.Point]::new(22,64);$script:historyGrid.Size=[System.Drawing.Size]::new(700,420);$script:historyGrid.Anchor='Top,Bottom,Left,Right';$script:historyGrid.ReadOnly=$true;$script:historyGrid.AllowUserToAddRows=$false;$script:historyGrid.AllowUserToDeleteRows=$false;$script:historyGrid.RowHeadersVisible=$false;$script:historyGrid.AutoSizeColumnsMode='Fill';$script:historyGrid.SelectionMode='FullRowSelect'
+    foreach($col in @(@{Name='Time';Header='Время';Fill=150},@{Name='Kind';Header='Тип';Fill=90},@{Name='Status';Header='Результат';Fill=90},@{Name='Summary';Header='Событие';Fill=300})){$c=New-Object System.Windows.Forms.DataGridViewTextBoxColumn;$c.Name=$col.Name;$c.HeaderText=$col.Header;$c.FillWeight=[single]$col.Fill;$null=$script:historyGrid.Columns.Add($c)};$historyTab.Controls.Add($script:historyGrid)
+    $historyStatusLabel=New-Object System.Windows.Forms.Label;$historyStatusLabel.Text='События сохраняются локально (до 1000 записей).';$historyStatusLabel.Location=[System.Drawing.Point]::new(22,492);$historyStatusLabel.Size=[System.Drawing.Size]::new(690,28);$historyStatusLabel.Anchor='Bottom,Left,Right';$historyTab.Controls.Add($historyStatusLabel)
+
     $aboutTitle=New-Object System.Windows.Forms.Label
     $aboutTitle.Text='AntiDPI';$aboutTitle.Font=[System.Drawing.Font]::new('Segoe UI Semibold',22,[System.Drawing.FontStyle]::Bold);$aboutTitle.Location=[System.Drawing.Point]::new(28,24);$aboutTitle.Size=[System.Drawing.Size]::new(650,40)
     $aboutTab.Controls.Add($aboutTitle)
@@ -744,7 +826,7 @@ try{
     $aboutVersionLabel.Text=('Установленная версия: '+$script:programVersion);$aboutVersionLabel.Font=[System.Drawing.Font]::new('Segoe UI',12,[System.Drawing.FontStyle]::Bold);$aboutVersionLabel.Location=[System.Drawing.Point]::new(30,82);$aboutVersionLabel.Size=[System.Drawing.Size]::new(650,30)
     $aboutTab.Controls.Add($aboutVersionLabel)
     $aboutText=New-Object System.Windows.Forms.Label
-    $aboutText.Text='Графический интерфейс и CLI для выбора и проверки стратегий Zapret2. Поддерживаются Windows 10/11 x64. Проверка YouTube оценивает только IPv4/TCP/TLS и не является проверкой VPN/Tor-туннеля или гарантией обхода DPI.'
+    $aboutText.Text='Графический интерфейс и CLI для выбора и проверки стратегий Zapret2. Поддерживаются Windows 10/11 x64. Ctrl+F — поиск, Ctrl+Enter — запуск, Ctrl+L — журналы, F2 — безопасный перезапуск, Ctrl+C — безопасная остановка. Проверка YouTube оценивает только IPv4/TCP/TLS и не является проверкой VPN/Tor-туннеля или гарантией обхода DPI.'
     $aboutText.Location=[System.Drawing.Point]::new(30,128);$aboutText.Size=[System.Drawing.Size]::new(660,105);$aboutText.Anchor='Top,Left,Right';$aboutText.AutoSize=$false
     $aboutTab.Controls.Add($aboutText)
     $aboutLicense=New-Object System.Windows.Forms.Label
@@ -752,7 +834,7 @@ try{
     $aboutLicense.Location=[System.Drawing.Point]::new(30,250);$aboutLicense.Size=[System.Drawing.Size]::new(660,60);$aboutLicense.Anchor='Top,Left,Right'
     $aboutTab.Controls.Add($aboutLicense)
     $aboutReleaseButton=New-Object System.Windows.Forms.Button
-    $aboutReleaseButton.Text='Открыть страницу релизов';$aboutReleaseButton.Location=[System.Drawing.Point]::new(30,330);$aboutReleaseButton.Size=[System.Drawing.Size]::new(230,40)
+    $aboutReleaseButton.Text='Открыть страницу релизов';$aboutReleaseButton.Location=[System.Drawing.Point]::new(30,350);$aboutReleaseButton.Size=[System.Drawing.Size]::new(230,40)
     $aboutReleaseButton.Add_Click({try{Start-Process 'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases'}catch{Show-GuiError $_.Exception.Message}})
     $aboutTab.Controls.Add($aboutReleaseButton)
 
@@ -859,6 +941,8 @@ try{
 
     Refresh-GuiAdapters
     Load-GuiAnalysisHistory
+    Update-GuiHistory
+    if(-not $script:guiSettings.FirstRunComplete){$welcome='Добро пожаловать в AntiDPI.'+[Environment]::NewLine+[Environment]::NewLine+'1. Выберите IP-семейство, транспорт и физический сетевой адаптер.'+[Environment]::NewLine+'2. Найдите стратегию; её описание показано под списком. Сначала нажмите «Проверить, не запускать».'+[Environment]::NewLine+'3. Запуск меняет обработку трафика; останавливайте кнопкой «Остановить», чтобы корректно восстановить состояние.'+[Environment]::NewLine+[Environment]::NewLine+'Анализ проверяет только доступность YouTube IPv4/TCP/TLS и не доказывает работу VPN/Tor или обход DPI.';[System.Windows.Forms.MessageBox]::Show($welcome,'Первый запуск AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null;$script:guiSettings.FirstRunComplete=$true}
     $timer=New-Object System.Windows.Forms.Timer
     $timer.Interval=650
     $timer.Add_Tick({
@@ -872,10 +956,10 @@ try{
                 $checkLine=Get-GuiFailureLine $script:workerStdoutPath ''
                 Set-GuiStatus ('Проверка завершена успешно: '+$checkLine+'; перехват не запускался.') ([System.Drawing.Color]::DarkGreen)
                 Show-GuiTextDialog ('Результат проверки стратегии '+[int]$script:runningProfile) $output
-            }elseif($code -eq 0){Set-GuiStatus 'Остановлено. Можно выбрать другую стратегию и запустить снова.' ([System.Drawing.Color]::DarkGreen)}
+            }elseif($code -eq 0){Set-GuiStatus 'Остановлено. Можно выбрать другую стратегию и запустить снова.' ([System.Drawing.Color]::DarkGreen);Add-GuiHistory 'Стратегия' 'ОСТАНОВЛЕНА' ('№{0}' -f [int]$script:runningProfile)}
             else{
                 $failure=Get-GuiFailureLine $script:workerStdoutPath $script:workerStderrPath
-                Set-GuiStatus ('Ошибка процесса: '+$failure) ([System.Drawing.Color]::Firebrick)
+                Set-GuiStatus ('Ошибка процесса: '+$failure) ([System.Drawing.Color]::Firebrick);Add-GuiHistory 'Стратегия' 'ОШИБКА' ('№{0}: {1}' -f [int]$script:runningProfile,$failure)
                 if($script:guiSettings.ShowErrorDetails){Show-GuiTextDialog ('Ошибка стратегии '+[int]$script:runningProfile) (Get-GuiProcessOutput $script:workerStdoutPath $script:workerStderrPath)}
             }
             if($script:restartAfterStop){$script:restartAfterStop=$false;Start-GuiStrategy}
@@ -905,8 +989,9 @@ try{
             if(Test-Path -LiteralPath $script:analysisResultPath -PathType Leaf){
                 try{
                     $shown=Set-GuiAnalysisResults $script:analysisResultPath
-                    if($code -eq 0){$analysisStatusLabel.Text+=' — анализ завершён; результаты выше'}
+                    if($code -eq 0){$analysisStatusLabel.Text+=' — анализ завершён; результаты выше';Add-GuiHistory 'Анализ YouTube' 'ЗАВЕРШЁН' ('Стратегии {0}; результаты: {1}' -f $script:guiSettings.AnalysisRange,$shown)}
                     else{
+                        Add-GuiHistory 'Анализ YouTube' 'ОШИБКА' ('Стратегии {0}; код {1}' -f $script:guiSettings.AnalysisRange,$code)
                         $failure=Get-GuiFailureLine $script:analysisStdoutPath $script:analysisStderrPath
                         $analysisStatusLabel.Text=('Анализ остановлен с ошибкой после {0} результатов: {1}' -f $shown,$failure)
                         if($script:guiSettings.ShowErrorDetails){Show-GuiTextDialog 'Диагностика анализа YouTube' (Get-GuiProcessOutput $script:analysisStdoutPath $script:analysisStderrPath)}
@@ -935,7 +1020,7 @@ try{
             $_.Handled=$true
             if($null -ne $script:worker -and -not $script:worker.HasExited){$script:focusAfterStop='adapter';Request-GuiStop}
             else{$tabs.SelectedTab=$strategyTab;$adapterBox.Focus()}
-        }elseif($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C -and $null -ne $script:worker -and -not $script:worker.HasExited){
+        }elseif($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F){$_.Handled=$true;$tabs.SelectedTab=$strategyTab;$profileSearchBox.Focus();$profileSearchBox.SelectAll()}elseif($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::Enter){$_.Handled=$true;Start-GuiStrategy} elseif($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::L){$_.Handled=$true;try{$directory=Get-AntiDPILogDirectory $bundle;Start-Process explorer.exe -ArgumentList (ConvertTo-WindowsArgument $directory)}catch{Show-GuiError $_.Exception.Message}} elseif($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C -and $null -ne $script:worker -and -not $script:worker.HasExited){
             $_.Handled=$true;Request-GuiStop
         }
     })
@@ -952,6 +1037,7 @@ try{
             }
         }
     })
+    $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
     $form.Add_FormClosed({$timer.Stop();$timer.Dispose()})
     Write-GuiLog 'Showing main form'
     [void]$form.ShowDialog()
