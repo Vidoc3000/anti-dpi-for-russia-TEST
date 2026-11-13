@@ -199,10 +199,9 @@ Assert-True (-not $guiText.Contains('Invoke-WebRequest')) 'GUI does not present 
 
 # Ensure the Windows CLI carries the same expanded catalogue as Linux.
 $windowsCataloguePath = Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
-$windowsCatalogueText = [IO.File]::ReadAllText($windowsCataloguePath)
-$catalogueMatch = [regex]::Match($windowsCatalogueText, '(?s)\$ProfileRows = @''\r?\n(.*?)\r?\n''@ \| ConvertFrom-Json')
-Assert-True $catalogueMatch.Success 'embedded Windows profile catalogue exists'
-$windowsRows = @($catalogueMatch.Groups[1].Value | ConvertFrom-Json)
+$windowsProfileJson = (& $windowsCataloguePath -ListProfilesJson | Out-String)
+$windowsRows = @($windowsProfileJson | ConvertFrom-Json)
+if ($windowsRows.Count -eq 1 -and $windowsRows[0] -is [array]) { $windowsRows = @($windowsRows[0]) }
 if ($windowsRows.Count -eq 1 -and $windowsRows[0] -is [array]) {
     $windowsRows = @($windowsRows[0])
 }
