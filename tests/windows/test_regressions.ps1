@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -103,7 +103,7 @@ Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Re
 Assert-True ($guiText.Contains('function ConvertTo-GuiAnalysisCsv') -and $guiText.Contains('ConvertTo-Csv -NoTypeInformation -Delimiter '';''') -and $guiText.Contains('UTF8Encoding]::new($true)')) 'GUI exports analysis results as Excel-friendly UTF-8 CSV'
 Assert-True ($guiText.Contains('Экспорт CSV') -and $guiText.Contains('SaveFileDialog') -and $guiText.Contains('Export-GuiAnalysisResults')) 'GUI exposes an explicit save dialog for analysis CSV exports'
 Assert-True ($guiText.Contains('$profileListBox.ScrollAlwaysVisible=$true') -and $guiText.Contains('AutoScrollMinSize=')) 'GUI keeps the strategy ListBox scrollable on compact displays'
-Assert-True ($guiText.Contains('$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)') -and $guiText.Contains('$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,640)') -and $guiText.Contains('$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)') -and $guiText.Contains('$form.MaximizeBox=$true')) 'GUI uses content-sized scroll regions and a larger resizable layout instead of forcing every tab to scroll'
+Assert-True ($guiText.Contains('$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)') -and $guiText.Contains('$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,700)') -and $guiText.Contains('$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)') -and $guiText.Contains('$form.MaximizeBox=$true')) 'GUI uses content-sized scroll regions and a larger resizable layout instead of forcing every tab to scroll'
 Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
 Assert-True ($guiText.Contains('$parallelism=[int]$analysisParallelismBox.Value') -and $guiText.Contains("'-Parallelism',[string]`$parallelism")) 'GUI forwards the user-selected analysis parallelism to the CLI'
 Assert-True ($guiText.Contains('AnalysisParallelism=3') -and $guiText.Contains('SkipTimestampSetup=$false') -and $guiText.Contains('$arguments+= ''-SkipTimestampSetup''')) 'GUI saves and applies the analysis concurrency and timestamp opt-out settings'
