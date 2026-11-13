@@ -470,8 +470,8 @@ try {
     $csvData.Results[0].AttemptDetails=''
     $csvData.Results[0].Details='error; "two"'
     Write-GuiAnalysisCsv $csvData $csvPath
-    $detailsRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
-    Assert-Equal 'error; "two"' $detailsRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
+    $detailsText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
+    Assert-True $detailsText.Contains('"error; ""two"""') 'CSV escapes semicolons and quotes in diagnostic details'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
