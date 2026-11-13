@@ -234,10 +234,13 @@ if ($env:AntiDPI_WINWS2_DIR) {
             if ($profile.StockTlsPattern) { $luaChecks += "assert(type(fake_default_tls)=='string','missing TLS pattern')" }
             $engineArguments += '--intercept=0'
             $engineArguments += '--lua-init=' + ($luaChecks -join ';')
-            $output = & $enginePath @engineArguments 2>&1
+            $engineInvocationError = $null
+            $output = @()
+            try { $output = @(& $enginePath @engineArguments 2>&1) }
+            catch { $engineInvocationError = $_.Exception.Message; $output = @($output) + @($_ | Out-String) }
             $exitCode = $LASTEXITCODE
-            if ($exitCode -ne 0) {
-                throw ("Windows engine rejected strategy {0} (exit {1}): {2}" -f $profile.Number, $exitCode, ($output -join "`n"))
+            if ($engineInvocationError -or $exitCode -ne 0) {
+                throw ("Windows engine rejected strategy {0} (exit {1}; invocation error: {2}): {3}" -f $profile.Number, $exitCode, $engineInvocationError, ($output -join "`n"))
             }
         }
         foreach ($profile in $quicProfiles) {
