@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии пакетов: **Linux 1.14**, **Windows 1.13**. Версии пакетов платформ ведутся независимо; общий релиз `v1.14` исправляет ошибку установщика Windows GUI v1.13 и включает улучшения интерфейса v1.12; Linux-пакет v1.14 содержит неизменённый код приложения и текущий каталог; версия CLI приложения остаётся 1.9.
+Текущие версии пакетов для следующего комбинированного выпуска: **Linux 1.15**, **Windows 1.14**. Версии платформ ведутся независимо. Windows v1.14 добавляет повторяемые HTTPS/HTTP/3 и отдельные VPN/Tor проверки, сравнительный замер стратегий с контролем до/после, preflight, обработку смены сети и восстановление после перезапуска GUI. Linux v1.15 переупаковывает текущий CLI и каталог стратегий без изменений CLI-кода.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.13_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.13_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.13.txt`
+- `dist/AntiDPI_CLI_v1.14_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.14_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.14.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -98,8 +98,8 @@ bash packaging/linux/build.sh
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.14_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.14.txt`
+- `dist/AntiDPI_CLI_v1.15_Linux_x64.tar.gz`
+- `dist/SHA256SUMS_Linux_v1.15.txt`
 
 Для пересборки:
 
@@ -139,25 +139,24 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.13_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.13_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.13.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.14_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.14_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.14.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.14.txt)
-tar -tzf dist/AntiDPI_CLI_v1.14_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.15.txt)
+tar -tzf dist/AntiDPI_CLI_v1.15_Linux_x64.tar.gz
 ```
 
 
 ## Сборка через GitHub Actions и публикация
 
-1. Откройте **Actions → Build release files → Run workflow**.
-2. Выберите ветку или тег с нужными исходниками.
-3. В поле `platform` выберите `linux`, `windows` или `all`. Укажите версии выбранных платформ в полях `linux_version` и `windows_version`; они должны соответствовать исходникам.
-4. Дождитесь успешного завершения выбранных заданий. Откройте раздел **Artifacts** этого запуска и скачайте результаты.
-5. Распакуйте ZIP. Внутри находятся готовые файлы программы и соответствующие файлы `SHA256SUMS`. Для публикации используйте их содержимое.
+1. Сначала внесите согласованные версии пакетов в `windows/AntiDPI_Manager.ps1`, `packaging/windows/build.ps1`, `linux/data/release.json` и `packaging/linux/build.sh`; обновите версионные документы и `README.md`.
+2. Откройте PR в `main` и дождитесь проверок Windows и Linux.
+3. После слияния запустите **Actions → Build AntiDPI release files → Run workflow** на `main`, выберите `platform=all`, версии, совпадающие с исходниками, и `publish_release=true`.
+4. Workflow собирает Windows ZIP/EXE и Linux TAR.GZ, проверяет SHA-256 и публикует релиз с tag `v<linux_version>` только после успешной сборки обеих платформ.
 
-Workflow сохраняет готовые файлы и контрольные суммы в разделе Artifacts. Публикация в Releases выполняется вручную.
+Для проверки без публикации запустите workflow с `publish_release=false`. Артефакты сохраняются в Actions; публикация разрешена только при запуске на `main`.

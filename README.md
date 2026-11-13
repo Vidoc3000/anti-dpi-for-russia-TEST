@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.14](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.14)**: Windows GUI + CLI версии **1.13**, Linux CLI версии **1.14**.
+В **[релизе v1.15](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.15)**: Windows GUI + CLI версии **1.14**, Linux CLI версии **1.15**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.14/AntiDPI_CLI_v1.13_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.14/AntiDPI_CLI_v1.13_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.14/AntiDPI_CLI_v1.14_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.14/SHA256SUMS_Windows_v1.13.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.14/SHA256SUMS_Linux_v1.14.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.14_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.14_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.15_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/SHA256SUMS_Windows_v1.14.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/SHA256SUMS_Linux_v1.15.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -32,11 +32,14 @@
 ### Вкладки
 
 - **Стратегии** — выбрать IPv4/IPv6, TCP/TLS или UDP/QUIC, стратегию, физический сетевой адаптер и порты; затем запустить или штатно остановить обработку. В списке адаптеров показываются имена устройств.
-- **Анализ** — сравнивать выбранные стратегии с контрольным запросом без тестовой стратегии, настраивать параллельность, число попыток, HTTPS-таймаут и порог полученных данных, экспортировать результаты в CSV. BASELINE_PASS означает, что YouTube прошёл и в контрольном запросе, поэтому эффект стратегии не подтверждён. Проверка ограничена YouTube по IPv4/TCP/TLS; она не доказывает работу VPN/Tor-туннеля или обход DPI.
+- **Анализ** — сравнивать стратегии с контрольными YouTube-запросами до и после серии, видеть повторные результаты и среднее время успешных ответов, экспортировать CSV. Рекомендация не включает профиль автоматически.
+- **Базовая матрица** — повторно проверять HTTPS и, если системный curl поддерживает, HTTP/3 для веб- и видеосервисов. HTTP-ответ с кодом вне 2xx/3xx показывается отдельно от сбоя соединения; матрица работает без стратегии и может быть отменена.
+- **VPN/Tor** — отдельный маршрутный HTTPS-тест через выбранный интерфейс и Tor-проверка через локальный SOCKS5 с подтверждением Tor Project API. Они не смешиваются с прямыми пробами.
+- **Проверка готовности** перед запуском, предложение профиля после стабильной смены сети, безопасное восстановление оставшегося движка после перезапуска GUI и просмотр списка файлов перед обновлением.
 - **Настройки** — сохранить IP-семейство, режим TCP/TLS или UDP/QUIC, порты, диапазон и параллельность YouTube-анализа, предпочтение адаптера и режим без изменения TCP timestamps.
 - Во вкладке «О программе» отображается версия и ссылка на релизы. В списке стратегий доступны фильтр по семействам, просмотр рецепта и аргументов движка, проверка параметров без запуска перехвата, список интерфейсов и управляемый перезапуск.
 
-Анализ YouTube **не проверяет VPN/Tor-туннель, конфигурацию, авторизацию или сторонний клиент**. Для оценки VPN/Tor выберите стратегию, включите её и проверьте соединение средствами своего клиента. Успешный YouTube-тест не означает, что эта стратегия лучше для VPN, и обратное тоже верно.
+YouTube-анализ проверяет только прямую доступность YouTube по IPv4/TCP/TLS. VPN-тест привязывает запрос к выбранному интерфейсу, но не подтверждает скрытие IP, kill switch или отсутствие утечек; Tor-тест проверяет только ответ IsTor через локальный SOCKS5. Эти проверки не доказывают обход DPI, авторизацию или воспроизведение видео.
 
 ### Как выбрать стратегию
 
@@ -49,8 +52,8 @@
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.14_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.14_Linux_x64
+tar -xzf AntiDPI_CLI_v1.15_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.15_Linux_x64
 bash INSTALL.sh
 ```
 
