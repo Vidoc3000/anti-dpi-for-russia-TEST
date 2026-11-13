@@ -441,7 +441,6 @@ foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectPropert
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
-$profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
 $connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
 Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
 Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
@@ -449,7 +448,7 @@ Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its p
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
-    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
+    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube; "HTTPS"';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
     Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Attempt 1; HTTP 200, text "ok"';Details='error; line "two"'})
 }
@@ -465,7 +464,7 @@ try {
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
-    Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
+    Assert-Equal 'YouTube; "HTTPS"' $csvRows[0].Test 'CSV preserves semicolons and quotes in test names'
     Assert-Equal 'Attempt 1; HTTP 200, text "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
     Assert-Equal 'error; line "two"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
