@@ -17,6 +17,7 @@ $script:historyPath=Join-Path $state 'gui\history.jsonl'
 $script:connectionProfilesPath=Join-Path $state 'gui\connection-profiles.json'
 $script:connectionProfiles=@()
 $script:trayIcon=$null
+$script:appIcon=$null
 $script:networkSignature=''
 $script:networkMatrixJob=$null
 $script:networkMatrixCancelPath=''
@@ -1042,6 +1043,8 @@ try{
     if($profileRows.Count -ne 492){throw ('Ожидалось 492 стратегии, найдено '+$profileRows.Count+'.')}
 
     $form=New-Object System.Windows.Forms.Form
+    $appIconPath=Join-Path $PSScriptRoot 'AntiDPI_Zapret2.ico'
+    if(Test-Path -LiteralPath $appIconPath -PathType Leaf){try{$script:appIcon=[System.Drawing.Icon]::new($appIconPath);$form.Icon=$script:appIcon}catch{Write-GuiLog ('Could not load application icon: '+$_.Exception.Message)}}
     $form.Text=('AntiDPI — управление стратегиями ('+$script:programVersion+')')
     $form.StartPosition='CenterScreen'
     $workingArea=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
@@ -1396,7 +1399,7 @@ try{
     $trayRunRecent=$trayMenu.Items.Add('Запустить последний профиль');$trayRunRecent.Add_Click({try{$recent=$script:guiSettings.RecentProfileConfig;if($null -eq $recent -and @($script:guiSettings.RecentProfiles).Count){$recent=[pscustomobject]@{Name='Последний использованный';ProfileNumber=[int]$script:guiSettings.RecentProfiles[0];AddressFamily=[string]$addressFamilyBox.SelectedItem.Value;Protocol=[string]$protocolBox.SelectedItem.Value;Ports=[string]$portsBox.Text;AdapterGuid='';AdapterName=''}};if($null -eq $recent){throw 'Нет ранее использованного профиля.'};$null=Set-GuiConnectionControls $recent;$form.Show();$form.WindowState='Normal';Start-GuiStrategy}catch{Show-GuiError $_.Exception.Message}})
     $trayStop=$trayMenu.Items.Add('Безопасно остановить');$trayStop.Add_Click({Request-GuiStop})
     $trayMenu.Items.Add('-')|Out-Null;$trayExit=$trayMenu.Items.Add('Закрыть');$trayExit.Add_Click({$form.Close()})
-    $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=[System.Drawing.SystemIcons]::Application;$script:trayIcon.Text='AntiDPI — готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
+    $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=if($null -ne $script:appIcon){$script:appIcon}else{[System.Drawing.SystemIcons]::Application};$script:trayIcon.Text='AntiDPI — готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
     $script:trayIcon.Add_DoubleClick({$form.Show();$form.WindowState='Normal';$form.Activate()})
     $form.Add_Resize({if($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -and $script:guiSettings.MinimizeToTray){$form.Hide();$script:trayIcon.ShowBalloonTip(1200,'AntiDPI','Окно скрыто в системный трей. Перехват продолжает работать до безопасной остановки.','Info')}})
     $script:networkSignature=Get-GuiSelectedNetworkSignature
@@ -1430,6 +1433,7 @@ try{
         }
         if($null -ne $script:worker -and $script:worker.HasExited){
             $code=$script:worker.ExitCode
+            $stopWasRequested=[bool]$script:stopPending
             $script:worker.Dispose();$script:worker=$null
             $script:workerHealthMissCount=0;$script:workerHealthWarningShown=$false
             $script:stopPending=$false
@@ -1440,7 +1444,12 @@ try{
                 Set-GuiStatus ('Проверка завершена успешно: '+$checkLine+'; перехват не запускался.') ([System.Drawing.Color]::DarkGreen)
                 Show-GuiTextDialog ('Результат проверки стратегии '+[int]$script:runningProfile) $output
             }elseif($code -eq 0){Set-GuiStatus 'Остановлено. Можно выбрать другую стратегию и запустить снова.' ([System.Drawing.Color]::DarkGreen);Add-GuiHistory 'Стратегия' 'ОСТАНОВЛЕНА' ('№{0}' -f [int]$script:runningProfile)}
-            else{
+            elseif($stopWasRequested){
+                $failure=Get-GuiFailureLine $script:workerStdoutPath $script:workerStderrPath
+                Set-GuiStatus ('Остановка завершена; процесс вернул код {0}. Подробности записаны в журнал.' -f $code) ([System.Drawing.Color]::DarkOrange)
+                Add-GuiHistory 'Стратегия' 'ОСТАНОВЛЕНА' ('№{0}; код {1}; {2}' -f [int]$script:runningProfile,$code,$failure)
+                Write-GuiLog ('Стратегия завершилась с кодом {0} после запроса штатной остановки: {1}' -f $code,$failure)
+            }else{
                 $failure=Get-GuiFailureLine $script:workerStdoutPath $script:workerStderrPath
                 Set-GuiStatus ('Ошибка процесса: '+$failure) ([System.Drawing.Color]::Firebrick);Add-GuiHistory 'Стратегия' 'ОШИБКА' ('№{0}: {1}' -f [int]$script:runningProfile,$failure)
                 if($script:guiSettings.ShowErrorDetails){Show-GuiTextDialog ('Ошибка стратегии '+[int]$script:runningProfile) (Get-GuiProcessOutput $script:workerStdoutPath $script:workerStderrPath)}
@@ -1535,7 +1544,7 @@ try{
         }
     })
     $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
-    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue}})
+    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue}})
     Write-GuiLog 'Showing main form'
     $form.Add_Shown({Show-GuiOrphanRecoveryPrompt})
     [void]$form.ShowDialog()

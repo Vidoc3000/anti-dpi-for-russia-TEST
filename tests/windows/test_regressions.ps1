@@ -123,6 +123,7 @@ Assert-True ($guiText.Contains('antidpi.gui-backup.v1') -and $guiText.Contains('
 Assert-True ($guiText.Contains('function Get-GuiReadiness') -and $guiText.Contains('Assert-GuiReadiness') -and $guiText.Contains('Show-GuiReadiness')) 'GUI performs a pre-launch system and adapter readiness check'
 Assert-True ($guiText.Contains('NotifyIcon') -and $guiText.Contains('MinimizeToTray') -and $guiText.Contains('Request-GuiStop')) 'GUI exposes safe system-tray controls and optional minimize-to-tray'
 Assert-True ($guiText.Contains('function Get-GuiTrayTooltipText') -and $guiText.Contains('$available=63-$prefix.Length')) 'system tray tooltips stay within the Windows 63-character limit'
+Assert-True ($guiText.Contains('$appIconPath=Join-Path $PSScriptRoot ''AntiDPI_Zapret2.ico''') -and $guiText.Contains('$form.Icon=$script:appIcon') -and $guiText.Contains('$script:trayIcon.Icon=if($null -ne $script:appIcon)')) 'GUI window and tray use the same icon as the desktop shortcut'
 Assert-True ($guiText.Contains('$networkTimer.Interval=4000') -and $guiText.Contains('networkCandidateCount') -and $guiText.Contains('Get-DnsClientServerAddress') -and $guiText.Contains('Request-GuiAnalysisCancel') -and $guiText.Contains('Request-GuiStop')) 'GUI debounces network changes across address, route, and DNS before safe cancellation'
 Assert-True ($guiText.Contains('Show-GuiDiagnosticReport') -and $guiText.Contains('New-GuiDiagnosticReport') -and $guiText.Contains('[USER]') -and $guiText.Contains('[IPv6]')) 'GUI previews and exports redacted diagnostic reports'
 Assert-True ($guiText.Contains('Start-GuiUpdateManager') -and $guiText.Contains("'-Action','Update'") -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI opens the ownership-checked update manager after confirmation'
@@ -439,7 +440,9 @@ $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
 $requestStopAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Request-GuiStop'},$true)
-Assert-True ($null -ne $requestStopAst -and -not ($requestStopAst.Extent.Text.Contains('Show-GuiError'))) 'stop-button failures are reported in status and history without a modal error window'
+Assert-True ($null -ne $requestStopAst -and -not ($requestStopAst.Extent.Text.Contains('Show-GuiError')) -and $requestStopAst.Extent.Text.Contains('$script:stopPending=$true')) 'stop-button failures are reported in status and history without a modal error window'
+$stopCompletionMatch=[regex]::Match($guiText,'elseif\(\$stopWasRequested\)\{(?<body>.*?)\}\s*else\{',[System.Text.RegularExpressions.RegexOptions]::Singleline)
+Assert-True ($stopCompletionMatch.Success -and -not $stopCompletionMatch.Groups['body'].Value.Contains('Show-GuiTextDialog')) 'managed stop completion never opens the strategy-error dialog, even for a nonzero worker exit'
 foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile','Get-GuiTrayTooltipText')){
     $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
