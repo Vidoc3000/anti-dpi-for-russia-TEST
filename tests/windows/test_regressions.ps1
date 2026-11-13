@@ -448,9 +448,9 @@ Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its p
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
-    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube; "HTTPS"';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
+    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Attempt 1; "ok"';Details='error; "two"'})
+    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Attempt 1; "ok"';Details=''})
 }
 $csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
 try {
@@ -464,10 +464,14 @@ try {
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
-    Assert-Equal 'YouTube; "HTTPS"' $csvRows[0].Test 'CSV preserves semicolons and quotes in test names'
     Assert-Equal 'Attempt 1; "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
-    Assert-Equal 'error; "two"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
+    Assert-Equal '' $csvRows[0].Details 'CSV exports empty diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
+    $csvData.Results[0].AttemptDetails=''
+    $csvData.Results[0].Details='error; "two"'
+    Write-GuiAnalysisCsv $csvData $csvPath
+    $detailsRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
+    Assert-Equal 'error; "two"' $detailsRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
