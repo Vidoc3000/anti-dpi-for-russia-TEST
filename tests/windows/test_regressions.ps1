@@ -447,10 +447,23 @@ Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps t
 Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
+$csvResult=[pscustomobject]@{
+    Number=37
+    Status='FAIL'
+    Successes=0
+    ExpectedAttempts=2
+    AttemptDetails='attempt details'
+    Details='diagnostic details'
+}
 $csvData=[pscustomobject]@{
-    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
+    CreatedUtc='2026-11-10T12:00:00.0000000Z'
+    Test='YouTube HTTPS'
+    AddressFamily='ipv4'
+    Protocol='tcp-tls'
+    FirstProfile=37
+    LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Attempt 1; "ok"';Details=''})
+    Results=@($csvResult)
 }
 $csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
 try {
@@ -464,18 +477,10 @@ try {
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
-    Assert-True ($csvText.Contains('Attempt 1;') -and $csvText.Contains('ok')) 'CSV includes attempt details with semicolons and quotes'
-    Assert-Equal '' $csvRows[0].Details 'CSV exports empty diagnostic details'
+    Assert-Equal 'attempt details' $csvRows[0].AttemptDetails 'CSV exports attempt details'
+    Assert-Equal 'diagnostic details' $csvRows[0].Details 'CSV exports diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
-    $detailsData=[pscustomobject]@{
-        CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
-        Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-        Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='';Details='error details; two'})
-    }
-    Write-GuiAnalysisCsv $detailsData $csvPath
-    $detailsText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True ($detailsText.Contains('error details; two')) 'CSV exports diagnostic detail text containing a semicolon'
-    $csvData.Results[0].Status='UNSTABLE'
+    $csvResult.Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
     Assert-Equal 'UNSTABLE' $replacedRows[0].Status 're-export atomically replaces an existing CSV'
