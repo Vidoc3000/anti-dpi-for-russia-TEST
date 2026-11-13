@@ -309,8 +309,8 @@ function Update-AntiDPI {
         $updates.Add([pscustomobject]@{Source=$source;Relative=$name})
     }
     $updates.Add([pscustomobject]@{Source=$PSCommandPath;Relative='AntiDPI\AntiDPI_Manager.ps1'})
-    $appNames=@('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')
-    foreach($name in $appNames){$source=Join-Path $payload $name;if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует payload\'+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\'+$name)})}
+    $appNames=@('BuildInfo.json','AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')
+    foreach($name in $appNames){$source=Join-Path $payload $name;if($name -eq 'BuildInfo.json' -and -not (Test-Path -LiteralPath $source -PathType Leaf)){continue};if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует payload\'+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\'+$name)})}
     foreach($name in @('ips-exclude.txt','ips6-exclude.txt')){$source=Join-Path (Join-Path $payload 'lists') $name;if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует список '+$name)};$updates.Add([pscustomobject]@{Source=$source;Relative=('AntiDPI\lists\'+$name)})}
     # Do not overwrite user-modified files or untracked collisions without warning.
     foreach($item in $updates){
@@ -321,6 +321,14 @@ function Update-AntiDPI {
         }
         if((Test-Path -LiteralPath $destination -PathType Leaf) -and -not $owned.Count){throw ('В папке есть неучтённый файл, который мешает безопасному обновлению: '+$item.Relative)}
     }
+
+    Write-Host ''
+    Write-Host 'Предпросмотр обновления: будут заменены следующие файлы:' -ForegroundColor Cyan
+    foreach($item in $updates){$destination=Join-Path $root $item.Relative;$state=if(Test-Path -LiteralPath $destination -PathType Leaf){'ЗАМЕНА'}else{'НОВЫЙ'};Write-Host ('  [{0}] {1}' -f $state,$item.Relative)}
+    Write-Host ('Всего файлов: {0}. Изменённые пользователем и неучтённые файлы выше уже проверены; они не будут перезаписаны.' -f $updates.Count) -ForegroundColor Yellow
+    if($script:AntiDPIInstallerNonInteractive){throw 'Обновление в неинтерактивном режиме остановлено: сначала просмотрите список заменяемых файлов в обычном запуске.'}
+    $approval=Read-Host 'Для продолжения введите UPDATE; любой другой ответ отменит обновление'
+    if($approval -cne 'UPDATE'){throw [OperationCanceledException]::new('Обновление отменено после предпросмотра файлов.')}
 
     $stage=Join-Path $root ('.u-'+[guid]::NewGuid().ToString('N').Substring(0,8))
     $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
@@ -350,6 +358,7 @@ function Update-AntiDPI {
         foreach($item in $updates){$destination=Join-Path $root $item.Relative;$fileMap[$item.Relative]=[pscustomobject]@{Path=$item.Relative;Sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()}}
         $manifest.Files=@($fileMap.Values|Sort-Object Path)
         $manifest.Version='GUI_CLI_1.13';$manifest.DisplayVersion='GUI + CLI Version 1.13'
+        $buildInfoPath=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoPath -PathType Leaf){try{$buildInfo=Get-Content -LiteralPath $buildInfoPath -Raw -Encoding UTF8|ConvertFrom-Json;if([string]$buildInfo.Schema -ceq 'antidpi.build-info.v1' -and [string]$buildInfo.SourceCommit -match '^[0-9a-f]{40}$'){$manifest|Add-Member -NotePropertyName SourceCommit -NotePropertyValue ([string]$buildInfo.SourceCommit) -Force|Out-Null}}catch{Write-Host ('Не удалось прочитать BuildInfo.json; прежняя привязка коммита сохранена: '+$_.Exception.Message) -ForegroundColor Yellow}}
         try{Update-AntiDPIDesktopDocuments $manifest}catch{Write-Host ('Основные файлы обновлены; не удалось обновить копии инструкций на рабочем столе: '+$_.Exception.Message) -ForegroundColor Yellow}
         $rollbackBackupPath=Save-AntiDPIUpdateRollbackBackup $root $oldManifestJson $applied.ToArray() ([string]$manifest.DisplayVersion)
         Save-AntiDPIManifest $manifest
@@ -893,6 +902,7 @@ function Install-AntiDPI {
                 foreach($name in @('AntiDPI_GUI.ps1','AntiDPI_Launcher_Core_20261023_public_v1.ps1','AntiDPI_ActualTLS_20261023_public_v1.lua','Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1','Official_Bundle_20261023_public_v1.json','AntiDPI_Runtime_20261023_public_v1.cs','AntiDPI_WinDivert_Recovery.cs','AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')){
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
+                $buildInfoSource=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoSource -PathType Leaf){Copy-Item -LiteralPath $buildInfoSource -Destination $installed}
                 foreach($name in @('README_Установка_Windows_v1.13.txt','README_Стратегии_Windows_v1.13.txt','LICENSE.txt')){
                     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $ready $name)
                 }
@@ -909,7 +919,8 @@ function Install-AntiDPI {
                 New-UserCommand (Join-Path $ready 'ЗАПУСК_AntiDPI_Zapret2.cmd') 'GUI'
                 New-UserCommand (Join-Path $ready 'УДАЛИТЬ_AntiDPI_Zapret2.cmd') 'Uninstall'
                 $files=@(Get-ChildItem -LiteralPath $ready -Recurse -File -Force|ForEach-Object {[pscustomobject]@{Path=$_.FullName.Substring($ready.TrimEnd('\','/').Length+1);Sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
-                $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='GUI_CLI_1.13';DisplayVersion='GUI + CLI Version 1.13';OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
+                $sourceCommit='';$buildInfoPath=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoPath -PathType Leaf){try{$buildInfo=Get-Content -LiteralPath $buildInfoPath -Raw -Encoding UTF8|ConvertFrom-Json;if([string]$buildInfo.Schema -ceq 'antidpi.build-info.v1' -and [string]$buildInfo.SourceCommit -match '^[0-9a-f]{40}$'){$sourceCommit=[string]$buildInfo.SourceCommit}}catch{}}
+                $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='GUI_CLI_1.13';DisplayVersion='GUI + CLI Version 1.13';SourceCommit=$sourceCommit;OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
                 $manifest['Firewall']=Get-AntiDPIFirewallIdentity ([pscustomobject]$manifest)
                 Save-AntiDPIManifest ([pscustomobject]$manifest) (Join-Path $ready '.antidpi-install.json')
                 # Only destination/commit failures return to folder selection.

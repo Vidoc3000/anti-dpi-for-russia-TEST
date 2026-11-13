@@ -228,6 +228,15 @@ foreach ($name in $selectedNames) {
 $workspace = Join-Path ([IO.Path]::GetTempPath()) ('ig-build-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($workspace) | Out-Null
 try {
+    $sourceCommit = ''
+    if ($env:GITHUB_SHA -match '^[0-9a-fA-F]{40}$') { $sourceCommit = $env:GITHUB_SHA.ToLowerInvariant() }
+    elseif (Get-Command git -ErrorAction SilentlyContinue) {
+        try { $candidate = (& git -C $resolvedRoot rev-parse HEAD 2>$null | Select-Object -First 1).Trim(); if ($candidate -match '^[0-9a-fA-F]{40}$') { $sourceCommit = $candidate.ToLowerInvariant() } } catch {}
+    }
+    $buildInfoPath = Join-Path $workspace 'BuildInfo.json'
+    [IO.File]::WriteAllText($buildInfoPath,([ordered]@{Schema='antidpi.build-info.v1';Version=$Version;SourceCommit=$sourceCommit}|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+    Add-PackageFile $packageFiles 'payload/BuildInfo.json' $buildInfoPath
+    Assert-WindowsNames $packageFiles
     $zipPath = Join-Path $workspace $zipName
     Write-PackageZip $packageFiles $rootName $zipPath $SourceDateEpoch
     $artifacts = @($zipName)
