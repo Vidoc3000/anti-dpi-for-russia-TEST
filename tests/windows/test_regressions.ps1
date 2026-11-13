@@ -107,7 +107,7 @@ Assert-True ($guiText.Contains('$analysisParallelismBox.Minimum=1') -and $guiTex
 Assert-True ($guiText.Contains('ShowErrorDetails=$true') -and $guiText.Contains('$settingsShowErrorDetailsCheck.Checked')) 'GUI exposes and persists the automatic error-diagnostics setting'
 Assert-True ($guiText.Contains('Get-GuiProcessOutput') -and $guiText.Contains('Show-GuiTextDialog') -and $guiText.Contains('Ошибка процесса:')) 'GUI displays real process output and useful failure diagnostics'
 Assert-True ($guiText.Contains('Get-GuiFamilies') -and $guiText.Contains('$FamilyRows') -and $guiText.Contains('familyFilterBox')) 'GUI provides catalogue family browsing equivalent to CLI group listing'
-Assert-True ($guiText.Contains('Show-GuiInterfaces') -and $guiText.Contains('Список всех интерфейсов')) 'GUI provides an all-network-interface inventory equivalent to the CLI listing'
+Assert-True ($guiText.Contains('Show-GuiInterfaces') -and $guiText.Contains('$interfacesButton.Add_Click({Show-GuiInterfaces})')) 'GUI provides an all-network-interface inventory equivalent to the CLI listing'
 Assert-True ($guiText.Contains('Show-GuiProfileDetails') -and $guiText.Contains('Get-AntiDPIArguments') -and $guiText.Contains('ConvertTo-Json -Depth 20')) 'GUI exposes CLI recipe and resolved engine-argument inspection'
 Assert-True ($guiText.Contains("::new('История')") -and $guiText.Contains('function Add-GuiHistory') -and $guiText.Contains('function Update-GuiHistory')) 'GUI provides persistent searchable run and analysis history'
 Assert-True ($guiText.Contains('function Export-GuiHistory') -and $guiText.Contains('AntiDPI_history_')) 'GUI supports CSV export of activity history'
