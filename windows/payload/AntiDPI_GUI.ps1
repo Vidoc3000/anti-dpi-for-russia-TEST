@@ -302,11 +302,18 @@ function Update-GuiDashboard {
     $stateText=if($null -ne $statusLabel){[string]$statusLabel.Text}else{'Готово к запуску'}
     $script:dashboardLabel.Text=('{0}  |  {1}  |  {2}  |  {3}  |  порты {4}  |  {5}' -f $stateText,$profileText,$familyText,$protocolText,$portText,$adapterText)
 }
+function Get-GuiTrayTooltipText([string]$Text) {
+    $prefix='AntiDPI — '
+    $safeText=([string]$Text -replace '[\r\n]+',' ').Trim()
+    $available=63-$prefix.Length
+    if($safeText.Length -gt $available){$safeText=$safeText.Substring(0,$available-1)+'…'}
+    return ($prefix+$safeText)
+}
 function Set-GuiStatus([string]$Text,[System.Drawing.Color]$Color) {
     $statusLabel.Text=$Text
     $statusLabel.ForeColor=$Color
     Update-GuiDashboard
-    if($null -ne $script:trayIcon){$safeText=$Text -replace '[\r\n]+',' ';if($safeText.Length -gt 60){$safeText=$safeText.Substring(0,57)+'...'};$script:trayIcon.Text=('AntiDPI — '+$safeText)}
+    if($null -ne $script:trayIcon){$script:trayIcon.Text=(Get-GuiTrayTooltipText $Text)}
 }
 function Get-GuiSelectedProfile {
     $profileText=$profileSearchBox.Text.Trim()
@@ -762,7 +769,12 @@ function Request-GuiStop {
         $null=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)
         Set-GuiStatus 'Останавливается… завершается управляемый процесс и восстанавливается состояние.' ([System.Drawing.Color]::DarkOrange)
         $stopButton.Enabled=$false
-    }catch{Show-GuiError ('Не удалось запросить остановку: '+$_.Exception.Message)}
+    }catch{
+        $message='Не удалось запросить штатную остановку: '+$_.Exception.Message
+        Set-GuiStatus 'Ошибка запроса остановки; подробности записаны в историю.' ([System.Drawing.Color]::Firebrick)
+        Add-GuiHistory 'Стратегия' 'ОШИБКА ОСТАНОВКИ' $message
+        Write-GuiLog $message
+    }
 }
 function Request-GuiRestart {
     if($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited){return}
