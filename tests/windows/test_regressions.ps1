@@ -62,6 +62,8 @@ Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('Ярлык уже существует и будет сохранён')) 'install rollback cleans its firewall rule and preserves pre-existing desktop items'
 Assert-True ($managerText.Contains('function Restore-AntiDPIUpdateChanges') -and $managerText.Contains('UpdatedSha256') -and $managerText.Contains('if($rollbackComplete){Remove-AntiDPITemporaryDirectory $stage}')) 'failed updates verify rollback ownership and retain recovery backups if rollback is incomplete'
+Assert-True ($managerText.Contains("'Install','Update','Rollback'") -and $managerText.Contains('function Save-AntiDPIUpdateRollbackBackup') -and $managerText.Contains('function Rollback-AntiDPIUpdate')) 'successful updates expose a verified backup and explicit rollback action'
+Assert-True ($guiText.Contains('Откатить обновление…') -and $guiText.Contains("'-Action','Rollback'")) 'GUI exposes the manager rollback action after update check'
 Assert-True ($managerText.Contains('function Assert-AntiDPIInstallPath') -and $managerText.Contains('Assert-AntiDPIInstallPath $root') -and $managerText.Contains('Assert-AntiDPIInstallPath ([string]$Manifest.InstallRoot)')) 'manifest-driven update, uninstall, and owned-process paths reject links and junctions'
 Assert-True ($installerText.Contains('$requiredFiles=@(') -and $installerText.Contains('AntiDPI\AntiDPI_GUI.ps1') -and $installerText.Contains('zapret-winws\winws2.exe')) 'installer verifies the installed GUI and engine before classifying a nonzero helper exit as a completed install'
 Assert-True ($installerText.Contains('if($code -eq 0){$logBox.Text=') -and $installerText.Contains('$script:installAction=$action') -and $installerText.Contains('$verifiedInstall=($script:installAction -eq ''Install'' -and (Test-InstallerExistingInstall $pathBox.Text))') -and $installerText.Contains('elseif($verifiedInstall){') -and $installerText.Contains('Подробные журналы доступны по кнопке')) 'installer keeps stderr out of the normal success view and explains verified completion without an alarming error dialog'
@@ -98,7 +100,7 @@ Assert-True ($guiText.Contains('-AnalysisResultPath') -and $guiText.Contains('Re
 Assert-True ($guiText.Contains('function ConvertTo-GuiAnalysisCsv') -and $guiText.Contains('ConvertTo-Csv -NoTypeInformation -Delimiter '';''') -and $guiText.Contains('UTF8Encoding]::new($true)')) 'GUI exports analysis results as Excel-friendly UTF-8 CSV'
 Assert-True ($guiText.Contains('Экспорт CSV') -and $guiText.Contains('SaveFileDialog') -and $guiText.Contains('Export-GuiAnalysisResults')) 'GUI exposes an explicit save dialog for analysis CSV exports'
 Assert-True ($guiText.Contains('$profileListBox.ScrollAlwaysVisible=$true') -and $guiText.Contains('AutoScrollMinSize=')) 'GUI keeps the strategy ListBox scrollable on compact displays'
-Assert-True ($guiText.Contains('$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,660)') -and $guiText.Contains('$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,590)') -and $guiText.Contains('$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,390)') -and $guiText.Contains('$form.MaximizeBox=$true')) 'GUI uses content-sized scroll regions and a larger resizable layout instead of forcing every tab to scroll'
+Assert-True ($guiText.Contains('$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)') -and $guiText.Contains('$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,640)') -and $guiText.Contains('$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)') -and $guiText.Contains('$form.MaximizeBox=$true')) 'GUI uses content-sized scroll regions and a larger resizable layout instead of forcing every tab to scroll'
 Assert-True ($guiText.Contains('$script:guiSettings.AnalysisRange') -and $guiText.Contains('RememberAdapter') -and $guiText.Contains('Set-GuiAnalysisResults $script:analysisResultPath')) 'GUI persists more settings and polls live analysis results'
 Assert-True ($guiText.Contains('$parallelism=[int]$analysisParallelismBox.Value') -and $guiText.Contains("'-Parallelism',[string]`$parallelism")) 'GUI forwards the user-selected analysis parallelism to the CLI'
 Assert-True ($guiText.Contains('AnalysisParallelism=3') -and $guiText.Contains('SkipTimestampSetup=$false') -and $guiText.Contains('$arguments+= ''-SkipTimestampSetup''')) 'GUI saves and applies the analysis concurrency and timestamp opt-out settings'
@@ -116,6 +118,14 @@ Assert-True ($guiText.Contains('function Update-GuiDashboard') -and $guiText.Con
 Assert-True ($guiText.Contains('WindowBounds=$null') -and $guiText.Contains('$form.RestoreBounds') -and $guiText.Contains('WindowMaximized')) 'GUI restores and persists a visible window position and maximized state'
 Assert-True ($guiText.Contains('Первый запуск AntiDPI') -and $guiText.Contains('Сначала нажмите «Проверить, не запускать»')) 'GUI guides first-time users through a safe initial setup'
 Assert-True ($guiText.Contains('[System.Windows.Forms.Keys]::Enter') -and $guiText.Contains('[System.Windows.Forms.Keys]::L') -and $guiText.Contains('Ctrl+F')) 'GUI documents and implements quick keyboard commands'
+Assert-True ($guiText.Contains('function ConvertTo-GuiConnectionProfile') -and $guiText.Contains('connection-profiles.json') -and $guiText.Contains('Применить')) 'GUI saves, validates, and applies named connection profiles'
+Assert-True ($guiText.Contains('antidpi.gui-backup.v1') -and $guiText.Contains('Export-GuiConfiguration') -and $guiText.Contains('Import-GuiConfiguration')) 'GUI exports and validates importable settings backups'
+Assert-True ($guiText.Contains('function Get-GuiReadiness') -and $guiText.Contains('Assert-GuiReadiness') -and $guiText.Contains('Проверить готовность')) 'GUI performs a pre-launch system and adapter readiness check'
+Assert-True ($guiText.Contains('NotifyIcon') -and $guiText.Contains('MinimizeToTray') -and $guiText.Contains('Безопасно остановить')) 'GUI exposes safe system-tray controls and optional minimize-to-tray'
+Assert-True ($guiText.Contains('$networkTimer.Interval=4000') -and $guiText.Contains('Request-GuiAnalysisCancel') -and $guiText.Contains('Request-GuiStop')) 'GUI detects network changes and offers managed cancellation'
+Assert-True ($guiText.Contains('Show-GuiDiagnosticReport') -and $guiText.Contains('New-GuiDiagnosticReport') -and $guiText.Contains('[USER]') -and $guiText.Contains('[IPv6]')) 'GUI previews and exports redacted diagnostic reports'
+Assert-True ($guiText.Contains('Start-GuiUpdateManager') -and $guiText.Contains("'-Action','Update'") -and $guiText.Contains('Откроется менеджер обновлений')) 'GUI opens the ownership-checked update manager after confirmation'
+Assert-True ($guiText.Contains('Start-GuiConnectivityMatrix') -and $guiText.Contains('ReceiveAsync()') -and $guiText.Contains('TCP/TLS') -and $guiText.Contains('Version Negotiation')) 'GUI reports separate IPv4/IPv6 TCP/TLS and cautious QUIC reachability checks'
 Assert-True ($guiText.Contains('$launchArguments+= ''-Check''') -and $guiText.Contains('CheckOnly') -and $guiText.Contains('перехват не запускался')) 'GUI offers the CLI validation-only mode without enabling packet interception'
 Assert-True ($guiText.Contains('Request-GuiRestart') -and $guiText.Contains('Request-GuiStop') -and $guiText.Contains('F2')) 'GUI restart and keyboard actions route through managed shutdown'
 Assert-True ($guiText.Contains('$script:workerMode=if($CheckOnly){''check''}else{''start''}') -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI owns and tracks its CLI worker process'
@@ -347,6 +357,35 @@ try {
     if(Test-Path -LiteralPath $updateRollbackRoot){Remove-Item -LiteralPath $updateRollbackRoot -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
+# Persist a prior version only after copying and verifying every original update file.
+$installPathAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-AntiDPIInstallPath' }, $true)
+Assert-True ($null -ne $installPathAst) 'install path helper is available to update backup tests'
+. ([scriptblock]::Create($installPathAst.Extent.Text))
+$updateBackupAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-AntiDPIUpdateRollbackBackup' }, $true)
+Assert-True ($null -ne $updateBackupAst) 'successful-update backup helper can be isolated for tests'
+. ([scriptblock]::Create($updateBackupAst.Extent.Text))
+$updateBackupRoot = Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-update-backup-test-' + [guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($updateBackupRoot) | Out-Null
+    $oldContentPath = Join-Path $updateBackupRoot 'old-content.txt'
+    $newContentPath = Join-Path $updateBackupRoot 'application.txt'
+    [IO.File]::WriteAllText($oldContentPath, 'previous version bytes')
+    [IO.File]::WriteAllText($newContentPath, 'updated version bytes')
+    $oldManifestJson = ([ordered]@{Schema='antidpi.zapret.install.v1';InstallRoot=$updateBackupRoot;DisplayVersion='Previous'}) | ConvertTo-Json -Depth 4
+    $updatedHash = (Get-FileHash -LiteralPath $newContentPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $change = [pscustomobject]@{Destination=$newContentPath;Backup=$oldContentPath;Existed=$true;UpdatedSha256=$updatedHash}
+    $backupPath = Save-AntiDPIUpdateRollbackBackup $updateBackupRoot $oldManifestJson @($change) 'Updated'
+    $backupMetadata = Get-Content -LiteralPath (Join-Path $backupPath 'rollback.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-Equal 'antidpi.update.rollback.v1' $backupMetadata.Schema 'rollback backup schema'
+    Assert-Equal 'Previous' $backupMetadata.PreviousVersion 'rollback backup records previous version'
+    Assert-Equal 1 @($backupMetadata.Changes).Count 'rollback backup records changed file'
+    $savedPrevious = Join-Path (Join-Path $backupPath 'files') 'application.txt'
+    Assert-Equal 'previous version bytes' ([IO.File]::ReadAllText($savedPrevious)) 'rollback backup contains original file bytes'
+    Assert-Equal ([string]$backupMetadata.Changes[0].PreviousSha256) ((Get-FileHash -LiteralPath $savedPrevious -Algorithm SHA256).Hash.ToLowerInvariant()) 'rollback backup records a verifiable original hash'
+} finally {
+    if(Test-Path -LiteralPath $updateBackupRoot){Remove-Item -LiteralPath $updateBackupRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
 # Reject reparse points inside an installation tree and lexical escapes from its root.
 $pathSafetyAst = $managerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-AntiDPIInstallPath' }, $true)
 Assert-True ($null -ne $pathSafetyAst) 'install path safety helper can be isolated for tests'
@@ -381,12 +420,18 @@ $guiTokens = $null
 $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
-foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv')){
+foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile')){
     $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
 $profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
+$connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
+Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
+Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
+Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
     CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
