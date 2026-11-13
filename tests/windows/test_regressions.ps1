@@ -233,7 +233,9 @@ if ($env:AntiDPI_WINWS2_DIR) {
             $luaChecks = @($handlers | ForEach-Object { "assert(type($_)=='function','missing $_')" })
             if ($profile.StockTlsPattern) { $luaChecks += "assert(type(fake_default_tls)=='string','missing TLS pattern')" }
             $engineArguments += '--intercept=0'
-            $engineArguments += '--lua-init=' + ($luaChecks -join ';')
+            $luaCheckPath = Join-Path $env:RUNNER_TEMP ('antidpi-lua-check-' + $profile.Number + '.lua')
+            [IO.File]::WriteAllText($luaCheckPath,($luaChecks -join [Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+            $engineArguments += ('--lua-init=@' + $luaCheckPath)
             $engineInvocationError = $null
             $output = @()
             try { $output = @(& $enginePath @engineArguments 2>&1) }
