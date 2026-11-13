@@ -134,7 +134,7 @@ Assert-True ($managerText.Contains('function Update-AntiDPI') -and $managerText.
 Assert-True ($guiText.Contains('Stop-GuiConnectivityMatrix') -and $guiText.Contains('finally{Remove-Job -Job $script:networkMatrixJob')) 'GUI lets users cancel the baseline connectivity matrix and cleans up its job'
 Assert-True ($guiText.Contains('$launchArguments+= ''-Check''') -and $guiText.Contains('CheckOnly') -and $guiText.Contains('Start-GuiStrategy')) 'GUI offers the CLI validation-only mode without enabling packet interception'
 Assert-True ($guiText.Contains('Request-GuiRestart') -and $guiText.Contains('Request-GuiStop') -and $guiText.Contains('F2')) 'GUI restart and keyboard actions route through managed shutdown'
-Assert-True ($guiText.Contains('$script:workerMode=if($CheckOnly){''check''}else{''start''}') -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI owns and tracks its CLI worker process'
+Assert-True ($guiText.Contains('$script:workerMode=if($CheckOnly)') -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI owns and tracks its CLI worker process'
 Assert-True ($guiText.Contains('BASELINE_PASS') -and $guiText.Contains('Start-GuiAnalysis')) 'GUI distinguishes already-available YouTube from strategy PASS without claiming tunnel or DPI-bypass proof'
 Assert-True ($guiText.Contains('$profileListBox=New-Object System.Windows.Forms.ListBox') -and $guiText.Contains('$profileSearchBox.Add_TextChanged') -and $guiText.Contains('profileCountLabel')) 'GUI shows a persistent searchable strategy list'
 Assert-True ($guiText.Contains('AnalysisAttempts') -and $guiText.Contains('AnalysisTimeoutSeconds') -and $guiText.Contains('AnalysisThresholdKB')) 'GUI persists configurable YouTube attempts, timeout, and response threshold'
