@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.17 — Windows icon consistency and quiet stop
+
+| English | Русский |
+| --- | --- |
+| Use the launch shortcut icon for both the Windows GUI window and notification-area icon. Suppress the modal strategy-error dialog after managed stop, including nonzero worker exits; retain details in status/history/log. Linux package is republished with the current CLI and strategy catalogue. | Для окна GUI и значка в трее используется иконка ярлыка запуска. После штатной остановки модальное окно «Ошибка стратегии» не появляется, даже если процесс завершился с ненулевым кодом; подробности остаются в статусе, истории и журнале. Пакет Linux перевыпущен с текущим CLI и каталогом стратегий. |
+| Combined release: Linux package advances to 1.17; Windows GUI + CLI advances to 1.16. | Общий релиз: версия Linux-пакета повышена до 1.17; Windows GUI + CLI — до 1.16. |
+
 ## 1.16 — Windows managed-stop reliability
 
 | English | Русский |
