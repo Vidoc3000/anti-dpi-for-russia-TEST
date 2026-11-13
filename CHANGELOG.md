@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.18 — Guided Windows update and stop controls
+
+| English | Русский |
+| --- | --- |
+| Show the complete file replacement preview in the Windows installer and require explicit approval before the noninteractive update proceeds. Keep console-only Ctrl+C guidance out of the GUI worker; the Stop button continues to request managed shutdown and the worker promptly cleans up its owned engine. Linux package is republished with the current CLI and strategy catalogue. | Мастер обновления Windows показывает полный список заменяемых файлов и продолжает только после явного подтверждения. Подсказка Ctrl+C для консоли больше не выводится в GUI; кнопка «Остановить» отправляет запрос штатной остановки, а рабочий процесс завершает принадлежащий программе движок. Пакет Linux перевыпущен с текущим CLI и каталогом стратегий. |
+| Combined release: Linux package advances to 1.18; Windows GUI + CLI advances to 1.17. | Общий релиз: версия Linux-пакета повышена до 1.18; Windows GUI + CLI — до 1.17. |
+
 ## 1.17 — Windows icon consistency and quiet stop
 
 | English | Русский |

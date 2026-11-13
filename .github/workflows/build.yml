@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.17'
+        default: '1.18'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.16'
+        default: '1.17'
         type: string
       publish_release:
         description: 'Publish a GitHub release (requires platform=all and ref=main)'
@@ -182,7 +182,8 @@ jobs:
           - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64), with the current strategy catalogue.
           - Windows GUI + CLI package: v${{ inputs.windows_version }} (Windows 10/11 x64).
           - Windows adds repeatable HTTPS/HTTP/3 checks, separate web/video targets, explicit VPN-interface and Tor SOCKS checks, and before/after control measurements for strategy comparisons.
-          - Windows prevents stop-time tray tooltip overflow, uses the shortcut icon in both the window and tray, and does not show a modal strategy-error dialog after managed stop.
+          - Windows update wizard now displays the full replacement-file list and waits for explicit approval before updating.
+          - GUI stop uses the managed shutdown signal and no longer shows the console-only Ctrl+C hint; both window and tray use the shortcut icon.
           - Windows also adds network-change debounce, preflight readiness, graceful recovery prompting after GUI restart, release diff/digest inspection, and a replacement-file preview before updates.
           - Probe results report reachability only: they do not prove DPI bypass or video playback; VPN route binding is not a privacy/leak audit, and GitHub API digests are not independent signatures.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
