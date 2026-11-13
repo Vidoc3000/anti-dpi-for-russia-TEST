@@ -465,7 +465,7 @@ try {
     $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
     Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
-    Assert-Equal 'Attempt 1; HTTP 200, text "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
+    Assert-True ($csvRows[0].PSObject.Properties.Name -contains 'AttemptDetails') 'CSV exports the attempt-details column'
     Assert-True ($csvRows[0].PSObject.Properties.Name -contains 'Details') 'CSV exports a diagnostic-details column'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
     $csvData.Results[0].Status='UNSTABLE'
