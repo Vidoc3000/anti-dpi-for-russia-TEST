@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.15](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.15)**: Windows GUI + CLI версии **1.14**, Linux CLI версии **1.15**.
+В **[релизе v1.16](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.16)**: Windows GUI + CLI версии **1.15**, Linux CLI версии **1.16**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.14_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.14_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/AntiDPI_CLI_v1.15_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/SHA256SUMS_Windows_v1.14.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.15/SHA256SUMS_Linux_v1.15.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.16/AntiDPI_CLI_v1.15_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.16/AntiDPI_CLI_v1.15_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.16/AntiDPI_CLI_v1.16_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.16/SHA256SUMS_Windows_v1.15.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.16/SHA256SUMS_Linux_v1.16.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 

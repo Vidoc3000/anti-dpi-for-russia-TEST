@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии пакетов для следующего комбинированного выпуска: **Linux 1.15**, **Windows 1.14**. Версии платформ ведутся независимо. Windows v1.14 добавляет повторяемые HTTPS/HTTP/3 и отдельные VPN/Tor проверки, сравнительный замер стратегий с контролем до/после, preflight, обработку смены сети и восстановление после перезапуска GUI. Linux v1.15 переупаковывает текущий CLI и каталог стратегий без изменений CLI-кода.
+Текущие версии пакетов для следующего комбинированного выпуска: **Linux 1.16**, **Windows 1.15**. Версии платформ ведутся независимо. Windows v1.15 исправляет длину подсказки системного трея при штатной остановке и убирает лишнее модальное окно ошибки. Linux v1.16 переупаковывает текущий CLI и каталог стратегий без изменений CLI-кода.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.14_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.14_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.14.txt`
+- `dist/AntiDPI_CLI_v1.15_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.15_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.15.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -99,7 +99,7 @@ bash packaging/linux/build.sh
 Результаты:
 
 - `dist/AntiDPI_CLI_v1.15_Linux_x64.tar.gz`
-- `dist/SHA256SUMS_Linux_v1.15.txt`
+- `dist/SHA256SUMS_Linux_v1.16.txt`
 
 Для пересборки:
 
@@ -139,15 +139,15 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.14_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.14_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.14.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.15_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.15_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.15.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.15.txt)
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.16.txt)
 tar -tzf dist/AntiDPI_CLI_v1.15_Linux_x64.tar.gz
 ```
 
