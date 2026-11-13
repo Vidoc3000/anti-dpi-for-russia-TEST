@@ -1,7 +1,7 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 [CmdletBinding()]
 param(
- [ValidateSet('Install','Update','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
+ [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
  [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [string]$CancelFile='')
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -205,13 +205,93 @@ function Restore-AntiDPIUpdateChanges($Applied) {
     return [pscustomobject]@{Success=($errors.Count -eq 0);Errors=$errors.ToArray()}
 }
 
+function Save-AntiDPIUpdateRollbackBackup([string]$Root,[string]$OldManifestJson,$Applied,[string]$NewVersion) {
+    $parent=Assert-AntiDPIInstallPath $Root 'AntiDPI\_state\update-backups'
+    [IO.Directory]::CreateDirectory($parent)|Out-Null
+    $directory=Join-Path $parent ('rollback_'+(Get-Date -Format 'yyyyMMdd_HHmmss')+'_'+[guid]::NewGuid().ToString('N').Substring(0,8))
+    $filesRoot=Join-Path $directory 'files'
+    $rootPrefix=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+    $changes=[Collections.Generic.List[object]]::new()
+    try{
+        [IO.Directory]::CreateDirectory($filesRoot)|Out-Null
+        foreach($change in $Applied){
+            $destination=[IO.Path]::GetFullPath([string]$change.Destination)
+            if(-not $destination.StartsWith($rootPrefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Отказ сохранить откат: путь обновлённого файла вне папки установки.'}
+            $relative=$destination.Substring($rootPrefix.Length)
+            Assert-AntiDPIInstallPath $Root $relative|Out-Null
+            $previousHash=''
+            if($change.Existed){
+                if(-not (Test-Path -LiteralPath $change.Backup -PathType Leaf)){throw ('Нет исходной копии для отката: '+$relative)}
+                $previousHash=(Get-FileHash -LiteralPath $change.Backup -Algorithm SHA256).Hash.ToLowerInvariant()
+                $backupFile=Join-Path $filesRoot $relative;[IO.Directory]::CreateDirectory((Split-Path -Parent $backupFile))|Out-Null;Copy-Item -LiteralPath $change.Backup -Destination $backupFile|Out-Null
+                if((Get-FileHash -LiteralPath $backupFile -Algorithm SHA256).Hash.ToLowerInvariant() -cne $previousHash){throw ('Копия отката повреждена: '+$relative)}
+            }
+            $changes.Add([pscustomobject]@{Relative=$relative;Existed=[bool]$change.Existed;UpdatedSha256=[string]$change.UpdatedSha256;PreviousSha256=$previousHash})
+        }
+        $oldManifestPath=Join-Path $directory 'previous-install.json';[IO.File]::WriteAllText($oldManifestPath,$OldManifestJson,[Text.UTF8Encoding]::new($false))
+        $metadata=[ordered]@{Schema='antidpi.update.rollback.v1';InstallRoot=[IO.Path]::GetFullPath($Root);CreatedUtc=[DateTime]::UtcNow.ToString('o');PreviousManifestSha256=(Get-FileHash -LiteralPath $oldManifestPath -Algorithm SHA256).Hash.ToLowerInvariant();PreviousVersion=[string]((ConvertFrom-Json $OldManifestJson).DisplayVersion);UpdatedVersion=$NewVersion;Changes=$changes.ToArray()}
+        [IO.File]::WriteAllText((Join-Path $directory 'rollback.json'),($metadata|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+        return $directory
+    }catch{if(Test-Path -LiteralPath $directory){Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue};throw}
+}
+function Rollback-AntiDPIUpdate {
+    if(-not $InstallPath){throw 'Укажите папку установленной программы для отката.'}
+    $root=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
+    if($root -eq [IO.Path]::GetPathRoot($root)){throw 'Нельзя откатить корень диска.'}
+    $marker=Assert-AntiDPIInstallPath $root '.antidpi-install.json'
+    if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){throw 'Установка AntiDPI не найдена.'}
+    $current=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
+    if($current.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath([string]$current.InstallRoot) -ine $root){throw 'Маркер установки повреждён или относится к другой папке.'}
+    $parent=Assert-AntiDPIInstallPath $root 'AntiDPI\_state\update-backups'
+    $latest=Get-ChildItem -LiteralPath $parent -Directory -Filter 'rollback_*' -ErrorAction SilentlyContinue|Sort-Object Name -Descending|Select-Object -First 1
+    if(-not $latest){throw 'Нет сохранённой предыдущей версии для отката.'}
+    $backupRelative='AntiDPI\_state\update-backups\'+$latest.Name
+    $metadataPath=Assert-AntiDPIInstallPath $root ($backupRelative+'\rollback.json');$oldManifestPath=Assert-AntiDPIInstallPath $root ($backupRelative+'\previous-install.json');$filesRoot=Assert-AntiDPIInstallPath $root ($backupRelative+'\files')
+    if(-not (Test-Path -LiteralPath $metadataPath -PathType Leaf) -or -not (Test-Path -LiteralPath $oldManifestPath -PathType Leaf)){throw 'Резервная копия отката неполная.'}
+    $metadata=Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8|ConvertFrom-Json
+    if($metadata.Schema -cne 'antidpi.update.rollback.v1' -or [IO.Path]::GetFullPath([string]$metadata.InstallRoot) -ine $root){throw 'Резервная копия отката относится к другой установке.'}
+    if((Get-FileHash -LiteralPath $oldManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$metadata.PreviousManifestSha256){throw 'Копия маркера предыдущей установки повреждена.'}
+    $oldManifest=Get-Content -LiteralPath $oldManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
+    if($oldManifest.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath([string]$oldManifest.InstallRoot) -ine $root){throw 'Сохранённый маркер установки не соответствует папке установки.'}
+    $changes=[Collections.Generic.List[object]]::new()
+    foreach($entry in @($metadata.Changes)){
+        $relative=[string]$entry.Relative
+        $destination=Assert-AntiDPIInstallPath $root $relative
+        $currentRecord=@($current.Files|Where-Object {[string]::Equals([string]$_.Path,$relative,[StringComparison]::OrdinalIgnoreCase)}|Select-Object -First 1)
+        $previousRecord=@($oldManifest.Files|Where-Object {[string]::Equals([string]$_.Path,$relative,[StringComparison]::OrdinalIgnoreCase)}|Select-Object -First 1)
+        if(-not $currentRecord.Count -or [string]$currentRecord[0].Sha256 -cne [string]$entry.UpdatedSha256){throw ('Резервная копия не совпадает с маркером текущей версии: '+$relative)}
+        if(-not (Test-Path -LiteralPath $destination -PathType Leaf) -or (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$entry.UpdatedSha256){throw ('Файл после обновления изменён или отсутствует; откат отменён без изменений: '+$relative)}
+        $backup=''
+        if($entry.Existed){
+            if(-not $previousRecord.Count -or [string]$previousRecord[0].Sha256 -cne [string]$entry.PreviousSha256){throw ('Предыдущий маркер не подтверждает исходный файл: '+$relative)}
+            $backup=Assert-AntiDPIInstallPath $root ($backupRelative+'\files\'+$relative)
+            if(-not (Test-Path -LiteralPath $backup -PathType Leaf) -or (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$entry.PreviousSha256){throw ('Исходная копия повреждена или отсутствует: '+$relative)}
+        }
+        $changes.Add([pscustomobject]@{Destination=$destination;Backup=$backup;Existed=[bool]$entry.Existed;UpdatedSha256=[string]$entry.UpdatedSha256})
+    }
+    $answer=Read-Host ('Будет восстановлена версия '+[string]$metadata.PreviousVersion+' поверх '+[string]$metadata.UpdatedVersion+'. Для продолжения введите ОТКАТ')
+    if($answer -cne 'ОТКАТ'){Write-Host 'Откат отменён.' -ForegroundColor Yellow;return}
+    $bundle=Join-Path $root 'zapret-winws';try{Initialize-AntiDPIRuntime;$null=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)}catch{}
+    Stop-OwnedWinws $current
+    $stage=Join-Path $root ('.rollback-'+[guid]::NewGuid().ToString('N').Substring(0,8));[IO.Directory]::CreateDirectory($stage)|Out-Null
+    try{
+        $staged=[Collections.Generic.List[object]]::new()
+        foreach($change in $changes){$backup=$change.Backup;if($change.Existed){$copy=Join-Path $stage ([string]$change.Destination.Substring($root.TrimEnd('\','/').Length).TrimStart('\','/'));[IO.Directory]::CreateDirectory((Split-Path -Parent $copy))|Out-Null;Copy-Item -LiteralPath $change.Backup -Destination $copy|Out-Null;$backup=$copy};$staged.Add([pscustomobject]@{Destination=$change.Destination;Backup=$backup;Existed=$change.Existed;UpdatedSha256=$change.UpdatedSha256})}
+        $result=Restore-AntiDPIUpdateChanges $staged.ToArray()
+        if(-not $result.Success){throw ('Часть файлов не удалось восстановить. Резервная копия сохранена: '+($result.Errors -join '; '))}
+        Save-AntiDPIManifest $oldManifest $marker
+        Write-Host ('Откат завершён до '+[string]$metadata.PreviousVersion+'. Резервная копия обновления сохранена в '+$latest.FullName) -ForegroundColor Green
+    }finally{if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue}}
+}
+
 function Update-AntiDPI {
     if(-not $InstallPath){throw 'Укажите папку установленной программы для обновления.'}
     $root=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
     if($root -eq [IO.Path]::GetPathRoot($root)){throw 'Нельзя обновить корень диска.'}
     $marker=Assert-AntiDPIInstallPath $root '.antidpi-install.json'
     if(-not (Test-Path -LiteralPath $marker -PathType Leaf)){throw 'В выбранной папке нет маркера установленной AntiDPI. Выберите новую пустую папку для чистой установки.'}
-    $manifest=Get-Content -LiteralPath $marker -Raw -Encoding UTF8|ConvertFrom-Json
+    $oldManifestJson=Get-Content -LiteralPath $marker -Raw -Encoding UTF8
+    $manifest=$oldManifestJson|ConvertFrom-Json
     if($manifest.Schema -ne 'antidpi.zapret.install.v1' -or [IO.Path]::GetFullPath([string]$manifest.InstallRoot) -ine $root){throw 'Маркер установки повреждён или относится к другой папке; обновление отменено.'}
     $bundle=Join-Path $root 'zapret-winws'
     if(-not (Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'AntiDPI\AntiDPI_Manager.ps1') -PathType Leaf)){
@@ -246,7 +326,7 @@ function Update-AntiDPI {
     $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
     [IO.Directory]::CreateDirectory($newRoot)|Out-Null;[IO.Directory]::CreateDirectory($backupRoot)|Out-Null
     $applied=[Collections.Generic.List[object]]::new()
-    $rollbackComplete=$true
+    $rollbackComplete=$true;$rollbackBackupPath=''
     try{
         foreach($item in $updates){$staged=Join-Path $newRoot $item.Relative;[IO.Directory]::CreateDirectory((Split-Path -Parent $staged))|Out-Null;Copy-Item -LiteralPath $item.Source -Destination $staged}
         Write-Host ('Найдена AntiDPI '+[string]$manifest.DisplayVersion+' в '+$root+'. Обновляю файлы программы, настройки и папку zapret-winws будут сохранены.') -ForegroundColor Cyan
@@ -271,12 +351,14 @@ function Update-AntiDPI {
         $manifest.Files=@($fileMap.Values|Sort-Object Path)
         $manifest.Version='GUI_CLI_1.13';$manifest.DisplayVersion='GUI + CLI Version 1.13'
         try{Update-AntiDPIDesktopDocuments $manifest}catch{Write-Host ('Основные файлы обновлены; не удалось обновить копии инструкций на рабочем столе: '+$_.Exception.Message) -ForegroundColor Yellow}
+        $rollbackBackupPath=Save-AntiDPIUpdateRollbackBackup $root $oldManifestJson $applied.ToArray() ([string]$manifest.DisplayVersion)
         Save-AntiDPIManifest $manifest
         $script:AntiDPIInstalledRoot=$root
         Write-Host ('Обновление завершено: '+$manifest.DisplayVersion+'. Настройки, логи и скачанная сборка Zapret2 сохранены.') -ForegroundColor Green
     }catch{
         $failure=$_
         $rollback=Restore-AntiDPIUpdateChanges $applied.ToArray()
+        if($rollback.Success -and $rollbackBackupPath -and (Test-Path -LiteralPath $rollbackBackupPath)){Remove-Item -LiteralPath $rollbackBackupPath -Recurse -Force -ErrorAction SilentlyContinue}
         if(-not $rollback.Success){
             $rollbackComplete=$false
             foreach($message in $rollback.Errors){Write-Host ('Не удалось безопасно откатить обновление: '+$message) -ForegroundColor Red}
@@ -1233,7 +1315,7 @@ try{
     if(-not $SkipHeader -and $Action -ne 'GUI'){
         Show-AntiDPIHeader
     }
-    switch($Action){'Install'{Install-AntiDPI};'Update'{Update-AntiDPI};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
+    switch($Action){'Install'{Install-AntiDPI};'Update'{Update-AntiDPI};'Rollback'{Rollback-AntiDPIUpdate};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
 }
 catch [OperationCanceledException]{Write-Host 'Операция отменена пользователем.' -ForegroundColor Yellow;$script:AntiDPIWasCancelled=$true}
 catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}

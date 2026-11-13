@@ -14,6 +14,14 @@ $script:analysisCurrentData=$null
 $script:analysisExportButton=$null
 $script:analysisCancelFile=''
 $script:historyPath=Join-Path $state 'gui\history.jsonl'
+$script:connectionProfilesPath=Join-Path $state 'gui\connection-profiles.json'
+$script:connectionProfiles=@()
+$script:trayIcon=$null
+$script:networkSignature=''
+$script:networkMatrixJob=$null
+$script:releaseCheckJob=$null
+$script:profilesCombo=$null
+$script:trayMinimizeCheck=$null
 $script:historyGrid=$null
 $script:dashboardLabel=$null
 $script:historySearchBox=$null
@@ -24,7 +32,7 @@ $script:programVersion='Версия не определена'
 $script:analysisSnapshotIdentity=''
 $script:workerStdoutPath='';$script:workerStderrPath=''
 $script:analysisStdoutPath='';$script:analysisStderrPath=''
-$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;Favorites=@();RecentProfiles=@();FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false}
+$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;Favorites=@();RecentProfiles=@();RecentProfileConfig=$null;FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false;MinimizeToTray=$false}
 $guiLog=Join-Path $state 'gui\startup.log'
 function Write-GuiLog([string]$Message) {
     try {
@@ -53,9 +61,11 @@ if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){
         if($saved.PSObject.Properties['AnalysisThresholdKB']){$savedThreshold=0;if([int]::TryParse([string]$saved.AnalysisThresholdKB,[ref]$savedThreshold) -and $savedThreshold -ge 16 -and $savedThreshold -le 1024){$script:guiSettings.AnalysisThresholdKB=$savedThreshold}}
         if($saved.PSObject.Properties['Favorites']){$script:guiSettings.Favorites=@($saved.Favorites|ForEach-Object {$number=0;if([int]::TryParse([string]$_,[ref]$number) -and $number -ge 1 -and $number -le 494){$number}}|Where-Object {$_}|Select-Object -Unique)}
         if($saved.PSObject.Properties['RecentProfiles']){$script:guiSettings.RecentProfiles=@($saved.RecentProfiles|ForEach-Object {$number=0;if([int]::TryParse([string]$_,[ref]$number) -and $number -ge 1 -and $number -le 494){$number}}|Where-Object {$_}|Select-Object -Unique|Select-Object -First 20)}
+        if($saved.PSObject.Properties['RecentProfileConfig']){$script:guiSettings.RecentProfileConfig=$saved.RecentProfileConfig}
         if($saved.PSObject.Properties['FirstRunComplete']){$script:guiSettings.FirstRunComplete=[bool]$saved.FirstRunComplete}
         if($saved.PSObject.Properties['WindowBounds'] -and $null -ne $saved.WindowBounds){$script:guiSettings.WindowBounds=$saved.WindowBounds}
         if($saved.PSObject.Properties['WindowMaximized']){$script:guiSettings.WindowMaximized=[bool]$saved.WindowMaximized}
+        if($saved.PSObject.Properties['MinimizeToTray']){$script:guiSettings.MinimizeToTray=[bool]$saved.MinimizeToTray}
     }catch{Write-GuiLog ('Ignoring invalid GUI settings: '+$_.Exception.Message)}
 }
 Write-GuiLog 'GUI script entry'
@@ -278,6 +288,7 @@ function Set-GuiStatus([string]$Text,[System.Drawing.Color]$Color) {
     $statusLabel.Text=$Text
     $statusLabel.ForeColor=$Color
     Update-GuiDashboard
+    if($null -ne $script:trayIcon){$safeText=$Text -replace '[\r\n]+',' ';if($safeText.Length -gt 60){$safeText=$safeText.Substring(0,57)+'...'};$script:trayIcon.Text=('AntiDPI — '+$safeText)}
 }
 function Get-GuiSelectedProfile {
     $profileText=$profileSearchBox.Text.Trim()
@@ -286,6 +297,271 @@ function Get-GuiSelectedProfile {
     else{$profileMatches=@($script:profileItems|Where-Object {([string]$_.Number -ceq $profileText) -or ([string]$_.Label -ceq $profileText)});if($profileMatches.Count -eq 1){$selectedProfile=$profileMatches[0]}}
     if($null -eq $selectedProfile){throw 'Выберите стратегию из списка, введите её номер или укажите точное название.'}
     return $selectedProfile
+}
+function ConvertTo-GuiConnectionProfile($Profile) {
+    if($null -eq $Profile){throw 'Профиль подключения пуст.'}
+    $name=[string](Get-GuiObjectProperty $Profile 'Name' '').Trim()
+    $number=0
+    if([string]::IsNullOrWhiteSpace($name) -or $name.Length -gt 48 -or $name -match '[\x00-\x1F]'){throw 'Имя профиля должно содержать от 1 до 48 печатных символов.'}
+    if(-not [int]::TryParse([string](Get-GuiObjectProperty $Profile 'ProfileNumber' ''),[ref]$number) -or $number -lt 1 -or $number -gt 494){throw 'В профиле указан неизвестный номер стратегии.'}
+    $family=[string](Get-GuiObjectProperty $Profile 'AddressFamily' 'ipv4');$protocol=[string](Get-GuiObjectProperty $Profile 'Protocol' 'tls')
+    if($family -notin @('ipv4','ipv6')){throw 'В профиле указано неизвестное IP-семейство.'}
+    if($protocol -notin @('tls','quic')){throw 'В профиле указан неизвестный транспорт.'}
+    if($protocol -eq 'quic' -and $number -notin @(493,494)){throw 'Для QUIC используются только профили 493 и 494.'}
+    if($protocol -eq 'tls' -and $number -gt 492){throw 'TLS-профиль должен иметь номер от 1 до 492.'}
+    $ports=ConvertTo-AntiDPIPortScope ([string](Get-GuiObjectProperty $Profile 'Ports' '443'))
+    return [pscustomobject][ordered]@{Name=$name;ProfileNumber=$number;AddressFamily=$family;Protocol=$protocol;Ports=$ports;AdapterGuid=[string](Get-GuiObjectProperty $Profile 'AdapterGuid' '');AdapterName=[string](Get-GuiObjectProperty $Profile 'AdapterName' '')}
+}
+function Read-GuiConnectionProfiles {
+    $loaded=[Collections.Generic.List[object]]::new()
+    if(Test-Path -LiteralPath $script:connectionProfilesPath -PathType Leaf){
+        try{$raw=Get-Content -LiteralPath $script:connectionProfilesPath -Raw -Encoding UTF8|ConvertFrom-Json;foreach($item in @($raw)){try{$loaded.Add((ConvertTo-GuiConnectionProfile $item))}catch{Write-GuiLog ('Skipping invalid saved connection profile: '+$_.Exception.Message)}}}catch{Write-GuiLog ('Could not read connection profiles: '+$_.Exception.Message)}
+    }
+    return @($loaded.ToArray())
+}
+function Save-GuiConnectionProfiles {
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $script:connectionProfilesPath))|Out-Null
+    $temporary=$script:connectionProfilesPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try{[IO.File]::WriteAllText($temporary,(@($script:connectionProfiles)|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false));if(Test-Path -LiteralPath $script:connectionProfilesPath -PathType Leaf){[IO.File]::Replace($temporary,$script:connectionProfilesPath,[NullString]::Value)}else{[IO.File]::Move($temporary,$script:connectionProfilesPath)}}finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue}}
+}
+function Update-GuiConnectionProfileItems {
+    if($null -eq $script:profilesCombo){return}
+    $script:profilesCombo.BeginUpdate();try{$script:profilesCombo.Items.Clear();foreach($item in @($script:connectionProfiles)){$null=$script:profilesCombo.Items.Add($item)};if($script:profilesCombo.Items.Count){$script:profilesCombo.SelectedIndex=0}}finally{$script:profilesCombo.EndUpdate()}
+}
+function Save-GuiConnectionProfile {
+    $name=[string]$connectionProfileNameBox.Text.Trim()
+    $selected=Get-GuiSelectedProfile
+    $adapter=$adapterBox.SelectedItem
+    if($null -eq $adapter){throw 'Выберите физический адаптер перед сохранением профиля подключения.'}
+    $entry=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name=$name;ProfileNumber=$selected.Number;AddressFamily=$addressFamilyBox.SelectedItem.Value;Protocol=$protocolBox.SelectedItem.Value;Ports=$portsBox.Text;AdapterGuid=$(if($null -ne $adapter){$adapter.InterfaceGuid}else{''});AdapterName=$(if($null -ne $adapter){$adapter.Name}else{''})})
+    if(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name}).Count -ge 100){throw 'Можно сохранить не более 100 профилей подключений.'};$script:connectionProfiles=@(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name})+@($entry)|Sort-Object Name)
+    Save-GuiConnectionProfiles;Update-GuiConnectionProfileItems;$settingsStatusLabel.Text=('Профиль подключения «{0}» сохранён.' -f $entry.Name)
+}
+function Set-GuiConnectionControls($Profile) {
+    $entry=ConvertTo-GuiConnectionProfile $Profile
+    $addressFamilyBox.SelectedIndex=if($entry.AddressFamily -eq 'ipv6'){1}else{0}
+    $protocolBox.SelectedIndex=if($entry.Protocol -eq 'quic'){1}else{0}
+    $portsBox.Text=$entry.Ports
+    Refresh-GuiAdapters
+    if($entry.AdapterGuid){$adapterFound=$false;for($i=0;$i -lt $adapterBox.Items.Count;$i++){if([string]$adapterBox.Items[$i].InterfaceGuid -eq $entry.AdapterGuid){$adapterBox.SelectedIndex=$i;$adapterFound=$true;break}};if(-not $adapterFound){throw ('Сохранённый адаптер профиля «{0}» не подключён. Подключите его или выберите актуальный адаптер вручную; запуск не выполнялся.' -f $entry.AdapterName)}}
+    if($favoritesCheck.Checked){$favoritesCheck.Checked=$false}
+    $profileSearchBox.Text=[string]$entry.ProfileNumber;Update-GuiProfileFilter
+    for($i=0;$i -lt $profileListBox.Items.Count;$i++){if([int]$profileListBox.Items[$i].Number -eq $entry.ProfileNumber){$profileListBox.SelectedIndex=$i;break}}
+    $tabs.SelectedTab=$strategyTab
+    return $entry
+}
+function Apply-GuiConnectionProfile {
+    if($null -eq $script:profilesCombo.SelectedItem){throw 'Выберите сохранённый профиль подключения.'}
+    $entry=Set-GuiConnectionControls $script:profilesCombo.SelectedItem
+    Set-GuiStatus ('Применён профиль «{0}». Проверьте адаптер и нажмите «Проверить готовность» перед запуском.' -f $entry.Name) ([System.Drawing.Color]::DarkGreen)
+}
+function Remove-GuiConnectionProfile {
+    if($null -eq $script:profilesCombo.SelectedItem){throw 'Выберите профиль подключения для удаления.'}
+    $name=[string]$script:profilesCombo.SelectedItem.Name
+    $script:connectionProfiles=@($script:connectionProfiles|Where-Object {$_.Name -ine $name});Save-GuiConnectionProfiles;Update-GuiConnectionProfileItems
+}
+function Export-GuiConfiguration {
+    $dialog=New-Object System.Windows.Forms.SaveFileDialog;$dialog.Title='Экспорт настроек AntiDPI';$dialog.Filter='AntiDPI JSON (*.json)|*.json';$dialog.DefaultExt='json';$dialog.AddExtension=$true;$dialog.FileName=('AntiDPI_settings_'+(Get-Date -Format 'yyyyMMdd')+'.json')
+    try{if($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK){return};Save-GuiSettings;$document=[ordered]@{Schema='antidpi.gui-backup.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Settings=$script:guiSettings;ConnectionProfiles=@($script:connectionProfiles)};[IO.File]::WriteAllText($dialog.FileName,($document|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($true));$settingsStatusLabel.Text='Настройки и профили экспортированы.'}finally{$dialog.Dispose()}
+}
+function Import-GuiConfiguration {
+    $dialog=New-Object System.Windows.Forms.OpenFileDialog;$dialog.Title='Импорт настроек AntiDPI';$dialog.Filter='AntiDPI JSON (*.json)|*.json|Все файлы (*.*)|*.*';$dialog.Multiselect=$false
+    try{
+        if($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK){return}
+        $document=Get-Content -LiteralPath $dialog.FileName -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop
+        if([string]$document.Schema -cne 'antidpi.gui-backup.v1'){throw 'Формат резервной копии не поддерживается.'}
+        $candidate=$script:guiSettings.Clone()
+        $settings=$document.Settings
+        if([string]$settings.AddressFamily -notin @('ipv4','ipv6') -or [string]$settings.Protocol -notin @('tls','quic')){throw 'В резервной копии некорректны IP-семейство или транспорт.'}
+        $candidate.AddressFamily=[string]$settings.AddressFamily;$candidate.Protocol=[string]$settings.Protocol;$candidate.Ports=ConvertTo-AntiDPIPortScope ([string]$settings.Ports)
+        $range=[regex]::Match([string]$settings.AnalysisRange,'^([0-9]+)(?:\s*-\s*([0-9]+))?$');if(-not $range.Success){throw 'В резервной копии некорректен диапазон анализа.'};$first=[int]$range.Groups[1].Value;$last=if($range.Groups[2].Success){[int]$range.Groups[2].Value}else{$first};if($first -lt 1 -or $last -lt $first -or $last -gt 492){throw 'Диапазон анализа вне допустимого диапазона.'};$candidate.AnalysisRange=('{0}-{1}' -f $first,$last)
+        $numericBounds=[ordered]@{AnalysisParallelism=@(1,5);AnalysisAttempts=@(1,5);AnalysisTimeoutSeconds=@(5,120);AnalysisThresholdKB=@(16,1024)};foreach($key in $numericBounds.Keys){$limits=$numericBounds[$key];$value=0;if(-not [int]::TryParse([string]$settings.$key,[ref]$value) -or $value -lt $limits[0] -or $value -gt $limits[1]){throw ('Некорректная настройка '+$key)};$candidate[$key]=$value}
+        foreach($key in @('RememberAdapter','SkipTimestampSetup','ShowErrorDetails','MinimizeToTray')){if($settings.PSObject.Properties[$key]){$candidate[$key]=[bool]$settings.$key}}
+        $candidate.Favorites=@($settings.Favorites|ForEach-Object {$n=0;if([int]::TryParse([string]$_,[ref]$n) -and $n -ge 1 -and $n -le 494){$n}}|Where-Object {$_}|Select-Object -Unique)
+        $candidate.RecentProfiles=@($settings.RecentProfiles|ForEach-Object {$n=0;if([int]::TryParse([string]$_,[ref]$n) -and $n -ge 1 -and $n -le 494){$n}}|Where-Object {$_}|Select-Object -Unique|Select-Object -First 20)
+        if($settings.PSObject.Properties['RecentProfileConfig'] -and $null -ne $settings.RecentProfileConfig){$candidate.RecentProfileConfig=ConvertTo-GuiConnectionProfile $settings.RecentProfileConfig}
+        $newProfiles=[Collections.Generic.List[object]]::new();foreach($profile in @($document.ConnectionProfiles)){$newProfiles.Add((ConvertTo-GuiConnectionProfile $profile))};if($newProfiles.Count -gt 100){throw 'Слишком много профилей в резервной копии.'};if(@($newProfiles.ToArray()|Group-Object Name|Where-Object {$_.Count -gt 1}).Count){throw 'В резервной копии повторяются имена профилей подключений.'}
+        if([System.Windows.Forms.MessageBox]::Show('Импорт заменит текущие настройки и сохранённые профили подключений. Продолжить?','Импорт настроек',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning) -ne [System.Windows.Forms.DialogResult]::Yes){return}
+        $script:guiSettings=$candidate;$script:connectionProfiles=@($newProfiles.ToArray());Save-GuiConnectionProfiles
+        $settingsFamilyBox.SelectedIndex=if($candidate.AddressFamily -eq 'ipv6'){1}else{0};$settingsProtocolBox.SelectedIndex=if($candidate.Protocol -eq 'quic'){1}else{0};$settingsPortsBox.Text=$candidate.Ports;$settingsAnalysisRangeBox.Text=$candidate.AnalysisRange;$settingsAnalysisParallelismBox.Value=[decimal]$candidate.AnalysisParallelism;$settingsAnalysisAttemptsBox.Value=[decimal]$candidate.AnalysisAttempts;$settingsAnalysisTimeoutBox.Value=[decimal]$candidate.AnalysisTimeoutSeconds;$settingsAnalysisThresholdBox.Value=[decimal]$candidate.AnalysisThresholdKB;$settingsRememberAdapterCheck.Checked=$candidate.RememberAdapter;$settingsSkipTimestampCheck.Checked=$candidate.SkipTimestampSetup;$settingsShowErrorDetailsCheck.Checked=$candidate.ShowErrorDetails;$trayMinimizeCheck.Checked=$candidate.MinimizeToTray
+        Save-GuiSettings;Update-GuiConnectionProfileItems;Update-GuiProfileFilter;$settingsStatusLabel.Text='Импорт настроек завершён.'
+    }finally{$dialog.Dispose()}
+}
+function Get-GuiReadiness {
+    $rows=[Collections.Generic.List[object]]::new()
+    try{$admin=Test-AntiDPIAdmin;if($admin){$rows.Add([pscustomobject]@{Level='OK';Check='Права';Details='Запущено с правами администратора.'})}else{$rows.Add([pscustomobject]@{Level='ERROR';Check='Права';Details='Запустите AntiDPI от имени администратора.'})}}catch{$rows.Add([pscustomobject]@{Level='ERROR';Check='Права';Details=$_.Exception.Message})}
+    if(Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf){$rows.Add([pscustomobject]@{Level='OK';Check='Движок';Details='winws2.exe найден.'})}else{$rows.Add([pscustomobject]@{Level='ERROR';Check='Движок';Details='Не найден zapret-winws\winws2.exe.'})}
+    if($null -eq $adapterBox.SelectedItem){$rows.Add([pscustomobject]@{Level='ERROR';Check='Адаптер';Details='Выберите активный физический адаптер.'})}else{
+        $adapter=$adapterBox.SelectedItem;$family=if($null -ne $addressFamilyBox.SelectedItem){[string]$addressFamilyBox.SelectedItem.Value}else{'ipv4'};$net=Get-NetAdapter -InterfaceIndex ([int]$adapter.ifIndex) -ErrorAction SilentlyContinue|Select-Object -First 1
+        if($null -eq $net -or $net.Status -ne 'Up'){$rows.Add([pscustomobject]@{Level='ERROR';Check='Адаптер';Details='Выбранный сетевой адаптер не находится в состоянии Up.'})}else{$rows.Add([pscustomobject]@{Level='OK';Check='Адаптер';Details=('Адаптер «{0}» активен.' -f $adapter.Name)})}
+        $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'};$addresses=@(Get-NetIPAddress -InterfaceIndex ([int]$adapter.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'ipv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})})
+        if($addresses.Count){$rows.Add([pscustomobject]@{Level='OK';Check=$family.ToUpperInvariant();Details='На выбранном адаптере есть подходящий адрес.'})}else{$rows.Add([pscustomobject]@{Level='ERROR';Check=$family.ToUpperInvariant();Details=('На выбранном адаптере нет пригодного адреса '+$family+'.')})}
+        $prefix=if($family -eq 'ipv6'){'::/0'}else{'0.0.0.0/0'};$netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'};$routes=@(Get-NetRoute -AddressFamily $netFamily -DestinationPrefix $prefix -ErrorAction SilentlyContinue|Where-Object {$_.InterfaceIndex -eq [int]$adapter.ifIndex});if($routes.Count){$rows.Add([pscustomobject]@{Level='OK';Check='Маршрут';Details='Для адаптера найден маршрут по умолчанию.'})}else{$rows.Add([pscustomobject]@{Level='WARNING';Check='Маршрут';Details='На выбранном адаптере не найден маршрут по умолчанию.'})}
+    }
+    try{$profile=Get-GuiSelectedProfile;$rows.Add([pscustomobject]@{Level='OK';Check='Стратегия';Details=('№{0}: {1}' -f $profile.Number,$profile.Name)})}catch{$rows.Add([pscustomobject]@{Level='ERROR';Check='Стратегия';Details=$_.Exception.Message})}
+    try{$scope=ConvertTo-AntiDPIPortScope $portsBox.Text;$rows.Add([pscustomobject]@{Level='OK';Check='Порты';Details=('Корректная область портов: '+$scope)})}catch{$rows.Add([pscustomobject]@{Level='ERROR';Check='Порты';Details=$_.Exception.Message})}
+    if($null -ne $script:worker -and -not $script:worker.HasExited){$rows.Add([pscustomobject]@{Level='WARNING';Check='Движок';Details='Управляемый процесс уже работает; второй запуск невозможен.'})}
+    if($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited){$rows.Add([pscustomobject]@{Level='WARNING';Check='Анализ';Details='Идёт сетевой анализ; запуск стратегии невозможен.'})}
+    return @($rows.ToArray())
+}
+function Show-GuiReadiness {
+    $rows=@(Get-GuiReadiness);$text=foreach($row in $rows){'{0,-8} {1}: {2}' -f $row.Level,$row.Check,$row.Details};Show-GuiTextDialog 'Проверка готовности AntiDPI' ($text -join [Environment]::NewLine)
+}
+function Assert-GuiReadiness {
+    $rows=@(Get-GuiReadiness);$errors=@($rows|Where-Object {$_.Level -eq 'ERROR'});$warnings=@($rows|Where-Object {$_.Level -eq 'WARNING'})
+    if($errors.Count){Show-GuiTextDialog 'Исправьте проблемы перед запуском' ((@($rows|ForEach-Object {'{0,-8} {1}: {2}' -f $_.Level,$_.Check,$_.Details})) -join [Environment]::NewLine);throw 'Проверка готовности не пройдена; запуск не выполнялся.'}
+    if($warnings.Count -and [System.Windows.Forms.MessageBox]::Show(($warnings.Details -join [Environment]::NewLine),'Предупреждение',[System.Windows.Forms.MessageBoxButtons]::OKCancel,[System.Windows.Forms.MessageBoxIcon]::Warning) -ne [System.Windows.Forms.DialogResult]::OK){throw 'Запуск отменён пользователем.'}
+}
+function New-GuiDiagnosticReport([switch]$IncludeLogs) {
+    $lines=[Collections.Generic.List[string]]::new()
+    $admin=Test-AntiDPIAdmin
+    $lines.Add('AntiDPI — диагностический отчёт')
+    $lines.Add(('Создан: '+(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')))
+    $lines.Add(('Версия: '+$script:programVersion))
+    $lines.Add(('Windows: '+[Environment]::OSVersion.VersionString))
+    $lines.Add(('PowerShell: '+$PSVersionTable.PSVersion.ToString()))
+    $lines.Add(('Администратор: '+[string]$admin))
+    $lines.Add('')
+    $lines.Add('Проверки готовности:')
+    foreach($row in @(Get-GuiReadiness)){$lines.Add(('{0,-8} {1}: {2}' -f $row.Level,$row.Check,$row.Details))}
+    $lines.Add('')
+    $lines.Add('Параметры активного интерфейса (IP-адреса скрыты):')
+    if($null -ne $addressFamilyBox.SelectedItem){$lines.Add(('IP-семейство: '+[string]$addressFamilyBox.SelectedItem.Label))}
+    if($null -ne $protocolBox.SelectedItem){$lines.Add(('Транспорт: '+[string]$protocolBox.SelectedItem.Label))}
+    $lines.Add(('Порты: '+[string]$portsBox.Text))
+    if($null -ne $adapterBox.SelectedItem){$lines.Add(('Адаптер: '+[string]$adapterBox.SelectedItem.Name))}
+    $lines.Add('')
+    if($IncludeLogs){
+        $lines.Add('Фрагменты последних журналов (пути и IP-адреса маскируются; проверьте перед отправкой):')
+        $logs=Get-AntiDPILogDirectory $bundle
+        $files=@(Get-ChildItem -LiteralPath $logs -File -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First 3)
+        foreach($file in $files){
+            $lines.Add(('--- '+$file.Name+' ---'))
+            foreach($line in @(Get-Content -LiteralPath $file.FullName -Tail 60 -Encoding UTF8 -ErrorAction SilentlyContinue)){
+                $safe=[string]$line
+                if($env:USERPROFILE){$safe=$safe.Replace([string]$env:USERPROFILE,'[USER]')}
+                $safe=$safe -replace '(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])','[IP]'
+                $safe=$safe -replace '(?i)(?<![0-9a-f:])(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{0,4}(?![0-9a-f:])','[IPv6]'
+                $safe=$safe -replace [regex]::Escape($installRoot),'[INSTALL]'
+                $lines.Add($safe)
+            }
+        }
+    }
+    return ($lines -join [Environment]::NewLine)
+}
+function Show-GuiDiagnosticReport {
+    $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Диагностика — просмотр и экспорт';$dialog.StartPosition='CenterParent';$dialog.Size=[System.Drawing.Size]::new(820,620);$dialog.MinimumSize=[System.Drawing.Size]::new(620,440)
+    $include=[System.Windows.Forms.CheckBox]::new();$include.Text='Включить последние журналы (IP и пути будут замаскированы)';$include.Location=[System.Drawing.Point]::new(12,12);$include.Size=[System.Drawing.Size]::new(760,28)
+    $box=[System.Windows.Forms.TextBox]::new();$box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars='Both';$box.WordWrap=$false;$box.Font=[System.Drawing.Font]::new('Consolas',9);$box.Location=[System.Drawing.Point]::new(12,48);$box.Size=[System.Drawing.Size]::new(780,470);$box.Anchor='Top,Bottom,Left,Right';$box.Text=New-GuiDiagnosticReport
+    $buttons=[System.Windows.Forms.FlowLayoutPanel]::new();$buttons.Dock='Bottom';$buttons.Height=48;$buttons.FlowDirection='RightToLeft'
+    $close=[System.Windows.Forms.Button]::new();$close.Text='Закрыть';$close.Width=100;$close.DialogResult='OK'
+    $copy=[System.Windows.Forms.Button]::new();$copy.Text='Копировать';$copy.Width=110;$copy.Add_Click({[Windows.Forms.Clipboard]::SetText($box.Text)})
+    $save=[System.Windows.Forms.Button]::new();$save.Text='Экспортировать…';$save.Width=140;$save.Add_Click({$saveDialog=New-Object System.Windows.Forms.SaveFileDialog;$saveDialog.Title='Экспорт диагностического отчёта';$saveDialog.Filter='Текстовый отчёт (*.txt)|*.txt';$saveDialog.DefaultExt='txt';$saveDialog.AddExtension=$true;$saveDialog.FileName=('AntiDPI_diagnostic_'+(Get-Date -Format 'yyyyMMdd_HHmmss')+'.txt');try{if($saveDialog.ShowDialog($dialog) -eq [System.Windows.Forms.DialogResult]::OK){[IO.File]::WriteAllText($saveDialog.FileName,$box.Text,[Text.UTF8Encoding]::new($true));[System.Windows.Forms.MessageBox]::Show('Отчёт сохранён. Перед отправкой проверьте содержимое файла.','AntiDPI')|Out-Null}}finally{$saveDialog.Dispose()}})
+    $include.Add_CheckedChanged({$box.Text=New-GuiDiagnosticReport -IncludeLogs:$include.Checked})
+    $buttons.Controls.Add($close);$buttons.Controls.Add($copy);$buttons.Controls.Add($save);$dialog.Controls.AddRange([System.Windows.Forms.Control[]]@($include,$box,$buttons));$dialog.AcceptButton=$close;[void]$dialog.ShowDialog($form);$dialog.Dispose()
+}
+function Start-GuiReleaseCheck {
+    if($null -ne $script:releaseCheckJob -and $script:releaseCheckJob.State -eq 'Running'){return}
+    $script:releaseCheckJob=Start-Job -ScriptBlock {
+        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
+        $release=Invoke-RestMethod -Uri 'https://api.github.com/repos/Vidoc3000/anti-dpi-for-russia-TEST/releases/latest' -Headers @{ 'User-Agent'='AntiDPI-Windows-GUI';'Accept'='application/vnd.github+json' } -TimeoutSec 15 -ErrorAction Stop
+        $assets=@($release.assets|ForEach-Object {[pscustomobject]@{Name=[string]$_.name;Url=[string]$_.browser_download_url;Digest=[string]$_.digest}})
+        [pscustomobject]@{Name=[string]$release.name;Tag=[string]$release.tag_name;Published=[string]$release.published_at;Url=[string]$release.html_url;Notes=[string]$release.body;Assets=$assets}
+    }
+    Set-GuiStatus 'Проверяю публичную страницу релизов; это не запускает и не устанавливает обновление.' ([System.Drawing.Color]::DarkOrange)
+}
+function Show-GuiReleaseInfo($Release) {
+    $lines=[Collections.Generic.List[string]]::new();$lines.Add(('Последний опубликованный релиз: {0} ({1})' -f $Release.Name,$Release.Tag));$lines.Add(('Опубликован: '+$Release.Published));$lines.Add(('Страница релиза: '+$Release.Url));$lines.Add('')
+    $lines.Add('Примечания к выпуску:');$notes=[string]$Release.Notes;if($notes.Length -gt 8000){$notes=$notes.Substring(0,8000)+'… [текст сокращён]'};if($notes){$lines.Add($notes)}else{$lines.Add('Нет описания релиза.')}
+    $lines.Add('');$lines.Add('Файлы релиза:');foreach($asset in @($Release.Assets)){$line=('• {0}' -f $asset.Name);if($asset.Digest){$line+=' — '+$asset.Digest};$lines.Add($line);if($asset.Name -match '(?i)SHA256SUMS|checksums|checksum'){$lines.Add(('  Опубликованный файл контрольных сумм: '+$asset.Url))}}
+    $lines.Add('');$lines.Add('Перед обновлением проверьте, что архив предназначен для Windows, и сравните SHA-256. Штатный updater проверяет принадлежность установочных файлов и сохраняет резервную копию, но не заменяет проверку хеша релизного архива.')
+    $releaseDialog=[System.Windows.Forms.Form]::new();$releaseDialog.Text=('Релиз AntiDPI — '+[string]$Release.Tag);$releaseDialog.StartPosition='CenterParent';$releaseDialog.Size=[System.Drawing.Size]::new(820,620);$releaseDialog.MinimumSize=[System.Drawing.Size]::new(620,440)
+    $box=[System.Windows.Forms.TextBox]::new();$box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars='Vertical';$box.Location=[System.Drawing.Point]::new(12,12);$box.Size=[System.Drawing.Size]::new(780,520);$box.Anchor='Top,Bottom,Left,Right';$box.Text=$lines -join [Environment]::NewLine
+    $buttons=[System.Windows.Forms.FlowLayoutPanel]::new();$buttons.Dock='Bottom';$buttons.Height=48;$buttons.FlowDirection='RightToLeft'
+    $close=[System.Windows.Forms.Button]::new();$close.Text='Закрыть';$close.Width=100;$close.DialogResult='OK'
+    $update=[System.Windows.Forms.Button]::new();$update.Text='Открыть updater…';$update.Width=150;$update.Add_Click({$releaseDialog.Close();Start-GuiUpdateManager})
+    $rollback=[System.Windows.Forms.Button]::new();$rollback.Text='Откатить обновление…';$rollback.Width=165;$rollback.Add_Click({$releaseDialog.Close();Start-GuiRollbackManager})
+    $open=[System.Windows.Forms.Button]::new();$open.Text='Открыть страницу';$open.Width=140;$open.Add_Click({Start-Process ([string]$Release.Url)})
+    $buttons.Controls.Add($close);$buttons.Controls.Add($update);$buttons.Controls.Add($rollback);$buttons.Controls.Add($open);$releaseDialog.Controls.AddRange([System.Windows.Forms.Control[]]@($box,$buttons));$releaseDialog.AcceptButton=$close;[void]$releaseDialog.ShowDialog($form);$releaseDialog.Dispose()
+}
+function Start-GuiUpdateManager {
+    $manager=Join-Path (Split-Path -Parent $PSScriptRoot) 'AntiDPI_Manager.ps1'
+    if(-not (Test-Path -LiteralPath $manager -PathType Leaf)){throw 'Не найден менеджер установки AntiDPI.'}
+    $answer=[System.Windows.Forms.MessageBox]::Show('Откроется менеджер обновлений. Он покажет доступный сценарий, проверит принадлежность файлов установке и не должен перезаписывать изменённые файлы. Продолжить?','Обновление AntiDPI',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Information)
+    if($answer -ne [System.Windows.Forms.DialogResult]::Yes){return}
+    $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe';$managerArgs=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action','Update','-InstallPath',$installRoot);$joined=(@($managerArgs|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
+    Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Normal|Out-Null;Add-GuiHistory 'Обновление' 'ЗАПУЩЕНО' 'Открыт штатный менеджер обновлений.'
+}
+function Start-GuiRollbackManager {
+    $manager=Join-Path (Split-Path -Parent $PSScriptRoot) 'AntiDPI_Manager.ps1'
+    if(-not (Test-Path -LiteralPath $manager -PathType Leaf)){throw 'Не найден менеджер установки AntiDPI.'}
+    $answer=[System.Windows.Forms.MessageBox]::Show('Штатный менеджер проверит резервную копию, версии файлов и SHA-256 перед откатом. Если установленные файлы были изменены вручную, операция будет отменена. Продолжить?','Откат обновления AntiDPI',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning)
+    if($answer -ne [System.Windows.Forms.DialogResult]::Yes){return}
+    $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe';$managerArgs=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action','Rollback','-InstallPath',$installRoot);$joined=(@($managerArgs|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
+    Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Normal|Out-Null;Add-GuiHistory 'Откат' 'ЗАПУЩЕНО' 'Открыт штатный менеджер отката; подтверждение выполняется отдельно в консоли.'
+}
+function Get-GuiSelectedNetworkSignature {
+    if($null -eq $adapterBox.SelectedItem){return 'none'}
+    $adapter=$adapterBox.SelectedItem;$family=[string]$addressFamilyBox.SelectedItem.Value;$net=Get-NetAdapter -InterfaceIndex ([int]$adapter.ifIndex) -ErrorAction SilentlyContinue|Select-Object -First 1
+    $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'};$ips=@(Get-NetIPAddress -InterfaceIndex ([int]$adapter.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource}|ForEach-Object {[string]$_.IPAddress}|Sort-Object)
+    return ('{0}|{1}|{2}|{3}' -f $adapter.InterfaceGuid,$net.Status,$family,($ips -join ','))
+}
+function Start-GuiConnectivityMatrix {
+    if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){return}
+    if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Сначала безопасно остановите активную задачу: матрица должна измерять сеть без стратегии.'}
+    if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите физический сетевой адаптер.'}
+    $sources=@{}
+    foreach($family in @('ipv4','ipv6')){
+        $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'}
+        $addresses=@(Get-NetIPAddress -InterfaceIndex ([int]$adapterBox.SelectedItem.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'ipv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})}|Select-Object -First 1 -ExpandProperty IPAddress)
+        if($addresses.Count){$sources[$family]=[string]$addresses[0]}
+    }
+    $script:networkMatrixJob=Start-Job -ArgumentList (,$sources) -ScriptBlock {
+        param($Sources)
+        $rows=[Collections.Generic.List[string]]::new();$targetHostName='www.youtube.com'
+        foreach($family in @('ipv4','ipv6')){
+            if(-not $Sources.ContainsKey($family)){
+                $rows.Add(('{0} TCP/TLS: ПРОПУСК — нет пригодного адреса.' -f $family.ToUpperInvariant()))
+                $rows.Add(('{0} UDP/QUIC: ПРОПУСК — нет пригодного адреса.' -f $family.ToUpperInvariant()))
+                continue
+            }
+            $source=[string]$Sources[$family];$addr=[Net.IPAddress]::Parse($source)
+            $socketFamily=if($family -eq 'ipv6'){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork}
+            try{
+                $client=[Net.Sockets.TcpClient]::new($socketFamily)
+                try{
+                    $client.Client.Bind([Net.IPEndPoint]::new($addr,0))
+                    $dns=@([Net.Dns]::GetHostAddresses($targetHostName)|Where-Object {$_.AddressFamily -eq $socketFamily}|Select-Object -First 1)
+                    if(-not $dns.Count){throw 'DNS не вернул адрес нужного семейства.'}
+                    $connect=$client.BeginConnect($dns[0],443,$null,$null)
+                    if(-not $connect.AsyncWaitHandle.WaitOne(5000)){throw 'TCP таймаут 5 секунд.'}
+                    $client.EndConnect($connect)
+                    $stream=[Net.Security.SslStream]::new($client.GetStream(),$false)
+                    try{$auth=$stream.AuthenticateAsClientAsync($targetHostName);if(-not $auth.Wait(5000)){throw 'TLS таймаут 5 секунд.'};$rows.Add(('{0} TCP/TLS: УСПЕХ — TLS с {1} выполнен.' -f $family.ToUpperInvariant(),$targetHostName))}finally{$stream.Dispose()}
+                }finally{$client.Close()}
+            }catch{$rows.Add(('{0} TCP/TLS: ОШИБКА — {1}' -f $family.ToUpperInvariant(),$_.Exception.Message))}
+            try{
+                $udp=[Net.Sockets.UdpClient]::new($socketFamily)
+                try{
+                    $udp.Client.Bind([Net.IPEndPoint]::new($addr,0))
+                    $dns=@([Net.Dns]::GetHostAddresses($targetHostName)|Where-Object {$_.AddressFamily -eq $socketFamily}|Select-Object -First 1)
+                    if(-not $dns.Count){throw 'DNS не вернул адрес нужного семейства.'}
+                    $connection=[Net.IPEndPoint]::new($dns[0],443);$udp.Connect($connection)
+                    $cid=[guid]::NewGuid().ToByteArray();$scid=[guid]::NewGuid().ToByteArray();$packet=New-Object byte[] 23
+                    $packet[0]=[byte]0xC0;$packet[1]=0xFA;$packet[2]=0xCE;$packet[3]=0xB0;$packet[4]=0x0C;$packet[5]=8
+                    [Array]::Copy($cid,0,$packet,6,8);$packet[14]=8;[Array]::Copy($scid,0,$packet,15,8)
+                    $null=$udp.Send($packet,$packet.Length);$receive=$udp.ReceiveAsync()
+                    if($receive.Wait(2500)){
+                        $response=$receive.Result.Buffer
+                        $isVersionNegotiation=($response.Length -ge 7 -and ($response[0] -band 0x80) -ne 0 -and $response[1] -eq 0 -and $response[2] -eq 0 -and $response[3] -eq 0 -and $response[4] -eq 0)
+                        if($isVersionNegotiation){$rows.Add(('{0} UDP/QUIC: ОТВЕТ — сервер ответил на QUIC Version Negotiation.' -f $family.ToUpperInvariant()))}
+                        else{$rows.Add(('{0} UDP/QUIC: ПОЛУЧЕН UDP-ответ ({1} байт); рукопожатие не проверялось.' -f $family.ToUpperInvariant(),$response.Length))}
+                    }else{$rows.Add(('{0} UDP/QUIC: НЕТ ОТВЕТА за 2,5 сек. Это не доказывает блокировку UDP/QUIC.' -f $family.ToUpperInvariant()))}
+                }finally{$udp.Close()}
+            }catch{$rows.Add(('{0} UDP/QUIC: ОШИБКА отправки/сокета — {1}' -f $family.ToUpperInvariant(),$_.Exception.Message))}
+        }
+        return ($rows -join [Environment]::NewLine)
+    }
 }
 function Show-GuiProfileDetails([string]$Mode) {
     try{
@@ -319,6 +595,7 @@ function Start-GuiStrategy([switch]$CheckOnly) {
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){return}
     try{
         $selectedProfile=Get-GuiSelectedProfile
+        Assert-GuiReadiness
         if($null -eq $adapterBox.SelectedItem){throw ('Не найден активный физический адаптер с '+$addressFamilyBox.SelectedItem.Value+'. Подключите сеть и нажмите Обновить.')}
         $selectedAdapter=$adapterBox.SelectedItem
         $addressFamily=[string]$addressFamilyBox.SelectedItem.Value
@@ -334,7 +611,7 @@ function Start-GuiStrategy([switch]$CheckOnly) {
 
         $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $selectedProfileNumber=[int]$selectedProfile.Number
-        if(-not $CheckOnly){$script:guiSettings.RecentProfiles=@($selectedProfileNumber)+@($script:guiSettings.RecentProfiles|Where-Object {$_ -ne $selectedProfileNumber}|Select-Object -First 19);Save-GuiUiPreferences}
+        if(-not $CheckOnly){$script:guiSettings.RecentProfiles=@($selectedProfileNumber)+@($script:guiSettings.RecentProfiles|Where-Object {$_ -ne $selectedProfileNumber}|Select-Object -First 19);$script:guiSettings.RecentProfileConfig=[pscustomobject]@{Name='Последний использованный';ProfileNumber=$selectedProfileNumber;AddressFamily=$addressFamily;Protocol=$protocol;Ports=$scope;AdapterGuid=[string]$selectedAdapter.InterfaceGuid;AdapterName=[string]$selectedAdapter.Name};Save-GuiUiPreferences}
         $script:runningProfile=$selectedProfileNumber
 $launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$catalogue,'-ProfileNumber',[string]$selectedProfileNumber,'-InterfaceIndex',[string]$selectedAdapter.ifIndex,'-Scope',$scope,'-AddressFamily',$addressFamily,'-Protocol',$protocol,'-ZapretDirectory',$bundle,'-StateDirectory',$state)
         if($CheckOnly){$launchArguments+= '-Check'}
@@ -586,7 +863,7 @@ function Save-GuiSettings {
     if($attempts -lt 1 -or $attempts -gt 5){throw 'Число попыток должно быть от 1 до 5.'}
     if($timeoutSeconds -lt 5 -or $timeoutSeconds -gt 120){throw 'Таймаут должен быть от 5 до 120 секунд.'}
     if($thresholdKB -lt 16 -or $thresholdKB -gt 1024){throw 'Порог ответа должен быть от 16 до 1024 КиБ.'}
-    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked;Favorites=@($script:guiSettings.Favorites);RecentProfiles=@($script:guiSettings.RecentProfiles);FirstRunComplete=$true;WindowBounds=$script:guiSettings.WindowBounds;WindowMaximized=$script:guiSettings.WindowMaximized}
+    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked;MinimizeToTray=[bool]$trayMinimizeCheck.Checked;Favorites=@($script:guiSettings.Favorites);RecentProfiles=@($script:guiSettings.RecentProfiles);RecentProfileConfig=$script:guiSettings.RecentProfileConfig;FirstRunComplete=$true;WindowBounds=$script:guiSettings.WindowBounds;WindowMaximized=$script:guiSettings.WindowMaximized}
     [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null
     $temporary=$script:guiSettingsPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     try{
@@ -601,6 +878,7 @@ function Save-GuiSettings {
     $protocolBox.SelectedIndex=if($protocol -eq 'quic'){1}else{0}
     $portsBox.Text=$ports
     Refresh-GuiAdapters
+    $script:guiSettings.MinimizeToTray=[bool]$trayMinimizeCheck.Checked
     $settingsStatusLabel.Text='Настройки сохранены и применены.'
 }
 function Load-GuiAnalysisHistory {
@@ -609,6 +887,7 @@ function Load-GuiAnalysisHistory {
     if($latest){try{$null=Set-GuiAnalysisResults $latest.FullName}catch{Write-GuiLog ('Could not load analysis history: '+$_.Exception.Message)}}
 }
 
+$script:connectionProfiles=@(Read-GuiConnectionProfiles)
 try{
     if(-not (Test-Path -LiteralPath $bundle -PathType Container)){ throw 'Не найдена папка установленного Zapret2: '+$bundle}
     if(-not (Test-Path -LiteralPath (Join-Path $installRoot '.antidpi-install.json') -PathType Leaf)){throw 'Маркер установки не найден. Запустите установку заново.'}
@@ -639,11 +918,11 @@ try{
     $settingsTab=[System.Windows.Forms.TabPage]::new('Настройки')
     $aboutTab=[System.Windows.Forms.TabPage]::new('О программе')
     foreach($page in @($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
-    $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,660)
-    $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,590)
+    $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)
+    $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,640)
     $historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,520)
-    $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,610)
-    $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,390)
+    $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,910)
+    $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)
     $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab))
     $form.Controls.Add($tabs)
 
@@ -764,7 +1043,7 @@ try{
     $addressFamilyBox.Add_SelectedIndexChanged({Update-GuiDashboard});$protocolBox.Add_SelectedIndexChanged({Update-GuiDashboard});$adapterBox.Add_SelectedIndexChanged({Update-GuiDashboard});$portsBox.Add_TextChanged({Update-GuiDashboard})
 
     $analysisInfo=New-Object System.Windows.Forms.Label
-    $analysisInfo.Text='Контроль без тестовой стратегии сравнивается с каждой стратегией: если оба проходят, статус будет BASELINE_PASS, а не PASS. Число попыток, таймаут и порог ответа настраиваются во вкладке «Настройки». Тест только YouTube IPv4/TCP/TLS; не доказывает VPN/Tor или обход DPI.'
+    $analysisInfo.Text='Контроль без тестовой стратегии сравнивается с каждой стратегией: если оба проходят, статус будет BASELINE_PASS. Анализ стратегий по-прежнему ограничен YouTube IPv4/TCP/TLS. Кнопка матрицы ниже отдельно проверяет базовый TLS и QUIC Version Negotiation по IPv4/IPv6 — без стратегии; это не проверка HTTP/3 или обхода DPI.'
     $analysisInfo.Location=[System.Drawing.Point]::new(20,18);$analysisInfo.Size=[System.Drawing.Size]::new(690,68);$analysisInfo.Anchor='Top,Left,Right'
     $analysisTab.Controls.Add($analysisInfo)
     $analysisRangeLabel=New-Object System.Windows.Forms.Label
@@ -810,6 +1089,7 @@ try{
     $analysisStatusLabel.Text='Ещё нет результатов. Для сравнения начните с Golden-стратегий 1-45.'
     $analysisStatusLabel.Location=[System.Drawing.Point]::new(22,535);$analysisStatusLabel.Size=[System.Drawing.Size]::new(690,40);$analysisStatusLabel.Anchor='Bottom,Left,Right'
     $analysisTab.Controls.Add($analysisStatusLabel)
+    $matrixButton=New-Object System.Windows.Forms.Button;$matrixButton.Text='Матрица базовой доступности IPv4/IPv6 · TCP/TLS и QUIC';$matrixButton.Location=[System.Drawing.Point]::new(22,582);$matrixButton.Size=[System.Drawing.Size]::new(520,38);$matrixButton.Add_Click({try{if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите физический сетевой адаптер.'};Start-GuiConnectivityMatrix}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($matrixButton)
 
     $historySearchLabel=New-Object System.Windows.Forms.Label;$historySearchLabel.Text='Поиск истории';$historySearchLabel.Location=[System.Drawing.Point]::new(22,24);$historySearchLabel.Size=[System.Drawing.Size]::new(105,24);$historyTab.Controls.Add($historySearchLabel)
     $historySearchBox=New-Object System.Windows.Forms.TextBox;$script:historySearchBox=$historySearchBox;$historySearchBox.Location=[System.Drawing.Point]::new(130,20);$historySearchBox.Size=[System.Drawing.Size]::new(352,30);$historySearchBox.Anchor='Top,Left,Right';$historySearchBox.Add_TextChanged({Update-GuiHistory});$historyTab.Controls.Add($historySearchBox)
@@ -834,9 +1114,11 @@ try{
     $aboutLicense.Location=[System.Drawing.Point]::new(30,250);$aboutLicense.Size=[System.Drawing.Size]::new(660,60);$aboutLicense.Anchor='Top,Left,Right'
     $aboutTab.Controls.Add($aboutLicense)
     $aboutReleaseButton=New-Object System.Windows.Forms.Button
-    $aboutReleaseButton.Text='Открыть страницу релизов';$aboutReleaseButton.Location=[System.Drawing.Point]::new(30,350);$aboutReleaseButton.Size=[System.Drawing.Size]::new(230,40)
+    $aboutUpdateButton=New-Object System.Windows.Forms.Button;$aboutUpdateButton.Text='Проверить / установить обновление';$aboutUpdateButton.Location=[System.Drawing.Point]::new(30,330);$aboutUpdateButton.Size=[System.Drawing.Size]::new(310,40);$aboutUpdateButton.Add_Click({try{Start-GuiReleaseCheck}catch{Show-GuiError $_.Exception.Message}});$aboutTab.Controls.Add($aboutUpdateButton)
+    $aboutReleaseButton.Text='Открыть страницу релизов';$aboutReleaseButton.Location=[System.Drawing.Point]::new(30,382);$aboutReleaseButton.Size=[System.Drawing.Size]::new(230,40)
     $aboutReleaseButton.Add_Click({try{Start-Process 'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases'}catch{Show-GuiError $_.Exception.Message}})
     $aboutTab.Controls.Add($aboutReleaseButton)
+    $aboutRollbackButton=New-Object System.Windows.Forms.Button;$aboutRollbackButton.Text='Откатить обновление…';$aboutRollbackButton.Location=[System.Drawing.Point]::new(280,382);$aboutRollbackButton.Size=[System.Drawing.Size]::new(210,40);$aboutRollbackButton.Add_Click({try{Start-GuiRollbackManager}catch{Show-GuiError $_.Exception.Message}});$aboutTab.Controls.Add($aboutRollbackButton)
 
     $settingsInfo=New-Object System.Windows.Forms.Label
     $settingsInfo.Text='Настройки сохраняются для следующих запусков. Активный трафик изменяется только после запуска стратегии.'
@@ -914,14 +1196,27 @@ try{
     $settingsShowErrorDetailsCheck.Location=[System.Drawing.Point]::new(28,478);$settingsShowErrorDetailsCheck.Size=[System.Drawing.Size]::new(560,28)
     $settingsTab.Controls.Add($settingsShowErrorDetailsCheck)
     $settingsSaveButton=New-Object System.Windows.Forms.Button
-    $settingsSaveButton.Text='Сохранить настройки';$settingsSaveButton.Location=[System.Drawing.Point]::new(28,520);$settingsSaveButton.Size=[System.Drawing.Size]::new(210,40);$settingsSaveButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$settingsSaveButton.ForeColor=[System.Drawing.Color]::White
+    $trayMinimizeCheck=New-Object System.Windows.Forms.CheckBox;$trayMinimizeCheck.Text='Сворачивать окно в системный трей';$trayMinimizeCheck.Checked=[bool]$script:guiSettings.MinimizeToTray;$trayMinimizeCheck.Location=[System.Drawing.Point]::new(28,514);$trayMinimizeCheck.Size=[System.Drawing.Size]::new(500,28);$settingsTab.Controls.Add($trayMinimizeCheck)
+    $settingsSaveButton.Text='Сохранить настройки';$settingsSaveButton.Location=[System.Drawing.Point]::new(28,550);$settingsSaveButton.Size=[System.Drawing.Size]::new(210,40);$settingsSaveButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$settingsSaveButton.ForeColor=[System.Drawing.Color]::White
     $settingsTab.Controls.Add($settingsSaveButton)
     $interfacesButton=New-Object System.Windows.Forms.Button
-    $interfacesButton.Text='Список всех интерфейсов';$interfacesButton.Location=[System.Drawing.Point]::new(250,520);$interfacesButton.Size=[System.Drawing.Size]::new(220,40)
+    $interfacesButton.Text='Список всех интерфейсов';$interfacesButton.Location=[System.Drawing.Point]::new(250,550);$interfacesButton.Size=[System.Drawing.Size]::new(220,40)
     $interfacesButton.Add_Click({Show-GuiInterfaces});$settingsTab.Controls.Add($interfacesButton)
     $settingsStatusLabel=New-Object System.Windows.Forms.Label
-    $settingsStatusLabel.Text='';$settingsStatusLabel.Location=[System.Drawing.Point]::new(28,572);$settingsStatusLabel.Size=[System.Drawing.Size]::new(650,32)
+    $settingsStatusLabel.Text='';$settingsStatusLabel.Location=[System.Drawing.Point]::new(28,600);$settingsStatusLabel.Size=[System.Drawing.Size]::new(650,32)
     $settingsTab.Controls.Add($settingsStatusLabel)
+    $connectionTitle=New-Object System.Windows.Forms.Label;$connectionTitle.Text='Профили подключения: стратегия, IP-семейство, транспорт, адаптер и порты';$connectionTitle.Location=[System.Drawing.Point]::new(28,644);$connectionTitle.Size=[System.Drawing.Size]::new(680,24);$settingsTab.Controls.Add($connectionTitle)
+    $script:profilesCombo=New-Object System.Windows.Forms.ComboBox;$script:profilesCombo.DropDownStyle='DropDownList';$script:profilesCombo.DisplayMember='Name';$script:profilesCombo.Location=[System.Drawing.Point]::new(28,672);$script:profilesCombo.Size=[System.Drawing.Size]::new(420,30);$settingsTab.Controls.Add($script:profilesCombo)
+    $connectionProfileNameLabel=New-Object System.Windows.Forms.Label;$connectionProfileNameLabel.Text='Название';$connectionProfileNameLabel.Location=[System.Drawing.Point]::new(28,706);$connectionProfileNameLabel.Size=[System.Drawing.Size]::new(180,20);$settingsTab.Controls.Add($connectionProfileNameLabel)
+    $connectionProfileNameBox=New-Object System.Windows.Forms.TextBox;$connectionProfileNameBox.Location=[System.Drawing.Point]::new(28,730);$connectionProfileNameBox.Size=[System.Drawing.Size]::new(260,30);$settingsTab.Controls.Add($connectionProfileNameBox)
+    $profileSaveButton=New-Object System.Windows.Forms.Button;$profileSaveButton.Text='Сохранить текущий';$profileSaveButton.Location=[System.Drawing.Point]::new(300,728);$profileSaveButton.Size=[System.Drawing.Size]::new(170,34);$profileSaveButton.Add_Click({try{Save-GuiConnectionProfile}catch{Show-GuiError $_.Exception.Message}});$settingsTab.Controls.Add($profileSaveButton)
+    $profileApplyButton=New-Object System.Windows.Forms.Button;$profileApplyButton.Text='Применить';$profileApplyButton.Location=[System.Drawing.Point]::new(28,770);$profileApplyButton.Size=[System.Drawing.Size]::new(130,34);$profileApplyButton.Add_Click({try{Apply-GuiConnectionProfile}catch{Show-GuiError $_.Exception.Message}});$settingsTab.Controls.Add($profileApplyButton)
+    $profileDeleteButton=New-Object System.Windows.Forms.Button;$profileDeleteButton.Text='Удалить';$profileDeleteButton.Location=[System.Drawing.Point]::new(170,770);$profileDeleteButton.Size=[System.Drawing.Size]::new(120,34);$profileDeleteButton.Add_Click({try{Remove-GuiConnectionProfile}catch{Show-GuiError $_.Exception.Message}});$settingsTab.Controls.Add($profileDeleteButton)
+    $configExportButton=New-Object System.Windows.Forms.Button;$configExportButton.Text='Экспортировать настройки…';$configExportButton.Location=[System.Drawing.Point]::new(28,815);$configExportButton.Size=[System.Drawing.Size]::new(250,38);$configExportButton.Add_Click({try{Export-GuiConfiguration}catch{Show-GuiError $_.Exception.Message}});$settingsTab.Controls.Add($configExportButton)
+    $configImportButton=New-Object System.Windows.Forms.Button;$configImportButton.Text='Импортировать настройки…';$configImportButton.Location=[System.Drawing.Point]::new(292,815);$configImportButton.Size=[System.Drawing.Size]::new(250,38);$configImportButton.Add_Click({try{Import-GuiConfiguration}catch{Show-GuiError $_.Exception.Message}});$settingsTab.Controls.Add($configImportButton)
+    $readinessButton=New-Object System.Windows.Forms.Button;$readinessButton.Text='Проверить готовность';$readinessButton.Location=[System.Drawing.Point]::new(28,860);$readinessButton.Size=[System.Drawing.Size]::new(210,38);$readinessButton.Add_Click({Show-GuiReadiness});$settingsTab.Controls.Add($readinessButton)
+    $diagnosticButton=New-Object System.Windows.Forms.Button;$diagnosticButton.Text='Диагностический отчёт…';$diagnosticButton.Location=[System.Drawing.Point]::new(252,860);$diagnosticButton.Size=[System.Drawing.Size]::new(230,38);$diagnosticButton.Add_Click({Show-GuiDiagnosticReport});$settingsTab.Controls.Add($diagnosticButton)
+    Update-GuiConnectionProfileItems
     $settingsSaveButton.Add_Click({try{Save-GuiSettings}catch{Show-GuiError $_.Exception.Message}})
     $analysisButton.Add_Click({Start-GuiAnalysis})
     $analysisCancelButton.Add_Click({Request-GuiAnalysisCancel})
@@ -945,6 +1240,22 @@ try{
     if(-not $script:guiSettings.FirstRunComplete){$welcome='Добро пожаловать в AntiDPI.'+[Environment]::NewLine+[Environment]::NewLine+'1. Выберите IP-семейство, транспорт и физический сетевой адаптер.'+[Environment]::NewLine+'2. Найдите стратегию; её описание показано под списком. Сначала нажмите «Проверить, не запускать».'+[Environment]::NewLine+'3. Запуск меняет обработку трафика; останавливайте кнопкой «Остановить», чтобы корректно восстановить состояние.'+[Environment]::NewLine+[Environment]::NewLine+'Анализ проверяет только доступность YouTube IPv4/TCP/TLS и не доказывает работу VPN/Tor или обход DPI.';[System.Windows.Forms.MessageBox]::Show($welcome,'Первый запуск AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null;$script:guiSettings.FirstRunComplete=$true}
     $timer=New-Object System.Windows.Forms.Timer
     $timer.Interval=650
+    $trayMenu=New-Object System.Windows.Forms.ContextMenuStrip
+    $trayOpen=$trayMenu.Items.Add('Открыть AntiDPI');$trayOpen.Add_Click({$form.Show();$form.WindowState='Normal';$form.Activate()})
+    $trayRunRecent=$trayMenu.Items.Add('Запустить последний профиль');$trayRunRecent.Add_Click({try{$recent=$script:guiSettings.RecentProfileConfig;if($null -eq $recent -and @($script:guiSettings.RecentProfiles).Count){$recent=[pscustomobject]@{Name='Последний использованный';ProfileNumber=[int]$script:guiSettings.RecentProfiles[0];AddressFamily=[string]$addressFamilyBox.SelectedItem.Value;Protocol=[string]$protocolBox.SelectedItem.Value;Ports=[string]$portsBox.Text;AdapterGuid='';AdapterName=''}};if($null -eq $recent){throw 'Нет ранее использованного профиля.'};$null=Set-GuiConnectionControls $recent;$form.Show();$form.WindowState='Normal';Start-GuiStrategy}catch{Show-GuiError $_.Exception.Message}})
+    $trayStop=$trayMenu.Items.Add('Безопасно остановить');$trayStop.Add_Click({Request-GuiStop})
+    $trayMenu.Items.Add('-')|Out-Null;$trayExit=$trayMenu.Items.Add('Закрыть');$trayExit.Add_Click({$form.Close()})
+    $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=[System.Drawing.SystemIcons]::Application;$script:trayIcon.Text='AntiDPI — готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
+    $script:trayIcon.Add_DoubleClick({$form.Show();$form.WindowState='Normal';$form.Activate()})
+    $form.Add_Resize({if($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -and $script:guiSettings.MinimizeToTray){$form.Hide();$script:trayIcon.ShowBalloonTip(1200,'AntiDPI','Окно скрыто в системный трей. Перехват продолжает работать до безопасной остановки.','Info')}})
+    $script:networkSignature=Get-GuiSelectedNetworkSignature
+    $networkTimer=New-Object System.Windows.Forms.Timer;$networkTimer.Interval=4000;$networkTimer.Add_Tick({
+        $strategyActive=$null -ne $script:worker -and -not $script:worker.HasExited
+        $analysisActive=$null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited
+        if($strategyActive -or $analysisActive){
+            try{$signature=Get-GuiSelectedNetworkSignature;if($script:networkSignature -and $signature -cne $script:networkSignature){$script:networkSignature=$signature;Set-GuiStatus 'Сетевой адаптер или адрес изменился. Проверьте подключение.' ([System.Drawing.Color]::DarkOrange);$answer=[System.Windows.Forms.MessageBox]::Show('Обнаружено изменение состояния или адреса адаптера во время задачи. Безопасно остановить текущую задачу?','Смена сети',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning);if($answer -eq [System.Windows.Forms.DialogResult]::Yes){if($strategyActive){Request-GuiStop};if($analysisActive){Request-GuiAnalysisCancel}}}}catch{Write-GuiLog ('Network change monitor: '+$_.Exception.Message)}
+        }else{try{$script:networkSignature=Get-GuiSelectedNetworkSignature}catch{}}
+    })
     $timer.Add_Tick({
         if($null -ne $script:worker -and $script:worker.HasExited){
             $code=$script:worker.ExitCode
@@ -1004,9 +1315,11 @@ try{
             }
             if($script:closeWhenStopped -and $null -eq $script:worker){$form.Close()}
         }
+        if($null -ne $script:releaseCheckJob -and $script:releaseCheckJob.State -in @('Completed','Failed','Stopped')){try{$release=Receive-Job -Job $script:releaseCheckJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $release -or -not $release.Tag){throw 'GitHub API не вернул сведения о релизе.'};Show-GuiReleaseInfo $release}catch{[System.Windows.Forms.MessageBox]::Show(('Не удалось проверить релизы онлайн: '+$_.Exception.Message+[Environment]::NewLine+'Можно открыть страницу релизов вручную.'),'Проверка обновлений',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning)|Out-Null;try{Start-Process 'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases'}catch{}}finally{Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue;$script:releaseCheckJob=$null}}
+        if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){try{$matrixText=(Receive-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue|Out-String).Trim();if(-not $matrixText){$matrixText='Проверка матрицы не вернула данных.'};Add-GuiHistory 'Матрица сети' 'ЗАВЕРШЕНА' 'Базовые TCP/TLS и UDP/QUIC проверки для доступных семейств.';Show-GuiTextDialog 'Базовая матрица доступности сети' ($matrixText+[Environment]::NewLine+[Environment]::NewLine+'Это только сетевой контроль без тестовой стратегии. QUIC Version Negotiation показывает ответ UDP-узла, но не доказывает работу HTTP/3 или обход DPI. Отсутствие UDP-ответа не доказывает блокировку.')}catch{Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue;$script:networkMatrixJob=$null}}
         if($script:closeWhenStopped -and $null -eq $script:worker -and $null -eq $script:analysisWorker){$form.Close()}
     })
-    $timer.Start()
+    $timer.Start();$networkTimer.Start()
     $form.KeyPreview=$true
     $form.Add_KeyDown({
         if($_.KeyCode -eq [System.Windows.Forms.Keys]::F1){
@@ -1038,7 +1351,7 @@ try{
         }
     })
     $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
-    $form.Add_FormClosed({$timer.Stop();$timer.Dispose()})
+    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue}})
     Write-GuiLog 'Showing main form'
     [void]$form.ShowDialog()
     Write-GuiLog 'Main form closed normally'
