@@ -467,9 +467,12 @@ try {
     Assert-Equal 'Attempt 1; "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
     Assert-Equal '' $csvRows[0].Details 'CSV exports empty diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
-    $csvData.Results[0].AttemptDetails=''
-    $csvData.Results[0].Details='error; "two"'
-    Write-GuiAnalysisCsv $csvData $csvPath
+    $detailsData=[pscustomobject]@{
+        CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
+        Baseline=[pscustomobject]@{Successes=0;Attempts=2}
+        Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='';Details='error; "two"'})
+    }
+    Write-GuiAnalysisCsv $detailsData $csvPath
     $detailsText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     Assert-True ($detailsText.Contains('error;') -and $detailsText.Contains('two')) 'CSV exports diagnostic detail text containing a semicolon and quotes'
     $csvData.Results[0].Status='UNSTABLE'
