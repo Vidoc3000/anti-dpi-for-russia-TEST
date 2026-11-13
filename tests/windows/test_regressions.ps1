@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -436,28 +436,22 @@ $guiTokens = $null
 $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
-foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv')){
+foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile')){
     $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
-$csvResult=[pscustomobject]@{
-    Number=37
-    Status='FAIL'
-    Successes=0
-    ExpectedAttempts=2
-    AttemptDetails='attempt details'
-    Details='diagnostic details'
-}
+$profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
+$connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
+Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
+Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
+Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
-    CreatedUtc='2026-11-10T12:00:00.0000000Z'
-    Test='YouTube HTTPS'
-    AddressFamily='ipv4'
-    Protocol='tcp-tls'
-    FirstProfile=37
-    LastProfile=37
+    CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-    Results=@($csvResult)
+    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='ошибка; строка "две"'})
 }
 $csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
 try {
@@ -469,13 +463,16 @@ try {
     Assert-Equal '187' ([string]$csvBytes[1]) 'CSV UTF-8 BOM second byte'
     Assert-Equal '191' ([string]$csvBytes[2]) 'CSV UTF-8 BOM third byte'
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True ($csvText.Contains('AttemptDetails') -and $csvText.Contains('attempt details')) 'CSV exports attempt details'
-    Assert-True ($csvText.Contains('Details') -and $csvText.Contains('diagnostic details')) 'CSV exports diagnostic details'
-    Assert-True ($csvText.Contains('Не прошла тест YouTube')) 'CSV exports the displayed recommendation'
-    $csvResult.Status='UNSTABLE'
+    $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
+    Assert-Equal 1 $csvRows.Count 'CSV export row count'
+    Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
+    Assert-Equal 'Попытка 1; HTTP 200, текст "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
+    Assert-Equal 'ошибка; строка "две"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
+    Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
+    $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
-    $replacedText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True ($replacedText.Contains('UNSTABLE')) 're-export atomically replaces an existing CSV'
+    $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
+    Assert-Equal 'UNSTABLE' $replacedRows[0].Status 're-export atomically replaces an existing CSV'
     Assert-Equal 0 @(Get-ChildItem -LiteralPath $csvRoot -Filter 'analysis.csv.*.tmp' -File).Count 'CSV export removes temporary files'
 } finally {
     if(Test-Path -LiteralPath $csvRoot){Remove-Item -LiteralPath $csvRoot -Recurse -Force -ErrorAction SilentlyContinue}
