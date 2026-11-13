@@ -46,6 +46,29 @@ function Test-InstallerExistingInstall([string]$Path) {
         return ($data.Schema -eq 'antidpi.zapret.install.v1' -and [IO.Path]::GetFullPath([string]$data.InstallRoot) -ieq $root -and -not [string]::IsNullOrWhiteSpace([string]$data.DisplayVersion) -and @($requiredFiles|Where-Object {-not (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)}).Count -eq 0)
     }catch{return $false}
 }
+function Get-InstallerUpdatePreview([string]$Path) {
+    if(-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)){return ''}
+    try{$text=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop}catch{return ''}
+    $start=$text.IndexOf('Предпросмотр обновления: будут заменены следующие файлы:',[StringComparison]::Ordinal)
+    if($start -lt 0){return ''}
+    $end=$text.IndexOf('Всего файлов:', $start, [StringComparison]::Ordinal)
+    if($end -lt 0){return ''}
+    $endLine=$text.IndexOf([Environment]::NewLine,$end,[StringComparison]::Ordinal)
+    if($endLine -lt 0){$endLine=$text.Length}else{$endLine+=[Environment]::NewLine.Length}
+    return $text.Substring($start,$endLine-$start).Trim()
+}
+function Confirm-InstallerUpdatePreview([string]$Preview) {
+    $dialog=New-Object System.Windows.Forms.Form
+    $dialog.Text='Просмотр файлов обновления AntiDPI'
+    $dialog.StartPosition='CenterParent';$dialog.ClientSize=[System.Drawing.Size]::new(700,500);$dialog.MinimumSize=[System.Drawing.Size]::new(620,420)
+    $dialog.Font=[System.Drawing.Font]::new('Segoe UI',10);$dialog.BackColor=[System.Drawing.Color]::FromArgb(247,249,252);$dialog.AutoScaleMode=[System.Windows.Forms.AutoScaleMode]::Dpi
+    $description=New-Object System.Windows.Forms.Label;$description.Text='Проверьте список. Файлы будут заменены только после вашего подтверждения; настройки и папка Zapret2 сохраняются.';$description.Location=[System.Drawing.Point]::new(18,16);$description.Size=[System.Drawing.Size]::new(660,48);$description.Anchor='Top,Left,Right';$dialog.Controls.Add($description)
+    $list=New-Object System.Windows.Forms.TextBox;$list.Multiline=$true;$list.ReadOnly=$true;$list.WordWrap=$false;$list.ScrollBars='Both';$list.Font=[System.Drawing.Font]::new('Consolas',9);$list.Text=$Preview;$list.Location=[System.Drawing.Point]::new(18,70);$list.Size=[System.Drawing.Size]::new(664,350);$list.Anchor='Top,Bottom,Left,Right';$dialog.Controls.Add($list)
+    $continue=New-Object System.Windows.Forms.Button;$continue.Text='Подтвердить и обновить';$continue.Size=[System.Drawing.Size]::new(220,36);$continue.Location=[System.Drawing.Point]::new(240,448);$continue.Anchor='Bottom,Right';$continue.DialogResult=[System.Windows.Forms.DialogResult]::OK;$dialog.Controls.Add($continue)
+    $cancel=New-Object System.Windows.Forms.Button;$cancel.Text='Отмена';$cancel.Size=[System.Drawing.Size]::new(120,36);$cancel.Location=[System.Drawing.Point]::new(490,448);$cancel.Anchor='Bottom,Right';$cancel.DialogResult=[System.Windows.Forms.DialogResult]::Cancel;$dialog.Controls.Add($cancel)
+    $dialog.AcceptButton=$continue;$dialog.CancelButton=$cancel
+    try{return $dialog.ShowDialog($form)}finally{$dialog.Dispose()}
+}
 $manager=Join-Path $PSScriptRoot 'AntiDPI_Manager.ps1'
 if(-not (Test-Path -LiteralPath $manager -PathType Leaf)){Show-InstallerError 'Не найден AntiDPI_Manager.ps1 рядом с установщиком.';exit 1}
 
@@ -135,6 +158,20 @@ $form.Controls.Add($cancelButton)
 $closeButton=New-Object System.Windows.Forms.Button
 $closeButton.Text='Закрыть';$closeButton.Location=[System.Drawing.Point]::new(552,590);$closeButton.Size=[System.Drawing.Size]::new(130,36);$closeButton.Anchor='Bottom,Right'
 $form.Controls.Add($closeButton)
+function Start-ApprovedInstallerUpdate {
+    $logDirectory=Split-Path -Parent $script:stdoutPath
+    $stamp=Get-Date -Format 'yyyyMMdd_HHmmss_fff'
+    $script:stdoutPath=Join-Path $logDirectory ('Wizard_Approved_'+$stamp+'.out.log')
+    $script:stderrPath=Join-Path $logDirectory ('Wizard_Approved_'+$stamp+'.err.log')
+    $script:lastLog=''
+    $powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $args=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$manager,'-Action','Update','-InstallPath',$pathBox.Text,'-NonInteractiveInstaller','-ApproveUpdatePreview','-SkipHeader')
+    $joined=(@($args|ForEach-Object {ConvertTo-InstallerArgument ([string]$_)}) -join ' ')
+    $script:installProcess=Start-Process -FilePath $powershell -ArgumentList $joined -WindowStyle Normal -RedirectStandardOutput $script:stdoutPath -RedirectStandardError $script:stderrPath -PassThru
+    $installButton.Enabled=$false;$pathBox.Enabled=$false;$browseButton.Enabled=$false;$bundleGroup.Enabled=$false;$shortcutCheck.Enabled=$false;$updateCheck.Enabled=$false
+    $openLogsButton.Enabled=$true;$cancelButton.Enabled=$false;$progress.Style=[System.Windows.Forms.ProgressBarStyle]::Marquee;$progress.MarqueeAnimationSpeed=25
+    $status.Text='Список файлов подтверждён. Выполняется безопасное обновление…';$status.ForeColor=[System.Drawing.Color]::DarkOrange
+}
 $updateCheck.Add_CheckedChanged({
     $pathLabel.Text=if($updateCheck.Checked){'Папка существующей установки (обновление на месте)'}else{'Папка установки (новая или пустая)'}
     $bundleGroup.Enabled=(-not $updateCheck.Checked)
@@ -222,6 +259,20 @@ $timer.Add_Tick({
         }
         $recent=@($recent|Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
         if($recent.Count){$logBox.Text=($recent -join [Environment]::NewLine);$logBox.SelectionStart=$logBox.TextLength;$logBox.ScrollToCaret()}
+        if($script:installAction -eq 'Update' -and $code -eq 3){
+            $preview=Get-InstallerUpdatePreview $script:stdoutPath
+            if($preview){
+                $logBox.Text=$preview
+                $approval=Confirm-InstallerUpdatePreview $preview
+                if($approval -eq [System.Windows.Forms.DialogResult]::OK){
+                    try{Start-ApprovedInstallerUpdate}catch{$status.Text=('Не удалось запустить обновление: '+$_.Exception.Message);$status.ForeColor=[System.Drawing.Color]::Firebrick;Show-InstallerError $_.Exception.Message;$installButton.Text='Повторить обновление';$installButton.Enabled=$true;$pathBox.Enabled=$true;$browseButton.Enabled=$true;$updateCheck.Enabled=$true}
+                }else{
+                    $status.Text='Обновление отменено после просмотра списка файлов.';$status.ForeColor=[System.Drawing.Color]::DarkOrange
+                    $installButton.Text='Повторить обновление';$installButton.Enabled=$true;$pathBox.Enabled=$true;$browseButton.Enabled=$true;$updateCheck.Enabled=$true
+                }
+                return
+            }
+        }
         if($code -eq 0){$logBox.Text='Успешно. Подробные журналы доступны по кнопке «Открыть логи».'}
         if($code -eq 2){
             $status.Text='Установка отменена. Временные файлы очищены; можно повторить.';$status.ForeColor=[System.Drawing.Color]::DarkOrange

@@ -174,6 +174,16 @@ Assert-True ($installerCommand -notmatch '(?i)-WindowStyle\s+Hidden') 'ZIP insta
 Assert-True ($setupText.Contains('0x00000010') -and $setupText -notmatch '(?i)-WindowStyle Hidden') 'EXE bootstrapper starts its installer visibly instead of creating a hidden PowerShell process'
 Assert-True ($setupText.Contains('AntiDPI_Installer.ps1') -and $installerCommand.Contains('AntiDPI_Installer.ps1')) 'EXE and ZIP entry points both launch the new Windows installer UI'
 Assert-True ($managerText.Contains('$NonInteractiveInstaller') -and $managerText.Contains('$CreateShortcutChoice') -and $managerText.Contains('$BundleSelection')) 'installer backend accepts the GUI-selected setup options'
+Assert-True ($managerText.Contains('$ApproveUpdatePreview') -and $managerText.Contains('$script:AntiDPIUpdatePreviewRequired=$true') -and $managerText.Contains('exit 3') -and -not $managerText.Contains('Обновление в неинтерактивном режиме остановлено')) 'noninteractive updates return a reviewable preview state instead of a terminal error'
+Assert-True ($installerText.Contains('Get-InstallerUpdatePreview') -and $installerText.Contains('Confirm-InstallerUpdatePreview') -and $installerText.Contains('-ApproveUpdatePreview')) 'installer displays the replacement-file preview and requires explicit approval before retrying update'
+$installerTokens=$null;$installerParseErrors=$null
+$installerAst=[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\AntiDPI_Installer.ps1'),[ref]$installerTokens,[ref]$installerParseErrors)
+$previewFunctionAst=$installerAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-InstallerUpdatePreview'},$true)
+Assert-True ($null -ne $previewFunctionAst) 'installer preview parser is available for direct regression testing'
+. ([scriptblock]::Create($previewFunctionAst.Extent.Text))
+$previewTestPath=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-update-preview-'+[guid]::NewGuid().ToString('N')+'.log')
+$previewTestText='Предпросмотр обновления: будут заменены следующие файлы:'+[Environment]::NewLine+'  [ЗАМЕНА] AntiDPI\\AntiDPI_GUI.ps1'+[Environment]::NewLine+'Всего файлов: 1. Изменённые пользователем файлы не перезаписываются.'+[Environment]::NewLine+'Поздний вывод не должен попасть в окно.'
+try{[IO.File]::WriteAllText($previewTestPath,$previewTestText,[Text.UTF8Encoding]::new($false));$parsedPreview=Get-InstallerUpdatePreview $previewTestPath;Assert-True ($parsedPreview.Contains('AntiDPI\\AntiDPI_GUI.ps1') -and $parsedPreview.Contains('Всего файлов: 1') -and -not $parsedPreview.Contains('Поздний вывод')) 'installer extracts the complete approved file list without trailing log text'}finally{if(Test-Path -LiteralPath $previewTestPath){Remove-Item -LiteralPath $previewTestPath -Force}}
 Assert-True ($managerText.Contains("'AntiDPI_Zapret2.ico'") -and $managerText.Contains("'AntiDPI_Zapret2_delete.ico'")) 'install and uninstall shortcuts use their separate application icons'
 foreach ($iconName in @('AntiDPI_Zapret2.ico','AntiDPI_Zapret2_delete.ico')) {
     $iconBytes = [IO.File]::ReadAllBytes((Join-Path $repoRoot ('windows\payload\' + $iconName)))
