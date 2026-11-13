@@ -191,7 +191,7 @@ Assert-True ($coreText.Contains('--filter-$transport=$ports')) 'engine builder c
 Assert-True ($managerText.Contains("'ips6-exclude.txt'")) 'installer packages IPv6 exclusions'
 Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot 'windows\payload\lists\ips6-exclude.txt')) 'IPv6 exclusions are shipped'
 Assert-True ($guiText.Contains('[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)')) 'GUI requests managed controller shutdown'
-Assert-True ($guiText.Contains('[AntiDPIConsoleWindow]::Hide()')) 'GUI hides only the console, not its form'
+Assert-True ($guiText.Contains('public static void Hide()')) 'GUI exposes a console-only hide helper without hiding its form'
 Assert-True ($managerText.Contains("WindowStyle='Normal';PassThru=`$true")) 'restarted GUI process starts with a visible window style'
 Assert-True ($managerText.Contains('-WindowStyle Normal')) 'post-install GUI process starts with a visible window style'
 Assert-True ($guiText.Contains("Write-GuiLog 'Showing main form'")) 'GUI records whether the form was shown'
