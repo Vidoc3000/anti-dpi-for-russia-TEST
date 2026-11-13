@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## 1.16 — Windows managed-stop reliability
+
+| English | Русский |
+| --- | --- |
+| Keep Windows system-tray text within the 63-character limit to prevent an exception during managed stop. Report stop-request failures in status/history/log without an unnecessary modal pop-up. Linux package is republished with the current CLI and strategy catalogue. | Длина текста в системном трее Windows ограничена 63 символами, чтобы при штатной остановке не возникало исключение. Ошибки запроса остановки отображаются в статусе и истории и записываются в журнал без лишнего модального окна. Пакет Linux перевыпущен с текущим CLI и каталогом стратегий. |
+| Combined release: Linux package advances to 1.16; Windows GUI + CLI advances to 1.15. | Общий релиз: версия Linux-пакета повышена до 1.16; Windows GUI + CLI — до 1.15. |
+
 ## 1.11 — UTF-8 Windows strategy logs
 
 | English | Русский |

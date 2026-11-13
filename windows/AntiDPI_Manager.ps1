@@ -146,7 +146,7 @@ function Update-AntiDPIDesktopDocuments($Manifest) {
     if(-not (Test-Path -LiteralPath $expected -PathType Container)){return}
     $documents=[Collections.Generic.List[object]]::new()
     $targets=[Collections.Generic.List[object]]::new()
-    foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
+    foreach($name in @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt')){
         $source=Join-Path $PSScriptRoot $name
         if(-not (Test-Path -LiteralPath $source -PathType Leaf)){$source=Join-Path (Split-Path -Parent $PSScriptRoot) $name}
         if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('Не найдена инструкция новой версии: '+$name)}
@@ -167,7 +167,7 @@ function Update-AntiDPIDesktopDocuments($Manifest) {
             [IO.Path]::GetFileName($oldPath) -match '^README_(Установка|Стратегии)_Windows_v[0-9.]+\.txt$' -and
             (Test-Path -LiteralPath $oldPath -PathType Leaf) -and
             (Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq [string]$old.Sha256 -and
-            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
+            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt')){
             Remove-Item -LiteralPath $oldPath -Force
         }
     }
@@ -302,7 +302,7 @@ function Update-AntiDPI {
     }
 
     $updates=[Collections.Generic.List[object]]::new()
-    foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt','LICENSE.txt')){
+    foreach($name in @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt','LICENSE.txt')){
         $source=Join-Path $PSScriptRoot $name
         if(-not (Test-Path -LiteralPath $source -PathType Leaf)){$source=Join-Path (Split-Path -Parent $PSScriptRoot) $name}
         if(-not (Test-Path -LiteralPath $source -PathType Leaf)){throw ('В комплекте обновления отсутствует '+$name)}
@@ -357,7 +357,7 @@ function Update-AntiDPI {
         foreach($entry in @($manifest.Files)){$fileMap[[string]$entry.Path]=$entry}
         foreach($item in $updates){$destination=Join-Path $root $item.Relative;$fileMap[$item.Relative]=[pscustomobject]@{Path=$item.Relative;Sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()}}
         $manifest.Files=@($fileMap.Values|Sort-Object Path)
-        $manifest.Version='GUI_CLI_1.14';$manifest.DisplayVersion='GUI + CLI Version 1.14'
+        $manifest.Version='GUI_CLI_1.15';$manifest.DisplayVersion='GUI + CLI Version 1.15'
         $buildInfoPath=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoPath -PathType Leaf){try{$buildInfo=Get-Content -LiteralPath $buildInfoPath -Raw -Encoding UTF8|ConvertFrom-Json;if([string]$buildInfo.Schema -ceq 'antidpi.build-info.v1' -and [string]$buildInfo.SourceCommit -match '^[0-9a-f]{40}$'){$manifest|Add-Member -NotePropertyName SourceCommit -NotePropertyValue ([string]$buildInfo.SourceCommit) -Force|Out-Null}}catch{Write-Host ('Не удалось прочитать BuildInfo.json; прежняя привязка коммита сохранена: '+$_.Exception.Message) -ForegroundColor Yellow}}
         try{Update-AntiDPIDesktopDocuments $manifest}catch{Write-Host ('Основные файлы обновлены; не удалось обновить копии инструкций на рабочем столе: '+$_.Exception.Message) -ForegroundColor Yellow}
         $rollbackBackupPath=Save-AntiDPIUpdateRollbackBackup $root $oldManifestJson $applied.ToArray() ([string]$manifest.DisplayVersion)
@@ -655,7 +655,7 @@ function Set-AntiDPIFirewallRule($Manifest) {
         Protocol='Any'
         Enabled='True'
         PolicyStore='PersistentStore'
-        Description='AntiDPI GUI + CLI Version 1.14. Исходящее разрешение только для winws2.exe этой установки.'
+        Description='AntiDPI GUI + CLI Version 1.15. Исходящее разрешение только для winws2.exe этой установки.'
     }
     $created=New-NetFirewallRule @parameters -ErrorAction Stop
     $application=@($created|Get-NetFirewallApplicationFilter -ErrorAction Stop)
@@ -903,7 +903,7 @@ function Install-AntiDPI {
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
                 $buildInfoSource=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoSource -PathType Leaf){Copy-Item -LiteralPath $buildInfoSource -Destination $installed}
-                foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt','LICENSE.txt')){
+                foreach($name in @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt','LICENSE.txt')){
                     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $ready $name)
                 }
                 $engine=Join-Path $ready 'engine';[IO.Directory]::CreateDirectory($engine)|Out-Null
@@ -920,7 +920,7 @@ function Install-AntiDPI {
                 New-UserCommand (Join-Path $ready 'УДАЛИТЬ_AntiDPI_Zapret2.cmd') 'Uninstall'
                 $files=@(Get-ChildItem -LiteralPath $ready -Recurse -File -Force|ForEach-Object {[pscustomobject]@{Path=$_.FullName.Substring($ready.TrimEnd('\','/').Length+1);Sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
                 $sourceCommit='';$buildInfoPath=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoPath -PathType Leaf){try{$buildInfo=Get-Content -LiteralPath $buildInfoPath -Raw -Encoding UTF8|ConvertFrom-Json;if([string]$buildInfo.Schema -ceq 'antidpi.build-info.v1' -and [string]$buildInfo.SourceCommit -match '^[0-9a-f]{40}$'){$sourceCommit=[string]$buildInfo.SourceCommit}}catch{}}
-                $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='GUI_CLI_1.14';DisplayVersion='GUI + CLI Version 1.14';SourceCommit=$sourceCommit;OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
+                $manifest=[ordered]@{Schema='antidpi.zapret.install.v1';InstallID=[guid]::NewGuid().ToString();InstallRoot=$finalRoot;Version='GUI_CLI_1.15';DisplayVersion='GUI + CLI Version 1.15';SourceCommit=$sourceCommit;OfficialCommit=$selectedMeta.commit;OfficialSHA256=$downloadHash;OfficialSelection=$selection;Shortcut=$null;DriverBefore=$driverBefore;Files=$files}
                 $manifest['Firewall']=Get-AntiDPIFirewallIdentity ([pscustomobject]$manifest)
                 Save-AntiDPIManifest ([pscustomobject]$manifest) (Join-Path $ready '.antidpi-install.json')
                 # Only destination/commit failures return to folder selection.
@@ -1084,7 +1084,7 @@ function Show-AntiDPIHeader {
     $lines=@(
         '===============================================================================',
         '  AntiDPI Strategies + Bol-Van Zapret2',
-        '  GUI + CLI Version 1.14 | Windows 10/11 x64',
+        '  GUI + CLI Version 1.15 | Windows 10/11 x64',
         '===============================================================================',
         '  ПРОГРАММА ГОТОВЫХ ANTI-DPI СТРАТЕГИЙ ОТ AntiDPI НА БАЗЕ ZAPRET2 (BOL-VAN)',
         '  В УДОБНОЙ CLI ОБОЛОЧКЕ ДЛЯ РАБОТЫ ЧЕРНЫХ СПИСКОВ VPN/TOR + YOUTUBE',
@@ -1179,7 +1179,7 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
             Name='DELETE_AntiDPI.lnk'
             Target=(Join-Path $InstallRoot 'УДАЛИТЬ_AntiDPI_Zapret2.cmd')
             Icon=(Join-Path $InstallRoot 'AntiDPI\AntiDPI_Zapret2_delete.ico')
-            Description='Удаление AntiDPI Strategies + Bol-Van Zapret2 — GUI + CLI Version 1.14'
+            Description='Удаление AntiDPI Strategies + Bol-Van Zapret2 — GUI + CLI Version 1.15'
         }
     )
     foreach($spec in $specs){
@@ -1194,7 +1194,7 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
         $path=Join-Path $directory $spec.Name
         if(Test-Path -LiteralPath $path -PathType Container){throw ('Путь ярлыка занят папкой: '+$path)}
     }
-    foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
+    foreach($name in @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt')){
         $path=Join-Path $directory $name
         if(Test-Path -LiteralPath $path -PathType Container){throw ('Путь инструкции занят папкой: '+$path)}
     }
@@ -1228,7 +1228,7 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
                 }
             }
         }
-        foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
+        foreach($name in @('README_Установка_Windows_v1.15.txt','README_Стратегии_Windows_v1.15.txt')){
             $path=Join-Path $directory $name
             if(Test-Path -LiteralPath $path -PathType Leaf){continue}
             Copy-Item -LiteralPath (Join-Path $InstallRoot $name) -Destination $path

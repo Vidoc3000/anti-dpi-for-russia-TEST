@@ -1,4 +1,4 @@
-AntiDPI Strategies + Bol-Van Zapret2 — GUI + CLI Windows Version 1.14
+AntiDPI Strategies + Bol-Van Zapret2 — GUI + CLI Windows Version 1.15
 Copyright Igor Krauch (github.com/igareck).
 
 Готовые AntiDPI стратегии и программная оболочка для теста и запуска стратегий: 
