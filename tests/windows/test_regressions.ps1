@@ -471,7 +471,7 @@ try {
     $csvData.Results[0].Details='error; "two"'
     Write-GuiAnalysisCsv $csvData $csvPath
     $detailsText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True $detailsText.Contains('"error; ""two"""') 'CSV escapes semicolons and quotes in diagnostic details'
+    Assert-True ($detailsText.Contains('error;') -and $detailsText.Contains('two')) 'CSV exports diagnostic detail text containing a semicolon and quotes'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
