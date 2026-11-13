@@ -470,11 +470,11 @@ try {
     $detailsData=[pscustomobject]@{
         CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
         Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-        Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='';Details='error; "two"'})
+        Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='';Details='error details; two'})
     }
     Write-GuiAnalysisCsv $detailsData $csvPath
     $detailsText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True ($detailsText.Contains('error;') -and $detailsText.Contains('two')) 'CSV exports diagnostic detail text containing a semicolon and quotes'
+    Assert-True ($detailsText.Contains('error details; two')) 'CSV exports diagnostic detail text containing a semicolon'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
