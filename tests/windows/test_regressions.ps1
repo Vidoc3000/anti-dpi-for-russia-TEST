@@ -441,7 +441,11 @@ foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectPropert
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
-$connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
+try {
+    $connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
+} catch {
+    throw ('QUIC connection-profile fixture failed: '+$_.Exception.Message)
+}
 Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
 Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
 Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
