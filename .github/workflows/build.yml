@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.14'
+        default: '1.15'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.13'
+        default: '1.14'
         type: string
       publish_release:
         description: 'Publish a GitHub release (requires platform=all and ref=main)'
@@ -179,11 +179,11 @@ jobs:
           cat > release-notes.md <<EOF
           AntiDPI combined release v${{ inputs.linux_version }}.
 
-          - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64).
+          - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64), with the current strategy catalogue.
           - Windows GUI + CLI package: v${{ inputs.windows_version }} (Windows 10/11 x64).
-          - Windows GUI + CLI v${{ inputs.windows_version }} fixes an installer callback scope error that interrupted completion feedback, alongside the compact resizable interface, clearer verified installation results, analysis export, and recovery safeguards.
-          - Linux CLI v${{ inputs.linux_version }} carries the unchanged application source and current strategy catalogue; only its package version advances for this combined release.
-          - YouTube analysis checks only IPv4/TCP/TLS HTTPS access; it does not validate VPN/Tor clients or tunnels or prove DPI bypass.
+          - Windows adds repeatable HTTPS/HTTP/3 checks, separate web/video targets, explicit VPN-interface and Tor SOCKS checks, and before/after control measurements for strategy comparisons.
+          - Windows also adds network-change debounce, preflight readiness, graceful recovery prompting after GUI restart, release diff/digest inspection, and a replacement-file preview before updates.
+          - Probe results report reachability only: they do not prove DPI bypass or video playback; VPN route binding is not a privacy/leak audit, and GitHub API digests are not independent signatures.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
 
           Copyright, license notices, and the original author's attribution remain included.
