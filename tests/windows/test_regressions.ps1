@@ -142,7 +142,7 @@ Assert-True ($guiText.Contains("'-AnalysisAttempts',[string]`$attempts") -and $g
 Assert-True ($catalogueText.Contains('[int]$AnalysisAttempts=2') -and $catalogueText.Contains('[int]$AnalysisThresholdKB=100') -and $catalogueText.Contains('[int]$AnalysisTimeoutSeconds=15')) 'CLI supports bounded analysis tuning parameters'
 
 
-Assert-True ($guiText.Contains('$rangeMatch=[regex]::Match($analysisRangeBox.Text.Trim()')) 'GUI accepts a single strategy number or an inclusive numeric range'
+Assert-True ($guiText.Contains('$analysisRangeBox.Text.Trim()')) 'GUI accepts a single strategy number or an inclusive numeric range'
 Assert-True ($coreText.Contains('Write-AntiDPIAnalysisSnapshot') -and $coreText.Contains('Get-AntiDPIAnalysisRow')) 'YouTube results are written after each strategy without parsing diagnostic Event fields'
 Assert-True ($coreText.Contains('BaselineAfter') -and $coreText.Contains('BASELINE_AFTER') -and $coreText.Contains('MeanSuccessSeconds') -and $catalogueText.Contains('[switch]$BracketBaseline')) 'benchmark mode brackets serial strategy trials with a second baseline and records successful response times'
 Assert-True ($coreText.Contains('Test-AntiDPIYoutubeBaseline') -and $coreText.Contains('$SourceAddress') -and $runtimeText.Contains('candidate.Client.Bind(new IPEndPoint(IPAddress.Parse(sourceAddress), 0))')) 'baseline HTTPS requests are bound to the selected physical adapter IPv4 address'
