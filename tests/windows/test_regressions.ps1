@@ -471,11 +471,11 @@ try {
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     Assert-True ($csvText.Contains('AttemptDetails') -and $csvText.Contains('attempt details')) 'CSV exports attempt details'
     Assert-True ($csvText.Contains('Details') -and $csvText.Contains('diagnostic details')) 'CSV exports diagnostic details'
-    Assert-True $csvText.Contains('Не прошла тест YouTube') 'CSV exports the displayed recommendation'
+    Assert-True ($csvText.Contains('Не прошла тест YouTube')) 'CSV exports the displayed recommendation'
     $csvResult.Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    Assert-True $replacedText.Contains('UNSTABLE') 're-export atomically replaces an existing CSV'
+    Assert-True ($replacedText.Contains('UNSTABLE')) 're-export atomically replaces an existing CSV'
     Assert-Equal 0 @(Get-ChildItem -LiteralPath $csvRoot -Filter 'analysis.csv.*.tmp' -File).Count 'CSV export removes temporary files'
 } finally {
     if(Test-Path -LiteralPath $csvRoot){Remove-Item -LiteralPath $csvRoot -Recurse -Force -ErrorAction SilentlyContinue}
