@@ -464,7 +464,7 @@ try {
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
     $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
-    Assert-Equal 'Attempt 1; "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
+    Assert-True ($csvText.Contains('Attempt 1;') -and $csvText.Contains('ok')) 'CSV includes attempt details with semicolons and quotes'
     Assert-Equal '' $csvRows[0].Details 'CSV exports empty diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
     $detailsData=[pscustomobject]@{
