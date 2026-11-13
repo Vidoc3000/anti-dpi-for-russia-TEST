@@ -730,7 +730,7 @@ function Start-GuiStrategy([switch]$CheckOnly) {
         $selectedProfileNumber=[int]$selectedProfile.Number
         if(-not $CheckOnly){$script:guiSettings.RecentProfiles=@($selectedProfileNumber)+@($script:guiSettings.RecentProfiles|Where-Object {$_ -ne $selectedProfileNumber}|Select-Object -First 19);$script:guiSettings.RecentProfileConfig=[pscustomobject]@{Name='Последний использованный';ProfileNumber=$selectedProfileNumber;AddressFamily=$addressFamily;Protocol=$protocol;Ports=$scope;AdapterGuid=[string]$selectedAdapter.InterfaceGuid;AdapterName=[string]$selectedAdapter.Name};Save-GuiUiPreferences}
         $script:runningProfile=$selectedProfileNumber
-$launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$catalogue,'-ProfileNumber',[string]$selectedProfileNumber,'-InterfaceIndex',[string]$selectedAdapter.ifIndex,'-Scope',$scope,'-AddressFamily',$addressFamily,'-Protocol',$protocol,'-ZapretDirectory',$bundle,'-StateDirectory',$state)
+$launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$catalogue,'-ProfileNumber',[string]$selectedProfileNumber,'-InterfaceIndex',[string]$selectedAdapter.ifIndex,'-Scope',$scope,'-AddressFamily',$addressFamily,'-Protocol',$protocol,'-ZapretDirectory',$bundle,'-StateDirectory',$state);if(-not $CheckOnly){$launchArguments+='-GuiWorker'}
         if($CheckOnly){$launchArguments+= '-Check'}
         if($script:guiSettings.SkipTimestampSetup){$launchArguments+= '-SkipTimestampSetup'}
         $joined=(@($launchArguments|ForEach-Object {ConvertTo-WindowsArgument ([string]$_)}) -join ' ')
