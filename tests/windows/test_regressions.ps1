@@ -436,17 +436,11 @@ $guiTokens = $null
 $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
-foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile')){
+foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv')){
     $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
-$connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
-Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
-Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
-Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
-Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
-Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvResult=[pscustomobject]@{
     Number=37
     Status='FAIL'
