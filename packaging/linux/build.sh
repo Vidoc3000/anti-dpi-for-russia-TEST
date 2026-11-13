@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description='Сборка исходного Linux tar.gz AntiDPI.')
     parser.add_argument('--repo-root', type=Path, default=Path(sys.argv[1]))
     parser.add_argument('--output-dir', type=Path)
-    parser.add_argument('--version', default='1.15')
+    parser.add_argument('--version', default='1.17')
     parser.add_argument('--source-date-epoch', type=int)
     parser.add_argument('--force', action='store_true', help='Разрешить замену ранее собранных файлов.')
     args = parser.parse_args(sys.argv[2:])

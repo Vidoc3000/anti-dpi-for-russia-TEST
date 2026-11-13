@@ -57,7 +57,7 @@ $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setu
 $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
 $buildWorkflowText = [IO.File]::ReadAllText((Join-Path $repoRoot '.github\workflows\build.yml'))
 Assert-True ($buildWorkflowText.Contains("if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'")) 'stable release publishing is gated to the main branch'
-Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.15'") -and $managerText.Contains("Version='GUI_CLI_1.15'") -and $buildWorkflowText.Contains("default: '1.15'")) 'Windows release package version matches the manager manifest and workflow default'
+Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.16'") -and $managerText.Contains("Version='GUI_CLI_1.16'") -and $buildWorkflowText.Contains("default: '1.16'")) 'Windows release package version matches the manager manifest and workflow default'
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest') -and $managerText.Contains('$previousLinks[$path]=[IO.File]::ReadAllBytes($path)') -and $managerText.Contains('[IO.File]::WriteAllBytes($path,[byte[]]$previousLinks[$path])')) 'install rollback restores pre-existing desktop shortcuts'
