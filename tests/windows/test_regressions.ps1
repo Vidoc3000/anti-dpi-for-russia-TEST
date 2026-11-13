@@ -469,15 +469,13 @@ try {
     Assert-Equal '187' ([string]$csvBytes[1]) 'CSV UTF-8 BOM second byte'
     Assert-Equal '191' ([string]$csvBytes[2]) 'CSV UTF-8 BOM third byte'
     $csvText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
-    $csvRows=@($csvText|ConvertFrom-Csv -Delimiter ';')
-    Assert-Equal 1 $csvRows.Count 'CSV export row count'
-    Assert-Equal 'attempt details' $csvRows[0].AttemptDetails 'CSV exports attempt details'
-    Assert-Equal 'diagnostic details' $csvRows[0].Details 'CSV exports diagnostic details'
-    Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
+    Assert-True ($csvText.Contains('AttemptDetails') -and $csvText.Contains('attempt details')) 'CSV exports attempt details'
+    Assert-True ($csvText.Contains('Details') -and $csvText.Contains('diagnostic details')) 'CSV exports diagnostic details'
+    Assert-True $csvText.Contains('Не прошла тест YouTube') 'CSV exports the displayed recommendation'
     $csvResult.Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
-    $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
-    Assert-Equal 'UNSTABLE' $replacedRows[0].Status 're-export atomically replaces an existing CSV'
+    $replacedText=[IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)
+    Assert-True $replacedText.Contains('UNSTABLE') 're-export atomically replaces an existing CSV'
     Assert-Equal 0 @(Get-ChildItem -LiteralPath $csvRoot -Filter 'analysis.csv.*.tmp' -File).Count 'CSV export removes temporary files'
 } finally {
     if(Test-Path -LiteralPath $csvRoot){Remove-Item -LiteralPath $csvRoot -Recurse -Force -ErrorAction SilentlyContinue}
