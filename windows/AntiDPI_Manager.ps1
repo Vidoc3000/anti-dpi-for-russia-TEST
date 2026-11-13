@@ -1192,21 +1192,25 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
     }
     foreach($spec in $specs){
         $path=Join-Path $directory $spec.Name
-        if(Test-Path -LiteralPath $path){throw ('Ярлык уже существует и будет сохранён: '+$path)}
+        if(Test-Path -LiteralPath $path -PathType Container){throw ('Путь ярлыка занят папкой: '+$path)}
     }
     foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
         $path=Join-Path $directory $name
-        if(Test-Path -LiteralPath $path){throw ('Инструкция уже существует и будет сохранена: '+$path)}
+        if(Test-Path -LiteralPath $path -PathType Container){throw ('Путь инструкции занят папкой: '+$path)}
     }
     $created=-not (Test-Path -LiteralPath $directory -PathType Container)
     $records=[Collections.Generic.List[object]]::new()
     $documents=[Collections.Generic.List[object]]::new()
+    $previousLinks=@{}
+    $touchedLinks=[Collections.Generic.List[string]]::new()
     $shell=$null
     try{
         [IO.Directory]::CreateDirectory($directory)|Out-Null
         $shell=New-Object -ComObject WScript.Shell
         foreach($spec in $specs){
             $path=Join-Path $directory $spec.Name
+            if(Test-Path -LiteralPath $path -PathType Leaf){$previousLinks[$path]=[IO.File]::ReadAllBytes($path)}
+            $touchedLinks.Add($path)
             $shortcut=$null
             try{
                 $shortcut=$shell.CreateShortcut($path)
@@ -1226,11 +1230,19 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
         }
         foreach($name in @('README_Установка_Windows_v1.14.txt','README_Стратегии_Windows_v1.14.txt')){
             $path=Join-Path $directory $name
-            Copy-Item -LiteralPath (Join-Path $InstallRoot $name) -Destination $path -Force
+            if(Test-Path -LiteralPath $path -PathType Leaf){continue}
+            Copy-Item -LiteralPath (Join-Path $InstallRoot $name) -Destination $path
             $documents.Add([pscustomobject]@{Path=$path;Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()})
         }
     }catch{
-        foreach($record in (@($records.ToArray())+@($documents.ToArray()))){
+        foreach($path in $touchedLinks){
+            if($previousLinks.ContainsKey($path)){
+                try{[IO.File]::WriteAllBytes($path,[byte[]]$previousLinks[$path])}catch{Write-Host ('Не удалось восстановить исходный ярлык при откате: '+$path+'; '+$_.Exception.Message) -ForegroundColor Yellow}
+            }elseif(Test-Path -LiteralPath $path -PathType Leaf){
+                try{Remove-Item -LiteralPath $path -Force -ErrorAction Stop}catch{Write-Host ('Не удалось удалить новый ярлык при откате: '+$path+'; '+$_.Exception.Message) -ForegroundColor Yellow}
+            }
+        }
+        foreach($record in $documents){
             if(Test-Path -LiteralPath $record.Path -PathType Leaf){
                 if((Get-FileHash -LiteralPath $record.Path -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $record.Sha256){
                     Remove-Item -LiteralPath $record.Path -Force
