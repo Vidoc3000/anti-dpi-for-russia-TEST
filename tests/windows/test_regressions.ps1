@@ -253,10 +253,15 @@ if ($env:AntiDPI_WINWS2_DIR) {
                     ForEach-Object { ($_ -split ':', 2)[0].Substring('--lua-desync='.Length) } | Sort-Object -Unique)
                 $luaChecks = @($handlers | ForEach-Object { "assert(type($_)=='function','missing $_')" })
                 $engineArguments += '--intercept=0'
-                $engineArguments += '--lua-init=' + ($luaChecks -join ';')
-                $output = & $enginePath @engineArguments 2>&1
+                $luaCheckPath = Join-Path $env:RUNNER_TEMP ('antidpi-quic-lua-check-' + $profile.Number + '-' + $family + '.lua')
+                [IO.File]::WriteAllText($luaCheckPath,($luaChecks -join [Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+                $engineArguments += ('--lua-init=@' + $luaCheckPath)
+                $engineInvocationError = $null
+                $output = @()
+                try { $output = @(& $enginePath @engineArguments 2>&1) }
+                catch { $engineInvocationError = $_.Exception.Message; $output = @($output) + @($_ | Out-String) }
                 $exitCode = $LASTEXITCODE
-                if ($exitCode -ne 0) { throw ("Windows engine rejected QUIC strategy {0} / {1} (exit {2}): {3}" -f $profile.Number,$family,$exitCode,($output -join "`n")) }
+                if ($engineInvocationError -or $exitCode -ne 0) { throw ("Windows engine rejected QUIC strategy {0} / {1} (exit {2}; invocation error: {3}): {4}" -f $profile.Number,$family,$exitCode,$engineInvocationError,($output -join "`n")) }
             }
         }
     } finally { Pop-Location }
