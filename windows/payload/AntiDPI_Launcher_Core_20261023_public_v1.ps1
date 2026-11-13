@@ -389,7 +389,7 @@ function Wait-AntiDPIStrategyControl($Session,[string]$Bundle) {
     $inputState=Open-AntiDPIConsoleInput
     $monitor=[AntiDPI.Public10.WinDivertHealthMonitor]::new($Bundle)
     try{
-        if(-not $inputState.Supported){
+        if(-not $script:AntiDPIGuiWorker -and -not $inputState.Supported){
             Write-Host 'F1/F2/F3 недоступны в этом хосте. Запустите CMD в обычном окне консоли; Ctrl+C останавливает Zapret2.' -ForegroundColor Yellow
         }
         while($true){
@@ -1008,7 +1008,7 @@ function Invoke-AntiDPICatalogue {
                 Write-Host 'ЧТОБЫ СМЕНИТЬ СТРАТЕГИЮ И ВЫБРАТЬ НОВУЮ - нажмите F1' -ForegroundColor Yellow
                 Write-Host 'ЧТОБЫ ПЕРЕЗАГРУЗИТЬ ТЕКУЩУЮ СТРАТЕГИЮ - нажмите F2' -ForegroundColor Yellow
                 Write-Host 'ЧТОБЫ СМЕНИТЬ СЕТЕВОЙ АДАПТЕР/ПОРТ - нажмите F3' -ForegroundColor Yellow
-                Write-Host 'ЧТОБЫ ПОЛНОСТЬЮ ОСТАНОВИТЬ РАБОТУ AntiDPI/ZAPRET2 - нажмите CTRL+C' -ForegroundColor Yellow
+                if(-not $script:AntiDPIGuiWorker){Write-Host 'ЧТОБЫ ПОЛНОСТЬЮ ОСТАНОВИТЬ РАБОТУ AntiDPI/ZAPRET2 - нажмите CTRL+C' -ForegroundColor Yellow}
                 Write-Host ''
                 $command=Wait-AntiDPIStrategyControl $session $bundle
             }catch [AntiDPI.Public10.WinDivertEngineException]{
