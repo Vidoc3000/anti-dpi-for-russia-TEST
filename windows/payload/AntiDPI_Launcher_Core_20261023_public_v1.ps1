@@ -892,7 +892,7 @@ function Invoke-AntiDPICatalogue {
         $profilesByNumber.Add($key,$entry)
     }
     if($ListGroups){Show-AntiDPIFamilies;return}
-    if($ListProfilesJson){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
+    if($ListProfilesJson){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain,Args,Init,NeedsTimestamps,StockTlsPattern,PrefixOnly,RecipeSHA256|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
     if($ListQuicProfilesJson){$QuicRows|Select-Object Number,Family,Name,Processing,Chain,Args|ConvertTo-Json -Depth 8 -Compress|Write-Output;return}
     if($ListProfiles){$ProfileRows|Select-Object Number,Family,Name,Processing,Chain|Format-Table -AutoSize|Out-Host;return}
     if($ListInterfaces){Get-NetAdapter|Select-Object ifIndex,Name,Status,HardwareInterface|Format-Table -AutoSize|Out-Host;return}
