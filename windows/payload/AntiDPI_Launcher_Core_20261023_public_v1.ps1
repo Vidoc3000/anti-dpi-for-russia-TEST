@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 # Shared launcher for the installer catalogues.
 # Requires the original Windows Bundle for winws2, Lua and driver files.
 $ErrorActionPreference='Stop'
@@ -77,6 +77,7 @@ function ConvertTo-AntiDPIPortScope([string]$Value) {
     $text=([string]$Value).Trim()
     if(-not $text -or $text -imatch '^(all|все|всё)$'){return 'all'}
     $text=$text -replace '[\u2010-\u2014\u2212]','-'
+    if($text -match '(^\s*,|,\s*(,|$))'){throw 'Empty TCP port-list member.'}
     $ranges=[Collections.Generic.List[object]]::new()
     foreach($part in $text.Split(',')){
         $match=[regex]::Match($part,'^\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?$')
