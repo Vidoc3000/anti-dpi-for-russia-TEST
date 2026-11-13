@@ -450,7 +450,7 @@ Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';Pro
 $csvData=[pscustomobject]@{
     CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
     Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='ошибка; строка "две"'})
+    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='error; line "two"'})
 }
 $csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
 try {
@@ -466,7 +466,7 @@ try {
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
     Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
     Assert-Equal 'Попытка 1; HTTP 200, текст "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
-    Assert-Equal 'ошибка; строка "две"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
+    Assert-Equal 'error; line "two"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
