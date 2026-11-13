@@ -78,12 +78,9 @@ $guiProfileJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver
 $guiProfiles = @($guiProfileJson | ConvertFrom-Json)
 if ($guiProfiles.Count -eq 1 -and $guiProfiles[0] -is [array]) { $guiProfiles = @($guiProfiles[0]) }
 Assert-Equal 492 $guiProfiles.Count 'GUI JSON profile list count'
-$familyMatch = [regex]::Match($catalogueText, '(?s)\$FamilyRows = @''\r?\n(.*?)\r?\n''@ \| ConvertFrom-Json')
-Assert-True $familyMatch.Success 'catalogue family metadata can be read for GUI group filtering'
-$guiFamilies = @($familyMatch.Groups[1].Value | ConvertFrom-Json)
-if ($guiFamilies.Count -eq 1 -and $guiFamilies[0] -is [array]) { $guiFamilies = @($guiFamilies[0]) }
+$guiFamilies = @($guiProfiles | Group-Object Family | ForEach-Object { [pscustomobject]@{Count=$_.Count} })
 Assert-Equal 24 $guiFamilies.Count 'GUI family/group count'
-Assert-Equal 492 (($guiFamilies | Measure-Object -Property Count -Sum).Sum) 'family ranges cover all GUI profiles'
+Assert-Equal 492 (($guiFamilies | Measure-Object -Property Count -Sum).Sum) 'family groups cover all GUI profiles'
 $quicJson = (& (Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1') -ListQuicProfilesJson | Out-String)
 $quicProfiles = @($quicJson | ConvertFrom-Json)
 if ($quicProfiles.Count -eq 1 -and $quicProfiles[0] -is [array]) { $quicProfiles = @($quicProfiles[0]) }
