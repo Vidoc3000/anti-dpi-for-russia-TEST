@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
- [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [string]$CancelFile='')
+ [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [switch]$ApproveUpdatePreview, [string]$CancelFile='')
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
@@ -14,8 +14,10 @@ $script:AntiDPITranscriptActive=$false
 $script:AntiDPITranscriptPath=''
 $script:AntiDPIInstalledRoot=''
 $script:AntiDPIInstallerNonInteractive=[bool]$NonInteractiveInstaller
+$script:AntiDPIUpdatePreviewApproved=[bool]$ApproveUpdatePreview
 $script:AntiDPIInstallCancelFile=$CancelFile
 $script:AntiDPIWasCancelled=$false
+$script:AntiDPIUpdatePreviewRequired=$false
 function Test-ChildPath([string]$Root,[string]$Candidate) {
     $r=[IO.Path]::GetFullPath($Root).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
     return [IO.Path]::GetFullPath($Candidate).StartsWith($r,[StringComparison]::OrdinalIgnoreCase)
@@ -326,9 +328,8 @@ function Update-AntiDPI {
     Write-Host 'Предпросмотр обновления: будут заменены следующие файлы:' -ForegroundColor Cyan
     foreach($item in $updates){$destination=Join-Path $root $item.Relative;$state=if(Test-Path -LiteralPath $destination -PathType Leaf){'ЗАМЕНА'}else{'НОВЫЙ'};Write-Host ('  [{0}] {1}' -f $state,$item.Relative)}
     Write-Host ('Всего файлов: {0}. Изменённые пользователем и неучтённые файлы выше уже проверены; они не будут перезаписаны.' -f $updates.Count) -ForegroundColor Yellow
-    if($script:AntiDPIInstallerNonInteractive){throw 'Обновление в неинтерактивном режиме остановлено: сначала просмотрите список заменяемых файлов в обычном запуске.'}
-    $approval=Read-Host 'Для продолжения введите UPDATE; любой другой ответ отменит обновление'
-    if($approval -cne 'UPDATE'){throw [OperationCanceledException]::new('Обновление отменено после предпросмотра файлов.')}
+    if($script:AntiDPIInstallerNonInteractive -and -not $script:AntiDPIUpdatePreviewApproved){$script:AntiDPIUpdatePreviewRequired=$true;return}
+    if(-not $script:AntiDPIInstallerNonInteractive){$approval=Read-Host 'Для продолжения введите UPDATE; любой другой ответ отменит обновление';if($approval -cne 'UPDATE'){throw [OperationCanceledException]::new('Обновление отменено после предпросмотра файлов.')}}
 
     $stage=Join-Path $root ('.u-'+[guid]::NewGuid().ToString('N').Substring(0,8))
     $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
@@ -1344,3 +1345,4 @@ catch [OperationCanceledException]{Write-Host 'Операция отменена
 catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
 finally{Complete-AntiDPISessionLog}
 if($script:AntiDPIWasCancelled -and $Action -in @('Install','Update')){exit 2}
+if($script:AntiDPIUpdatePreviewRequired){exit 3}
