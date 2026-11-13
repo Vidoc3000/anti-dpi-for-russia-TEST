@@ -164,7 +164,7 @@ Assert-True ($managerText.Contains('function Test-AntiDPIInstallCancellation') -
 Assert-True ($managerText.Contains('exit 2') -and $installerText.Contains('if($code -eq 2)')) 'installer cancellation is reported distinctly from success and failure'
 Assert-True ($managerText.Contains('$finalUri=[Uri]$download.FinalUrl') -and $managerText.Contains('codeload.github.com') -and $managerText.Contains('computed_locally_no_trusted_expected_digest')) 'latest bundle is restricted to direct GitHub HTTPS and recorded as lacking a trusted expected digest'
 Assert-True ($managerText.Contains("Selection -eq 'Compatible'") -and $installerText.Contains('$latestRadio.Text=') -and $installerText.Contains('SHA-256')) 'unverified mirror is reserved for pinned bundles and Latest integrity limits are disclosed in the installer'
-Assert-True ($managerText.Contains("'Update'") -and $managerText.Contains('Update-AntiDPI') -and $managerText.Contains('Сохраните свою копию')) 'manager has an ownership-checked update path that protects modified files'
+Assert-True ($managerText.Contains("'Update'") -and $managerText.Contains('Update-AntiDPI') -and $managerText.Contains('$owned[0].Sha256')) 'manager has an ownership-checked update path that protects modified files'
 Assert-True ($managerText.Contains('[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)')) 'manager sets UTF-8 output for Cyrillic installer logs'
 Assert-True ($installerText.Contains('-WindowStyle Normal') -and -not $installerText.Contains("'-WindowStyle','Hidden'")) 'Installer subprocesses are not hidden from the user'
 Assert-True ($installerCommand -notmatch '(?i)-WindowStyle\s+Hidden') 'ZIP installer entry point does not hide PowerShell'
