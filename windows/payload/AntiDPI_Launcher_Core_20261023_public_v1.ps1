@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 # Shared launcher for the installer catalogues.
 # Requires the original Windows Bundle for winws2, Lua and driver files.
 $ErrorActionPreference='Stop'
