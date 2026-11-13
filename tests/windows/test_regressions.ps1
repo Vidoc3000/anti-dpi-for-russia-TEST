@@ -122,6 +122,7 @@ Assert-True ($guiText.Contains('function ConvertTo-GuiConnectionProfile') -and $
 Assert-True ($guiText.Contains('antidpi.gui-backup.v1') -and $guiText.Contains('Export-GuiConfiguration') -and $guiText.Contains('Import-GuiConfiguration')) 'GUI exports and validates importable settings backups'
 Assert-True ($guiText.Contains('function Get-GuiReadiness') -and $guiText.Contains('Assert-GuiReadiness') -and $guiText.Contains('Show-GuiReadiness')) 'GUI performs a pre-launch system and adapter readiness check'
 Assert-True ($guiText.Contains('NotifyIcon') -and $guiText.Contains('MinimizeToTray') -and $guiText.Contains('Request-GuiStop')) 'GUI exposes safe system-tray controls and optional minimize-to-tray'
+Assert-True ($guiText.Contains('function Get-GuiTrayTooltipText') -and $guiText.Contains('$available=63-$prefix.Length')) 'system tray tooltips stay within the Windows 63-character limit'
 Assert-True ($guiText.Contains('$networkTimer.Interval=4000') -and $guiText.Contains('networkCandidateCount') -and $guiText.Contains('Get-DnsClientServerAddress') -and $guiText.Contains('Request-GuiAnalysisCancel') -and $guiText.Contains('Request-GuiStop')) 'GUI debounces network changes across address, route, and DNS before safe cancellation'
 Assert-True ($guiText.Contains('Show-GuiDiagnosticReport') -and $guiText.Contains('New-GuiDiagnosticReport') -and $guiText.Contains('[USER]') -and $guiText.Contains('[IPv6]')) 'GUI previews and exports redacted diagnostic reports'
 Assert-True ($guiText.Contains('Start-GuiUpdateManager') -and $guiText.Contains("'-Action','Update'") -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI opens the ownership-checked update manager after confirmation'
@@ -437,12 +438,16 @@ $guiTokens = $null
 $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
-foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile')){
+$requestStopAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Request-GuiStop'},$true)
+Assert-True ($null -ne $requestStopAst -and -not ($requestStopAst.Extent.Text.Contains('Show-GuiError'))) 'stop-button failures are reported in status and history without a modal error window'
+foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectProperty','ConvertTo-GuiAnalysisCsv','Write-GuiAnalysisCsv','ConvertTo-GuiConnectionProfile','Get-GuiTrayTooltipText')){
     $functionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
 $profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
+$longTrayTooltip=Get-GuiTrayTooltipText ('Останавливается управляемый процесс и восстанавливается состояние сети '+('x'*100))
+Assert-True ($longTrayTooltip.Length -le 63) 'long status text is safely shortened for the system tray'
 $connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Дом';ProfileNumber=493;AddressFamily='ipv6';Protocol='quic';Ports='443';AdapterGuid='guid';AdapterName='Ethernet'})
 Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
 Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
