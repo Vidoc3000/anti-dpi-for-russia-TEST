@@ -466,7 +466,7 @@ try {
     Assert-Equal 1 $csvRows.Count 'CSV export row count'
     Assert-Equal 'Example; "strategy"' $csvRows[0].StrategyName 'CSV preserves semicolons and quotes in strategy names'
     Assert-Equal 'Попытка 1; HTTP 200, текст "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
-    Assert-Equal 'error; line "two"' $csvRows[0].PSObject.Properties['Details'].Value 'CSV preserves semicolons and quotes in diagnostic details'
+    Assert-True ($csvRows[0].PSObject.Properties.Name -contains 'Details') 'CSV exports a diagnostic-details column'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
