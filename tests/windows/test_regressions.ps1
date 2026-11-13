@@ -109,7 +109,7 @@ Assert-True ($guiText.Contains('Get-GuiProcessOutput') -and $guiText.Contains('S
 Assert-True ($guiText.Contains('Get-GuiFamilies') -and $guiText.Contains('$FamilyRows') -and $guiText.Contains('familyFilterBox')) 'GUI provides catalogue family browsing equivalent to CLI group listing'
 Assert-True ($guiText.Contains('Show-GuiInterfaces') -and $guiText.Contains('$interfacesButton.Add_Click({Show-GuiInterfaces})')) 'GUI provides an all-network-interface inventory equivalent to the CLI listing'
 Assert-True ($guiText.Contains('Show-GuiProfileDetails') -and $guiText.Contains('Get-AntiDPIArguments') -and $guiText.Contains('ConvertTo-Json -Depth 20')) 'GUI exposes CLI recipe and resolved engine-argument inspection'
-Assert-True ($guiText.Contains("::new('История')") -and $guiText.Contains('function Add-GuiHistory') -and $guiText.Contains('function Update-GuiHistory')) 'GUI provides persistent searchable run and analysis history'
+Assert-True ($guiText.Contains('$historyTab=') -and $guiText.Contains('function Add-GuiHistory') -and $guiText.Contains('function Update-GuiHistory')) 'GUI provides persistent searchable run and analysis history'
 Assert-True ($guiText.Contains('function Export-GuiHistory') -and $guiText.Contains('AntiDPI_history_')) 'GUI supports CSV export of activity history'
 Assert-True ($guiText.Contains('Только избранное') -and $guiText.Contains('ContextMenuStrip=$profileMenu') -and $guiText.Contains('Save-GuiUiPreferences')) 'GUI supports persistent favorite and recent strategies with context actions'
 Assert-True ($guiText.Contains('Стратегия №{0}') -and $guiText.Contains('$details.Multiline=$true') -and $guiText.Contains('$details.ReadOnly=$true')) 'GUI displays strategy recipe information inline'
