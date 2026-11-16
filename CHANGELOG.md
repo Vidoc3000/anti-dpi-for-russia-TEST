@@ -1,5 +1,17 @@
 # Changelog / История изменений
 
+## Next — GitHub artifact attestations for release packages
+
+| English | Русский |
+| --- | --- |
+| Generate GitHub artifact provenance attestations for published ZIP/EXE/TAR.GZ packages and document manual verification with `gh attestation verify`. The Linux updater still validates the published SHA-256 only; automatic attestation verification is not included yet. | Добавить GitHub artifact attestations для публикуемых ZIP/EXE/TAR.GZ и инструкцию ручной проверки командой `gh attestation verify`. Linux-updater пока проверяет только опубликованный SHA-256; автоматическая проверка attestation ещё не включена. |
+
+## Next — Previewable, redacted Linux diagnostic archive
+
+| English | Русский |
+| --- | --- |
+| Add an explicit Linux CLI support-archive command with a content preview, per-file exclusions, common secret/network-identifier redaction, noninteractive confirmation safeguards, and owner-only output permissions. | Добавить явную CLI-команду Linux для диагностического архива: предварительный просмотр содержимого, исключение отдельных файлов, маскировка распространённых секретов и сетевых идентификаторов, подтверждение в неинтерактивном режиме и права доступа только владельцу. |
+
 ## Next — Linux in-place updater
 
 | English | Русский |

@@ -180,6 +180,15 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(self.launch(False, ('gnome', 'server')), (1, 0))
         self.assertIsNone(desktop.graphical_user({'SSH_CONNECTION': 'fixture'}))
 
+    def test_diagnostics_command_runs_unprivileged_to_keep_archive_user_readable(self):
+        with patch.object(terminal.os,'execv',side_effect=SystemExit(0)) as execute, \
+             patch.object(terminal,'find_terminal') as find_terminal:
+            with self.assertRaises(SystemExit):
+                terminal.launch('run',['diagnostics','--output','/tmp/report.zip'])
+        execute.assert_called_once()
+        self.assertNotIn('sudo',execute.call_args.args[1])
+        find_terminal.assert_not_called()
+
     def test_gnome_still_uses_artwork_window(self):
         self.assertEqual(self.launch(True, ('gnome', 'server')), (0, 1))
 
@@ -588,6 +597,7 @@ class ResourceTests(unittest.TestCase):
                   (REPO/'linux/app/antidpi.py',['update','--help']),
                   (REPO/'linux/app/install.py',['update','--help']),
                   (REPO/'linux/app/install.py',['rollback','--help'])]
+        commands.append((REPO/'linux/START.sh',['diagnostics','--help']))
         for script,arguments in commands:
             command=['bash',str(script),*arguments] if script.suffix=='.sh' else [sys.executable,str(script),*arguments]
             result = subprocess.run(command,env=env,capture_output=True,text=True,timeout=20)
@@ -597,6 +607,8 @@ class ResourceTests(unittest.TestCase):
                 self.assertIn('TLS-узел',result.stdout)
             if arguments == ['update','--help']:
                 self.assertTrue('update' in result.stdout or 'Обновление' in result.stdout)
+            if arguments == ['diagnostics','--help']:
+                self.assertIn('--output',result.stdout)
 
     def test_traceback_is_visible_and_private_log_is_created(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:
@@ -607,6 +619,42 @@ class ResourceTests(unittest.TestCase):
             self.assertIn('Traceback', output.getvalue())
             self.assertIn('fixture failure', path.read_text())
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_diagnostic_archive_previews_and_redacts_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'logs').mkdir()
+            (root/'logs/private.log').write_text(
+                'target=vpn.example.org interface=wlan0 password=topsecret '
+                'Authorization: Bearer bearersecret email=person@example.com '
+                'ghp_abcdefghijklmnopqrstuvwxyz123456 peer=203.0.113.42 ipv6=2001:db8::1%eth9 path=/home/alice/private\n')
+            (root/'outside.log').write_text('must never be collected')
+            (root/'logs/external.log').symlink_to(root/'outside.log')
+            output=root/'support.zip'
+            with redirect_stdout(StringIO()) as preview:
+                archive=diagnostics.create_diagnostic_archive(root,output,yes=True)
+            shown=preview.getvalue()
+            self.assertIn('Предварительный просмотр',shown)
+            self.assertIn('[REDACTED]',shown)
+            self.assertEqual(archive,output)
+            self.assertEqual(output.stat().st_mode & 0o777,0o600)
+            import zipfile
+            with zipfile.ZipFile(output) as bundle:
+                names=bundle.namelist()
+                self.assertIn('logs/private.log',names)
+                self.assertNotIn('logs/external.log',names)
+                report=' '.join(bundle.read(name).decode('utf-8') for name in names)
+            for secret in ('vpn.example.org','wlan0','topsecret','bearersecret','ghp_abcdefghijklmnopqrstuvwxyz123456','person@example.com','203.0.113.42','2001:db8::1','eth9','/home/alice'):
+                self.assertNotIn(secret,report)
+            self.assertIn('[REDACTED]',report)
+            self.assertIn('Проверьте содержимое архива',report)
+
+    def test_noninteractive_diagnostic_archive_requires_explicit_yes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output=Path(temporary)/'support.zip'
+            with patch.object(diagnostics.sys.stdin,'isatty',return_value=False):
+                with self.assertRaisesRegex(RuntimeError,'--yes'):
+                    diagnostics.create_diagnostic_archive(temporary,output,yes=False,output_fn=lambda _:None)
+            self.assertFalse(output.exists())
 
 
 if __name__ == '__main__':
