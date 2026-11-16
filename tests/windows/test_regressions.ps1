@@ -57,6 +57,27 @@ $managedWindowsDocs = @([regex]::Matches($managerText, 'README_.+?_Windows_v[0-9
 $sourceWindowsDocs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'windows') -File -Filter 'README_*_Windows_v*.txt' | ForEach-Object { $_.Name } | Sort-Object -Unique)
 $missingManagedWindowsDocs = @($managedWindowsDocs | Where-Object { -not (Test-Path -LiteralPath (Join-Path (Join-Path $repoRoot 'windows') $_) -PathType Leaf) })
 Assert-True ($managedWindowsDocs.Count -eq 2 -and [string]::Join('|', $managedWindowsDocs) -eq [string]::Join('|', $sourceWindowsDocs) -and $missingManagedWindowsDocs.Count -eq 0) 'only the current installer and strategy manuals are kept in the recursive Windows release source tree'
+$installGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Установка_Windows_v1.18.txt'))
+$strategyGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Стратегии_Windows_v1.18.txt'))
+$bundleManifestText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Official_Bundle_20261023_public_v1.json'))
+$bundleManifest = $bundleManifestText | ConvertFrom-Json
+Assert-True ($bundleManifest.repo -eq 'bol-van/zapret-win-bundle' -and $bundleManifest.commit -match '^[0-9a-f]{40}$' -and $bundleManifest.url.EndsWith([string]$bundleManifest.commit) -and $bundleManifest.sha256 -match '^[0-9a-f]{64}$' -and [long]$bundleManifest.bytes -gt 1000000) 'pinned official Zapret2 manifest has a full commit, commit-specific URL, archive digest, and size'
+$ipv4ExcludePath = Join-Path $repoRoot 'windows\payload\lists\ips-exclude.txt'
+$ipv4Networks = @(Get-Content -LiteralPath $ipv4ExcludePath | Where-Object { $_.Trim() })
+$ipv4Seen = @{}
+foreach ($network in $ipv4Networks) {
+    if ($network -notmatch '^((?:[0-9]{1,3}\.){3}[0-9]{1,3})/([0-9]{1,2})$') { throw ('Invalid IPv4 CIDR in ips-exclude.txt: ' + $network) }
+    $address = [Net.IPAddress]::Parse($Matches[1]); $prefix = [int]$Matches[2]
+    if ($address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $prefix -lt 0 -or $prefix -gt 32) { throw ('Out-of-range IPv4 CIDR: ' + $network) }
+    $octets = $address.GetAddressBytes()
+    for ($bit = $prefix; $bit -lt 32; $bit++) { if (($octets[[int][Math]::Floor($bit / 8)] -band (1 -shl (7 - ($bit % 8)))) -ne 0) { throw ('Non-canonical IPv4 network: ' + $network) } }
+    if ($ipv4Seen.ContainsKey($network)) { throw ('Duplicate IPv4 network: ' + $network) }; $ipv4Seen[$network] = $true
+}
+Assert-Equal 8 $ipv4Networks.Count 'shipped IPv4 exclusion network count'
+$documentedProfiles = @([regex]::Matches($strategyGuideText, '(?m)^ПРОФИЛЬ ([0-9]+) — (Golden|Silver)'))
+Assert-Equal 492 $documentedProfiles.Count 'strategy guide includes every catalogue profile'
+Assert-True ($installGuideText.Contains([string]$bundleManifest.commit) -and $installGuideText.Contains([string]$bundleManifest.sha256) -and $installGuideText.Contains('AntiDPI\_state\update.log')) 'installation manual matches the pinned bundle and documents updater diagnostics'
+Assert-True ($installGuideText.Contains('owned=False') -and $installGuideText.Contains('доказывает причину ошибки updater') -and $installGuideText.Contains('C:\Zapret')) 'installation manual explains the foreign WinDivert diagnostic without asserting causation'
 $coreText = [IO.File]::ReadAllText($corePath)
 $catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'))
 $guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
@@ -136,6 +157,11 @@ Assert-True ($guiText.Contains('networkCandidateCount -ge 2') -and $guiText.Cont
 Assert-True ($guiText.Contains('antidpi.gui-backup.v1') -and $guiText.Contains('Export-GuiConfiguration') -and $guiText.Contains('Import-GuiConfiguration')) 'GUI exports and validates importable settings backups'
 Assert-True ($guiText.Contains('function Get-GuiReadiness') -and $guiText.Contains('Assert-GuiReadiness') -and $guiText.Contains('Show-GuiReadiness')) 'GUI performs a pre-launch system and adapter readiness check'
 Assert-True ($guiText.Contains('NotifyIcon') -and $guiText.Contains('MinimizeToTray') -and $guiText.Contains('Request-GuiStop')) 'GUI exposes safe system-tray controls and optional minimize-to-tray'
+Assert-True ($guiText.Contains('Main form minimized to tray; GUI message loop remains active') -and $guiText.Contains('BeginInvoke([Action]') -and $guiText.Contains('Main form restored from tray')) 'minimize-to-tray defers hiding, keeps the GUI message loop alive, and exposes a restore action'
+$trayResize = [regex]::Match($guiText, '(?s)\$form\.Add_Resize\(\{.*?^    \}\)', [Text.RegularExpressions.RegexOptions]::Multiline)
+Assert-True ($trayResize.Success -and -not $trayResize.Value.Contains('$form.Close()') -and $trayResize.Value.Contains('$form.Hide()')) 'minimize-to-tray resize handler hides rather than closing the form'
+Assert-True ($managerText.Contains('function Write-AntiDPIUpdateLog') -and $managerText.Contains("'REPLACED '") -and $managerText.Contains("'ROLLBACK success='") -and $managerText.Contains('FATAL ')) 'updater retains progress, failure, and rollback diagnostics'
+Assert-True ($managerText.Contains('$driverSnapshot.Exists -and -not $driverSnapshot.Owned') -and $managerText.Contains('updater не будет менять её')) 'updater warns about a foreign WinDivert service without taking ownership'
 Assert-True ($guiText.Contains('function Get-GuiTrayTooltipText') -and $guiText.Contains('$available=63-$prefix.Length')) 'system tray tooltips stay within the Windows 63-character limit'
 Assert-True ($guiText.Contains('$appIconPath=Join-Path $PSScriptRoot ''AntiDPI_Zapret2.ico''') -and $guiText.Contains('$form.Icon=$script:appIcon') -and $guiText.Contains('$script:trayIcon.Icon=if($null -ne $script:appIcon)')) 'GUI window and tray use the same icon as the desktop shortcut'
 Assert-True ($guiText.Contains('$networkTimer.Interval=4000') -and $guiText.Contains('networkCandidateCount') -and $guiText.Contains('Get-DnsClientServerAddress') -and $guiText.Contains('Request-GuiAnalysisCancel') -and $guiText.Contains('Request-GuiStop')) 'GUI debounces network changes across address, route, and DNS before safe cancellation'
