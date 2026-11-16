@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -43,8 +43,9 @@ foreach ($root in $scriptRoots) {
     foreach ($file in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -Recurse) {
         $tokens = $null
         $parseErrors = $null
-        [System.Management.Automation.Language.Parser]::ParseFile(
-            $file.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+        $content = Get-Content -LiteralPath $file.FullName -Encoding UTF8 -Raw
+        [System.Management.Automation.Language.Parser]::ParseInput(
+            $content, $file.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
         if ($parseErrors.Count) {
             $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
             throw ("PowerShell parse failure in {0}: {1}" -f $file.FullName, $details)
