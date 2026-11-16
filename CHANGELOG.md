@@ -1,5 +1,11 @@
 # Changelog / История изменений
 
+## Next — Windows network profiles and connection monitoring
+
+| English | Русский |
+| --- | --- |
+| Extend saved Windows connection profiles with a validated HTTPS monitor target and interval. Add opt-in periodic, interface-bound HTTPS checks with local history and tray notifications on availability changes; stable network changes trigger an extra check. Monitoring never changes system network settings or automatically selects or applies a strategy. | Дополнить профили подключения Windows проверяемой целью HTTPS-мониторинга и интервалом. Добавить включаемые пользователем периодические HTTPS-проверки через выбранный адаптер, локальную историю и уведомления в системном трее при смене доступности; после стабильного изменения сети выполнять дополнительную проверку. Мониторинг не меняет системные сетевые настройки и не выбирает и не применяет стратегию автоматически. |
+
 ## Next — Move Android preview workflow actions to Node 24
 
 | English | Русский |

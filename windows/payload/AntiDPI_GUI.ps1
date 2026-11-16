@@ -31,19 +31,27 @@ $script:assetVerificationJob=$null
 $script:installedSourceCommit=''
 $script:networkCandidateSignature=''
 $script:networkCandidateCount=0
+$script:connectionMonitorJob=$null
+$script:monitorLastState=''
+$script:monitorForceCheck=$false
+$script:monitorNextRunUtc=[DateTime]::MinValue
 $script:profilesCombo=$null
 $script:trayMinimizeCheck=$null
 $script:historyGrid=$null
 $script:dashboardLabel=$null
 $script:historySearchBox=$null
 $script:historyStatusLabel=$null
+$script:monitorEnabledCheck=$null
+$script:monitorIntervalBox=$null
+$script:monitorStatusLabel=$null
 $script:favoritesOnly=$false
 $script:guiSettingsPath=Join-Path $state 'gui-settings.json'
+$script:knownMonitorTargetHosts=@('www.google.com','cloudflare.com','www.youtube.com','www.netflix.com','www.twitch.tv')
 $script:programVersion='Версия не определена'
 $script:analysisSnapshotIdentity=''
 $script:workerStdoutPath='';$script:workerStderrPath=''
 $script:analysisStdoutPath='';$script:analysisStderrPath=''
-$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;Favorites=@();RecentProfiles=@();RecentProfileConfig=$null;FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false;MinimizeToTray=$false}
+$script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;MonitorEnabled=$false;MonitorIntervalMinutes=5;MonitorTargetHost='cloudflare.com';Favorites=@();RecentProfiles=@();RecentProfileConfig=$null;FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false;MinimizeToTray=$false}
 $guiLog=Join-Path $state 'gui\startup.log'
 function Write-GuiLog([string]$Message) {
     try {
@@ -66,6 +74,9 @@ if(Test-Path -LiteralPath $script:guiSettingsPath -PathType Leaf){
         if($saved.PSObject.Properties['RememberAdapter']){$script:guiSettings.RememberAdapter=[bool]$saved.RememberAdapter}
         if($saved.PSObject.Properties['SkipTimestampSetup']){$script:guiSettings.SkipTimestampSetup=[bool]$saved.SkipTimestampSetup}
         if($saved.PSObject.Properties['ShowErrorDetails']){$script:guiSettings.ShowErrorDetails=[bool]$saved.ShowErrorDetails}
+        if($saved.PSObject.Properties['MonitorEnabled']){$script:guiSettings.MonitorEnabled=[bool]$saved.MonitorEnabled}
+        if($saved.PSObject.Properties['MonitorIntervalMinutes']){$monitorMinutes=0;if([int]::TryParse([string]$saved.MonitorIntervalMinutes,[ref]$monitorMinutes) -and $monitorMinutes -ge 1 -and $monitorMinutes -le 60){$script:guiSettings.MonitorIntervalMinutes=$monitorMinutes}}
+        if($saved.PSObject.Properties['MonitorTargetHost'] -and [string]$saved.MonitorTargetHost -in $script:knownMonitorTargetHosts){$script:guiSettings.MonitorTargetHost=[string]$saved.MonitorTargetHost}
         if($saved.PSObject.Properties['AnalysisParallelism']){$savedParallelism=0;if([int]::TryParse([string]$saved.AnalysisParallelism,[ref]$savedParallelism) -and $savedParallelism -ge 1 -and $savedParallelism -le 5){$script:guiSettings.AnalysisParallelism=$savedParallelism}}
         if($saved.PSObject.Properties['AnalysisAttempts']){$savedAttempts=0;if([int]::TryParse([string]$saved.AnalysisAttempts,[ref]$savedAttempts) -and $savedAttempts -ge 1 -and $savedAttempts -le 5){$script:guiSettings.AnalysisAttempts=$savedAttempts}}
         if($saved.PSObject.Properties['AnalysisTimeoutSeconds']){$savedTimeout=0;if([int]::TryParse([string]$saved.AnalysisTimeoutSeconds,[ref]$savedTimeout) -and $savedTimeout -ge 5 -and $savedTimeout -le 120){$script:guiSettings.AnalysisTimeoutSeconds=$savedTimeout}}
@@ -354,8 +365,10 @@ function ConvertTo-GuiConnectionProfile($Profile) {
     if($protocol -notin @('tls','quic')){throw 'В профиле указан неизвестный транспорт.'}
     if($protocol -eq 'quic' -and $number -notin @(493,494)){throw 'Для QUIC используются только профили 493 и 494.'}
     if($protocol -eq 'tls' -and $number -gt 492){throw 'TLS-профиль должен иметь номер от 1 до 492.'}
+    $monitorHost=[string](Get-GuiObjectProperty $Profile 'MonitorTargetHost' 'cloudflare.com');if($monitorHost -notin $script:knownMonitorTargetHosts){throw 'В профиле указана неизвестная цель мониторинга.'}
+    $monitorMinutes=5;if(-not [int]::TryParse([string](Get-GuiObjectProperty $Profile 'MonitorIntervalMinutes' 5),[ref]$monitorMinutes) -or $monitorMinutes -lt 1 -or $monitorMinutes -gt 60){throw 'Интервал мониторинга должен быть от 1 до 60 минут.'}
     $ports=ConvertTo-AntiDPIPortScope ([string](Get-GuiObjectProperty $Profile 'Ports' '443'))
-    return [pscustomobject][ordered]@{Name=$name;ProfileNumber=$number;AddressFamily=$family;Protocol=$protocol;Ports=$ports;AdapterGuid=[string](Get-GuiObjectProperty $Profile 'AdapterGuid' '');AdapterName=[string](Get-GuiObjectProperty $Profile 'AdapterName' '')}
+    return [pscustomobject][ordered]@{Name=$name;ProfileNumber=$number;AddressFamily=$family;Protocol=$protocol;Ports=$ports;MonitorTargetHost=$monitorHost;MonitorIntervalMinutes=$monitorMinutes;AdapterGuid=[string](Get-GuiObjectProperty $Profile 'AdapterGuid' '');AdapterName=[string](Get-GuiObjectProperty $Profile 'AdapterName' '')}
 }
 function Read-GuiConnectionProfiles {
     $loaded=[Collections.Generic.List[object]]::new()
@@ -378,7 +391,7 @@ function Save-GuiConnectionProfile {
     $selected=Get-GuiSelectedProfile
     $adapter=$adapterBox.SelectedItem
     if($null -eq $adapter){throw 'Выберите физический адаптер перед сохранением профиля подключения.'}
-    $entry=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name=$name;ProfileNumber=$selected.Number;AddressFamily=$addressFamilyBox.SelectedItem.Value;Protocol=$protocolBox.SelectedItem.Value;Ports=$portsBox.Text;AdapterGuid=$(if($null -ne $adapter){$adapter.InterfaceGuid}else{''});AdapterName=$(if($null -ne $adapter){$adapter.Name}else{''})})
+    $entry=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name=$name;ProfileNumber=$selected.Number;AddressFamily=$addressFamilyBox.SelectedItem.Value;Protocol=$protocolBox.SelectedItem.Value;Ports=$portsBox.Text;MonitorTargetHost=$(if($null -ne $matrixTargetBox.SelectedItem){$matrixTargetBox.SelectedItem.Host}else{'cloudflare.com'});MonitorIntervalMinutes=[int]$monitorIntervalBox.Value;AdapterGuid=$(if($null -ne $adapter){$adapter.InterfaceGuid}else{''});AdapterName=$(if($null -ne $adapter){$adapter.Name}else{''})})
     if(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name}).Count -ge 100){throw 'Можно сохранить не более 100 профилей подключений.'};$script:connectionProfiles=@(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name})+@($entry)|Sort-Object Name)
     Save-GuiConnectionProfiles;Update-GuiConnectionProfileItems;$settingsStatusLabel.Text=('Профиль подключения «{0}» сохранён.' -f $entry.Name)
 }
@@ -389,6 +402,8 @@ function Set-GuiConnectionControls($Profile) {
     $portsBox.Text=$entry.Ports
     Refresh-GuiAdapters
     if($entry.AdapterGuid){$adapterFound=$false;for($i=0;$i -lt $adapterBox.Items.Count;$i++){if([string]$adapterBox.Items[$i].InterfaceGuid -eq $entry.AdapterGuid){$adapterBox.SelectedIndex=$i;$adapterFound=$true;break}};if(-not $adapterFound){throw ('Сохранённый адаптер профиля «{0}» не подключён. Подключите его или выберите актуальный адаптер вручную; запуск не выполнялся.' -f $entry.AdapterName)}}
+    for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq $entry.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}}
+    $monitorIntervalBox.Value=[decimal]$entry.MonitorIntervalMinutes
     if($favoritesCheck.Checked){$favoritesCheck.Checked=$false}
     $profileSearchBox.Text=[string]$entry.ProfileNumber;Update-GuiProfileFilter
     for($i=0;$i -lt $profileListBox.Items.Count;$i++){if([int]$profileListBox.Items[$i].Number -eq $entry.ProfileNumber){$profileListBox.SelectedIndex=$i;break}}
@@ -421,6 +436,9 @@ function Import-GuiConfiguration {
         $candidate.AddressFamily=[string]$settings.AddressFamily;$candidate.Protocol=[string]$settings.Protocol;$candidate.Ports=ConvertTo-AntiDPIPortScope ([string]$settings.Ports)
         $range=[regex]::Match([string]$settings.AnalysisRange,'^([0-9]+)(?:\s*-\s*([0-9]+))?$');if(-not $range.Success){throw 'В резервной копии некорректен диапазон анализа.'};$first=[int]$range.Groups[1].Value;$last=if($range.Groups[2].Success){[int]$range.Groups[2].Value}else{$first};if($first -lt 1 -or $last -lt $first -or $last -gt 492){throw 'Диапазон анализа вне допустимого диапазона.'};$candidate.AnalysisRange=('{0}-{1}' -f $first,$last)
         $numericBounds=[ordered]@{AnalysisParallelism=@(1,5);AnalysisAttempts=@(1,5);AnalysisTimeoutSeconds=@(5,120);AnalysisThresholdKB=@(16,1024)};foreach($key in $numericBounds.Keys){$limits=$numericBounds[$key];$value=0;if(-not [int]::TryParse([string]$settings.$key,[ref]$value) -or $value -lt $limits[0] -or $value -gt $limits[1]){throw ('Некорректная настройка '+$key)};$candidate[$key]=$value}
+        if($settings.PSObject.Properties['MonitorEnabled']){$candidate.MonitorEnabled=[bool]$settings.MonitorEnabled}
+        if($settings.PSObject.Properties['MonitorIntervalMinutes']){$monitorMinutes=0;if(-not [int]::TryParse([string]$settings.MonitorIntervalMinutes,[ref]$monitorMinutes) -or $monitorMinutes -lt 1 -or $monitorMinutes -gt 60){throw 'Некорректный интервал мониторинга.'};$candidate.MonitorIntervalMinutes=$monitorMinutes}
+        if($settings.PSObject.Properties['MonitorTargetHost']){if([string]$settings.MonitorTargetHost -notin $script:knownMonitorTargetHosts){throw 'Некорректная цель мониторинга.'};$candidate.MonitorTargetHost=[string]$settings.MonitorTargetHost}
         foreach($key in @('RememberAdapter','SkipTimestampSetup','ShowErrorDetails','MinimizeToTray')){if($settings.PSObject.Properties[$key]){$candidate[$key]=[bool]$settings.$key}}
         $candidate.Favorites=@($settings.Favorites|ForEach-Object {$n=0;if([int]::TryParse([string]$_,[ref]$n) -and $n -ge 1 -and $n -le 494){$n}}|Where-Object {$_}|Select-Object -Unique)
         $candidate.RecentProfiles=@($settings.RecentProfiles|ForEach-Object {$n=0;if([int]::TryParse([string]$_,[ref]$n) -and $n -ge 1 -and $n -le 494){$n}}|Where-Object {$_}|Select-Object -Unique|Select-Object -First 20)
@@ -428,7 +446,7 @@ function Import-GuiConfiguration {
         $newProfiles=[Collections.Generic.List[object]]::new();foreach($profile in @($document.ConnectionProfiles)){$newProfiles.Add((ConvertTo-GuiConnectionProfile $profile))};if($newProfiles.Count -gt 100){throw 'Слишком много профилей в резервной копии.'};if(@($newProfiles.ToArray()|Group-Object Name|Where-Object {$_.Count -gt 1}).Count){throw 'В резервной копии повторяются имена профилей подключений.'}
         if([System.Windows.Forms.MessageBox]::Show('Импорт заменит текущие настройки и сохранённые профили подключений. Продолжить?','Импорт настроек',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning) -ne [System.Windows.Forms.DialogResult]::Yes){return}
         $script:guiSettings=$candidate;$script:connectionProfiles=@($newProfiles.ToArray());Save-GuiConnectionProfiles
-        $settingsFamilyBox.SelectedIndex=if($candidate.AddressFamily -eq 'ipv6'){1}else{0};$settingsProtocolBox.SelectedIndex=if($candidate.Protocol -eq 'quic'){1}else{0};$settingsPortsBox.Text=$candidate.Ports;$settingsAnalysisRangeBox.Text=$candidate.AnalysisRange;$settingsAnalysisParallelismBox.Value=[decimal]$candidate.AnalysisParallelism;$settingsAnalysisAttemptsBox.Value=[decimal]$candidate.AnalysisAttempts;$settingsAnalysisTimeoutBox.Value=[decimal]$candidate.AnalysisTimeoutSeconds;$settingsAnalysisThresholdBox.Value=[decimal]$candidate.AnalysisThresholdKB;$settingsRememberAdapterCheck.Checked=$candidate.RememberAdapter;$settingsSkipTimestampCheck.Checked=$candidate.SkipTimestampSetup;$settingsShowErrorDetailsCheck.Checked=$candidate.ShowErrorDetails;$trayMinimizeCheck.Checked=$candidate.MinimizeToTray
+        $settingsFamilyBox.SelectedIndex=if($candidate.AddressFamily -eq 'ipv6'){1}else{0};$settingsProtocolBox.SelectedIndex=if($candidate.Protocol -eq 'quic'){1}else{0};$settingsPortsBox.Text=$candidate.Ports;$settingsAnalysisRangeBox.Text=$candidate.AnalysisRange;$settingsAnalysisParallelismBox.Value=[decimal]$candidate.AnalysisParallelism;$settingsAnalysisAttemptsBox.Value=[decimal]$candidate.AnalysisAttempts;$settingsAnalysisTimeoutBox.Value=[decimal]$candidate.AnalysisTimeoutSeconds;$settingsAnalysisThresholdBox.Value=[decimal]$candidate.AnalysisThresholdKB;$settingsRememberAdapterCheck.Checked=$candidate.RememberAdapter;$settingsSkipTimestampCheck.Checked=$candidate.SkipTimestampSetup;$settingsShowErrorDetailsCheck.Checked=$candidate.ShowErrorDetails;$trayMinimizeCheck.Checked=$candidate.MinimizeToTray;$monitorEnabledCheck.Checked=$candidate.MonitorEnabled;$monitorIntervalBox.Value=[decimal]$candidate.MonitorIntervalMinutes;for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq $candidate.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}}
         Save-GuiSettings;Update-GuiConnectionProfileItems;Update-GuiProfileFilter;$settingsStatusLabel.Text='Импорт настроек завершён.'
     }finally{$dialog.Dispose()}
 }
@@ -1107,6 +1125,59 @@ function Export-GuiAnalysisResults {
     finally{$dialog.Dispose()}
 }
 
+function Start-GuiConnectionMonitorCheck {
+    if(-not [bool]$script:guiSettings.MonitorEnabled){return}
+    if($null -ne $script:connectionMonitorJob -and $script:connectionMonitorJob.State -eq 'Running'){return}
+    $target=$matrixTargetBox.SelectedItem
+    if($null -eq $target -or [string]$target.Host -notin $script:knownMonitorTargetHosts){throw 'Выберите поддерживаемую цель мониторинга.'}
+    if($null -eq $adapterBox.SelectedItem){throw 'Мониторинг ожидает выбора физического адаптера.'}
+    $family=[string]$addressFamilyBox.SelectedItem.Value
+    $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'}
+    $addresses=@(Get-NetIPAddress -InterfaceIndex ([int]$adapterBox.SelectedItem.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'ipv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})}|Select-Object -First 1 -ExpandProperty IPAddress)
+    if(-not $addresses.Count){$script:monitorLastState='';$script:monitorNextRunUtc=[DateTime]::UtcNow.AddMinutes([int]$script:guiSettings.MonitorIntervalMinutes);$script:monitorStatusLabel.Text=('Монитор: нет пригодного адреса IPv{0} на выбранном адаптере.' -f $(if($family -eq 'ipv6'){6}else{4}));return}
+    $source=[string]$addresses[0];$hostName=[string]$target.Host;$path=[string]$target.Path;$name=[string]$target.Name
+    $script:monitorStatusLabel.Text=('Монитор: проверяю {0} через {1}…' -f $name,$adapterBox.SelectedItem.Name)
+    $script:connectionMonitorJob=Start-Job -ArgumentList $hostName,$path,$name,$family,$source -ScriptBlock {
+        param([string]$HostName,[string]$Path,[string]$TargetName,[string]$Family,[string]$Source)
+        $curlPath=Join-Path $env:SystemRoot 'System32\curl.exe'
+        if(-not (Test-Path -LiteralPath $curlPath -PathType Leaf)){[pscustomobject]@{State='unknown';Summary='Монитор: системный curl.exe не найден.';CheckedUtc=[DateTime]::UtcNow.ToString('o');Target=$TargetName};return}
+        $familyArg=if($Family -eq 'ipv6'){'--ipv6'}else{'--ipv4'}
+        $url='https://'+$HostName+$Path
+        $curlArguments=@('--silent','--show-error','--connect-timeout','5','--max-time','12','--output','NUL','--write-out','%{http_code}|%{time_total}','--noproxy','*',$familyArg,'--interface',$Source,$url)
+        $output=@(& $curlPath @curlArguments 2>&1);$exitCode=$LASTEXITCODE;$marker='';if($output.Count){$marker=[string]$output[-1]};$match=[regex]::Match($marker,'^([0-9]{3})\|([0-9]+(?:\.[0-9]+)?)$')
+        if($exitCode -eq 0 -and $match.Success -and [int]$match.Groups[1].Value -ge 100 -and [int]$match.Groups[1].Value -le 599){$code=[int]$match.Groups[1].Value;$seconds=[double]::Parse($match.Groups[2].Value,[Globalization.CultureInfo]::InvariantCulture);$state='up';$summary=('Монитор: соединение есть — {0}, HTTP {1}, {2:N0} мс (IPv{3}).' -f $TargetName,$code,($seconds*1000),$(if($Family -eq 'ipv6'){6}else{4}))}
+        else{$state='down';$summary=('Монитор: нет HTTPS-соединения с {0} по IPv{1} (curl, код {2}).' -f $TargetName,$(if($Family -eq 'ipv6'){6}else{4}),$exitCode)}
+        [pscustomobject]@{State=$state;Summary=$summary;CheckedUtc=[DateTime]::UtcNow.ToString('o');Target=$TargetName}
+    }
+    $script:monitorNextRunUtc=[DateTime]::UtcNow.AddMinutes([int]$script:guiSettings.MonitorIntervalMinutes)
+}
+function Update-GuiConnectionMonitor {
+    if($null -ne $script:connectionMonitorJob -and $script:connectionMonitorJob.State -ne 'Running'){
+        $result=@(Receive-Job -Job $script:connectionMonitorJob -ErrorAction SilentlyContinue|Where-Object {$null -ne $_}|Select-Object -Last 1)
+        Remove-Job -Job $script:connectionMonitorJob -Force -ErrorAction SilentlyContinue;$script:connectionMonitorJob=$null
+        if($result.Count -and $result[0].PSObject.Properties['State']){
+            $entry=$result[0];$previous=$script:monitorLastState;$script:monitorLastState=[string]$entry.State;$script:monitorStatusLabel.Text=[string]$entry.Summary
+            if($previous -cne $script:monitorLastState){
+                $eventStatus=if($script:monitorLastState -eq 'up'){'ДОСТУПНО'}elseif($script:monitorLastState -eq 'down'){'НЕТ СВЯЗИ'}else{'НЕИЗВЕСТНО'}
+                Add-GuiHistory 'Монитор соединения' $eventStatus ([string]$entry.Summary)
+                if($previous -and $null -ne $script:trayIcon){$balloonTitle=if($script:monitorLastState -eq 'down'){'Проблема соединения'}elseif($script:monitorLastState -eq 'up' -and $previous -eq 'down'){'Соединение восстановлено'}else{'Состояние соединения изменилось'};$balloonIcon=if($script:monitorLastState -eq 'down'){[System.Windows.Forms.ToolTipIcon]::Warning}else{[System.Windows.Forms.ToolTipIcon]::Info};$script:trayIcon.ShowBalloonTip(5000,$balloonTitle,[string]$entry.Summary,$balloonIcon)}
+            }
+        }else{$script:monitorStatusLabel.Text='Монитор: проверка завершилась без результата.';Add-GuiHistory 'Монитор соединения' 'ОШИБКА' 'Фоновая проверка не вернула результат.'}
+        if($script:monitorForceCheck){$script:monitorForceCheck=$false;$script:monitorNextRunUtc=[DateTime]::UtcNow}else{$script:monitorNextRunUtc=[DateTime]::UtcNow.AddMinutes([int]$script:guiSettings.MonitorIntervalMinutes)}
+    }
+    if(-not [bool]$script:guiSettings.MonitorEnabled){return}
+    if($null -ne $script:connectionMonitorJob -and $script:connectionMonitorJob.State -eq 'Running'){return}
+    if([DateTime]::UtcNow -ge $script:monitorNextRunUtc){try{Start-GuiConnectionMonitorCheck}catch{$script:monitorStatusLabel.Text=('Монитор ожидает настройки: '+$_.Exception.Message);$script:monitorNextRunUtc=[DateTime]::UtcNow.AddMinutes([int]$script:guiSettings.MonitorIntervalMinutes)}}
+}
+function Apply-GuiConnectionMonitorSettings {
+    Save-GuiSettings
+    $script:monitorLastState=''
+    $script:monitorNextRunUtc=[DateTime]::UtcNow
+    if([bool]$script:guiSettings.MonitorEnabled){$script:monitorStatusLabel.Text=('Монитор включён: проверка каждые {0} мин.; стратегия автоматически не меняется.' -f [int]$script:guiSettings.MonitorIntervalMinutes);Update-GuiConnectionMonitor}
+    else{$script:monitorStatusLabel.Text='Монитор остановлен. Системные настройки сети не изменялись.'}
+    Add-GuiHistory 'Монитор соединения' $(if($script:guiSettings.MonitorEnabled){'ВКЛЮЧЁН'}else{'ВЫКЛЮЧЕН'}) ('Цель: {0}; интервал: {1} мин.' -f [string]$script:guiSettings.MonitorTargetHost,[int]$script:guiSettings.MonitorIntervalMinutes)
+}
+
 function Save-GuiSettings {
     $family=[string]$settingsFamilyBox.SelectedItem.Value
     $protocol=[string]$settingsProtocolBox.SelectedItem.Value
@@ -1125,7 +1196,9 @@ function Save-GuiSettings {
     if($attempts -lt 1 -or $attempts -gt 5){throw 'Число попыток должно быть от 1 до 5.'}
     if($timeoutSeconds -lt 5 -or $timeoutSeconds -gt 120){throw 'Таймаут должен быть от 5 до 120 секунд.'}
     if($thresholdKB -lt 16 -or $thresholdKB -gt 1024){throw 'Порог ответа должен быть от 16 до 1024 КиБ.'}
-    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked;MinimizeToTray=[bool]$trayMinimizeCheck.Checked;Favorites=@($script:guiSettings.Favorites);RecentProfiles=@($script:guiSettings.RecentProfiles);RecentProfileConfig=$script:guiSettings.RecentProfileConfig;FirstRunComplete=$true;WindowBounds=$script:guiSettings.WindowBounds;WindowMaximized=$script:guiSettings.WindowMaximized}
+    if([int]$monitorIntervalBox.Value -lt 1 -or [int]$monitorIntervalBox.Value -gt 60){throw 'Интервал мониторинга должен быть от 1 до 60 минут.'}
+    if($null -eq $matrixTargetBox.SelectedItem -or [string]$matrixTargetBox.SelectedItem.Host -notin $script:knownMonitorTargetHosts){throw 'Выберите поддерживаемую цель мониторинга.'}
+    $settings=@{AddressFamily=$family;Protocol=$protocol;Ports=$ports;AnalysisRange=$rangeText;AnalysisParallelism=$parallelism;AnalysisAttempts=$attempts;AnalysisTimeoutSeconds=$timeoutSeconds;AnalysisThresholdKB=$thresholdKB;RememberAdapter=[bool]$settingsRememberAdapterCheck.Checked;SkipTimestampSetup=[bool]$settingsSkipTimestampCheck.Checked;ShowErrorDetails=[bool]$settingsShowErrorDetailsCheck.Checked;MonitorEnabled=[bool]$monitorEnabledCheck.Checked;MonitorIntervalMinutes=[int]$monitorIntervalBox.Value;MonitorTargetHost=[string]$matrixTargetBox.SelectedItem.Host;MinimizeToTray=[bool]$trayMinimizeCheck.Checked;Favorites=@($script:guiSettings.Favorites);RecentProfiles=@($script:guiSettings.RecentProfiles);RecentProfileConfig=$script:guiSettings.RecentProfileConfig;FirstRunComplete=$true;WindowBounds=$script:guiSettings.WindowBounds;WindowMaximized=$script:guiSettings.WindowMaximized}
     [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null
     $temporary=$script:guiSettingsPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
     try{
@@ -1141,6 +1214,7 @@ function Save-GuiSettings {
     $portsBox.Text=$ports
     Refresh-GuiAdapters
     $script:guiSettings.MinimizeToTray=[bool]$trayMinimizeCheck.Checked
+    $script:monitorNextRunUtc=if($script:guiSettings.MonitorEnabled){[DateTime]::UtcNow}else{[DateTime]::MaxValue}
     $settingsStatusLabel.Text='Настройки сохранены и применены.'
 }
 function Load-GuiAnalysisHistory {
@@ -1183,7 +1257,7 @@ try{
     $aboutTab=[System.Windows.Forms.TabPage]::new('О программе')
     foreach($page in @($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
     $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)
-    $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,700)
+    $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,1050)
     $historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,520)
     $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,910)
     $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)
@@ -1356,7 +1430,7 @@ try{
     $analysisTab.Controls.Add($analysisStatusLabel)
     $matrixTargetLabel=New-Object System.Windows.Forms.Label;$matrixTargetLabel.Text='Сервис:';$matrixTargetLabel.Location=[System.Drawing.Point]::new(22,585);$matrixTargetLabel.Size=[System.Drawing.Size]::new(65,26);$analysisTab.Controls.Add($matrixTargetLabel)
     $matrixTargetBox=New-Object System.Windows.Forms.ComboBox;$matrixTargetBox.DropDownStyle='DropDownList';$matrixTargetBox.Location=[System.Drawing.Point]::new(88,582);$matrixTargetBox.Size=[System.Drawing.Size]::new(210,32)
-    foreach($target in @([pscustomobject]@{Name='Веб — Google';Host='www.google.com';Path='/generate_204'},[pscustomobject]@{Name='Веб — Cloudflare';Host='cloudflare.com';Path='/cdn-cgi/trace'},[pscustomobject]@{Name='Видео — YouTube';Host='www.youtube.com';Path='/generate_204'},[pscustomobject]@{Name='Видео — Netflix';Host='www.netflix.com';Path='/'},[pscustomobject]@{Name='Видео — Twitch';Host='www.twitch.tv';Path='/'})){$null=$matrixTargetBox.Items.Add($target)};$matrixTargetBox.DisplayMember='Name';$matrixTargetBox.SelectedIndex=0;$analysisTab.Controls.Add($matrixTargetBox)
+    foreach($target in @([pscustomobject]@{Name='Веб — Google';Host='www.google.com';Path='/generate_204'},[pscustomobject]@{Name='Веб — Cloudflare';Host='cloudflare.com';Path='/cdn-cgi/trace'},[pscustomobject]@{Name='Видео — YouTube';Host='www.youtube.com';Path='/generate_204'},[pscustomobject]@{Name='Видео — Netflix';Host='www.netflix.com';Path='/'},[pscustomobject]@{Name='Видео — Twitch';Host='www.twitch.tv';Path='/'})){$null=$matrixTargetBox.Items.Add($target)};$matrixTargetBox.DisplayMember='Name';$matrixTargetBox.SelectedIndex=0;for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq [string]$script:guiSettings.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}};$analysisTab.Controls.Add($matrixTargetBox)
     $matrixButton=New-Object System.Windows.Forms.Button;$matrixButton.Text='Проверить HTTPS + HTTP/3';$matrixButton.Location=[System.Drawing.Point]::new(310,580);$matrixButton.Size=[System.Drawing.Size]::new(250,38);$matrixButton.Add_Click({try{if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите физический сетевой адаптер.'};Start-GuiConnectivityMatrix}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($matrixButton)
     $matrixCancelButton=New-Object System.Windows.Forms.Button;$matrixCancelButton.Text='Отменить';$matrixCancelButton.Location=[System.Drawing.Point]::new(570,580);$matrixCancelButton.Size=[System.Drawing.Size]::new(120,38);$matrixCancelButton.Enabled=$false;$matrixCancelButton.Add_Click({Stop-GuiConnectivityMatrix});$analysisTab.Controls.Add($matrixCancelButton)
     $vpnTestButton=New-Object System.Windows.Forms.Button;$vpnTestButton.Text='VPN: отдельный тест';$vpnTestButton.Location=[System.Drawing.Point]::new(310,625);$vpnTestButton.Size=[System.Drawing.Size]::new(190,38);$vpnTestButton.Add_Click({try{Start-GuiVpnVerification}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($vpnTestButton)
@@ -1373,6 +1447,13 @@ try{
     $targetProbeTimeoutBox=New-Object System.Windows.Forms.NumericUpDown;$targetProbeTimeoutBox.Minimum=1;$targetProbeTimeoutBox.Maximum=30;$targetProbeTimeoutBox.Value=8;$targetProbeTimeoutBox.Location=[System.Drawing.Point]::new(215,786);$targetProbeTimeoutBox.Size=[System.Drawing.Size]::new(62,28);$analysisTab.Controls.Add($targetProbeTimeoutBox)
     $targetProbeButton=New-Object System.Windows.Forms.Button;$targetProbeButton.Text='Проверить DNS / TCP / TLS';$targetProbeButton.Location=[System.Drawing.Point]::new(290,783);$targetProbeButton.Size=[System.Drawing.Size]::new(220,36);$targetProbeButton.Add_Click({try{Start-GuiTargetProbe}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($targetProbeButton)
     $targetProbeCancelButton=New-Object System.Windows.Forms.Button;$targetProbeCancelButton.Text='Отменить';$targetProbeCancelButton.Location=[System.Drawing.Point]::new(520,783);$targetProbeCancelButton.Size=[System.Drawing.Size]::new(110,36);$targetProbeCancelButton.Enabled=$false;$targetProbeCancelButton.Add_Click({Stop-GuiTargetProbe});$analysisTab.Controls.Add($targetProbeCancelButton)
+    $monitorHeading=New-Object System.Windows.Forms.Label;$monitorHeading.Text='Фоновый монитор соединения';$monitorHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$monitorHeading.Location=[System.Drawing.Point]::new(22,834);$monitorHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($monitorHeading)
+    $monitorInfo=New-Object System.Windows.Forms.Label;$monitorInfo.Text='Проверяет выбранный выше сервис по HTTPS через выбранный адаптер и IP-семейство. Проверка отправляет только обычный GET без пользовательских данных; стратегию автоматически не выбирает и не меняет.';$monitorInfo.Location=[System.Drawing.Point]::new(22,861);$monitorInfo.Size=[System.Drawing.Size]::new(690,42);$analysisTab.Controls.Add($monitorInfo)
+    $script:monitorEnabledCheck=New-Object System.Windows.Forms.CheckBox;$script:monitorEnabledCheck.Text='Включить регулярную проверку и уведомления о смене состояния';$script:monitorEnabledCheck.Checked=[bool]$script:guiSettings.MonitorEnabled;$script:monitorEnabledCheck.Location=[System.Drawing.Point]::new(22,909);$script:monitorEnabledCheck.Size=[System.Drawing.Size]::new(550,28);$analysisTab.Controls.Add($script:monitorEnabledCheck)
+    $monitorIntervalLabel=New-Object System.Windows.Forms.Label;$monitorIntervalLabel.Text='Интервал (мин.):';$monitorIntervalLabel.Location=[System.Drawing.Point]::new(22,949);$monitorIntervalLabel.Size=[System.Drawing.Size]::new(130,26);$analysisTab.Controls.Add($monitorIntervalLabel)
+    $script:monitorIntervalBox=New-Object System.Windows.Forms.NumericUpDown;$script:monitorIntervalBox.Minimum=1;$script:monitorIntervalBox.Maximum=60;$script:monitorIntervalBox.Value=[decimal]$script:guiSettings.MonitorIntervalMinutes;$script:monitorIntervalBox.Location=[System.Drawing.Point]::new(155,946);$script:monitorIntervalBox.Size=[System.Drawing.Size]::new(72,28);$analysisTab.Controls.Add($script:monitorIntervalBox)
+    $monitorApplyButton=New-Object System.Windows.Forms.Button;$monitorApplyButton.Text='Применить монитор';$monitorApplyButton.Location=[System.Drawing.Point]::new(244,942);$monitorApplyButton.Size=[System.Drawing.Size]::new(190,36);$monitorApplyButton.Add_Click({try{Apply-GuiConnectionMonitorSettings}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($monitorApplyButton)
+    $script:monitorStatusLabel=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel.Text='Монитор выключен.';$script:monitorStatusLabel.Location=[System.Drawing.Point]::new(22,987);$script:monitorStatusLabel.Size=[System.Drawing.Size]::new(690,40);$script:monitorStatusLabel.Anchor='Top,Left,Right';$analysisTab.Controls.Add($script:monitorStatusLabel)
 
     $historySearchLabel=New-Object System.Windows.Forms.Label;$historySearchLabel.Text='Поиск истории';$historySearchLabel.Location=[System.Drawing.Point]::new(22,24);$historySearchLabel.Size=[System.Drawing.Size]::new(105,24);$historyTab.Controls.Add($historySearchLabel)
     $historySearchBox=New-Object System.Windows.Forms.TextBox;$script:historySearchBox=$historySearchBox;$historySearchBox.Location=[System.Drawing.Point]::new(130,20);$historySearchBox.Size=[System.Drawing.Size]::new(352,30);$historySearchBox.Anchor='Top,Left,Right';$historySearchBox.Add_TextChanged({Update-GuiHistory});$historyTab.Controls.Add($historySearchBox)
@@ -1535,7 +1616,7 @@ try{
     $networkTimer=New-Object System.Windows.Forms.Timer;$networkTimer.Interval=4000;$networkTimer.Add_Tick({
         $strategyActive=$null -ne $script:worker -and -not $script:worker.HasExited
         $analysisActive=$null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited
-        if($strategyActive -or $analysisActive){
+        if($strategyActive -or $analysisActive -or [bool]$script:guiSettings.MonitorEnabled){
             try{
                 $signature=Get-GuiSelectedNetworkSignature
                 if(-not $script:networkSignature){$script:networkSignature=$signature;$script:networkCandidateSignature='';$script:networkCandidateCount=0}
@@ -1544,15 +1625,19 @@ try{
                     if($signature -ceq $script:networkCandidateSignature){$script:networkCandidateCount++}else{$script:networkCandidateSignature=$signature;$script:networkCandidateCount=1}
                     if($script:networkCandidateCount -ge 2){
                         $script:networkSignature=$signature;$script:networkCandidateSignature='';$script:networkCandidateCount=0
-                        Set-GuiStatus 'Сетевые параметры изменились и стабильно держатся 8 секунд.' ([System.Drawing.Color]::DarkOrange)
-                        $adapterGuid=if($null -ne $adapterBox.SelectedItem){[string]$adapterBox.SelectedItem.InterfaceGuid}else{''};$matching=@($script:connectionProfiles|Where-Object {$adapterGuid -and [string]$_.AdapterGuid -eq $adapterGuid}|ForEach-Object {$_.Name})
-                        $extra=if($matching.Count){[Environment]::NewLine+'Профили для этого адаптера: '+($matching -join ', ')+'. После остановки задачу можно безопасно переключить на нужный профиль.'}else{[Environment]::NewLine+'После остановки можно вручную применить сохранённый профиль сети.'}
-                        $answer=[System.Windows.Forms.MessageBox]::Show(('Изменились адаптер, адрес, маршрут или DNS во время задачи.'+$extra+[Environment]::NewLine+[Environment]::NewLine+'Безопасно остановить текущую задачу?'),'Смена сети',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning)
-                        if($answer -eq [System.Windows.Forms.DialogResult]::Yes){if($strategyActive){Request-GuiStop};if($analysisActive){Request-GuiAnalysisCancel}}
+                        if($strategyActive -or $analysisActive){
+                            Set-GuiStatus 'Сетевые параметры изменились и стабильно держатся 8 секунд.' ([System.Drawing.Color]::DarkOrange)
+                            $adapterGuid=if($null -ne $adapterBox.SelectedItem){[string]$adapterBox.SelectedItem.InterfaceGuid}else{''};$matching=@($script:connectionProfiles|Where-Object {$adapterGuid -and [string]$_.AdapterGuid -eq $adapterGuid}|ForEach-Object {$_.Name})
+                            $extra=if($matching.Count){[Environment]::NewLine+'Профили для этого адаптера: '+($matching -join ', ')+'. После остановки задачу можно безопасно переключить на нужный профиль.'}else{[Environment]::NewLine+'После остановки можно вручную применить сохранённый профиль сети.'}
+                            $answer=[System.Windows.Forms.MessageBox]::Show(('Изменились адаптер, адрес, маршрут или DNS во время задачи.'+$extra+[Environment]::NewLine+[Environment]::NewLine+'Безопасно остановить текущую задачу?'),'Смена сети',[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Warning)
+                            if($answer -eq [System.Windows.Forms.DialogResult]::Yes){if($strategyActive){Request-GuiStop};if($analysisActive){Request-GuiAnalysisCancel}}
+                        }
+                        if([bool]$script:guiSettings.MonitorEnabled){$script:monitorForceCheck=$true;$script:monitorNextRunUtc=[DateTime]::UtcNow.AddSeconds(2);$script:monitorStatusLabel.Text='Сеть изменилась; будет выполнена внеплановая проверка соединения.';Add-GuiHistory 'Монитор соединения' 'СЕТЬ ИЗМЕНИЛАСЬ' 'После стабилизации сетевых параметров назначена внеплановая HTTPS-проверка.'}
                     }
                 }
             }catch{Write-GuiLog ('Network change monitor: '+$_.Exception.Message)}
         }else{try{$script:networkSignature=Get-GuiSelectedNetworkSignature;$script:networkCandidateSignature='';$script:networkCandidateCount=0}catch{}}
+        try{Update-GuiConnectionMonitor}catch{Write-GuiLog ('Connection monitor: '+$_.Exception.Message)}
     })
     $timer.Add_Tick({
         if($script:orphanRecoveryPending){
@@ -1654,6 +1739,8 @@ try{
         }
         if($script:closeWhenStopped -and $null -eq $script:worker -and $null -eq $script:analysisWorker){$form.Close()}
     })
+    $script:monitorNextRunUtc=if($script:guiSettings.MonitorEnabled){[DateTime]::UtcNow.AddSeconds(2)}else{[DateTime]::MaxValue}
+    if($script:guiSettings.MonitorEnabled){$script:monitorStatusLabel.Text='Монитор включён; выполняется первая проверка.'}
     $timer.Start();$networkTimer.Start()
     $form.KeyPreview=$true
     $form.Add_KeyDown({
@@ -1687,7 +1774,7 @@ try{
         }
     })
     $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
-    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:targetProbeJob){Stop-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue};if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue}})
+    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:targetProbeJob){Stop-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue};if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:connectionMonitorJob){Stop-Job -Job $script:connectionMonitorJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:connectionMonitorJob -Force -ErrorAction SilentlyContinue}})
     Write-GuiLog 'Showing main form'
     $form.Add_Shown({Show-GuiOrphanRecoveryPrompt})
     [void]$form.ShowDialog()
