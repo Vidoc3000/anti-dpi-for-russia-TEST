@@ -598,4 +598,36 @@ try {
     if(Test-Path -LiteralPath $csvRoot){Remove-Item -LiteralPath $csvRoot -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
+# Blockcheck (Zapret2) integration tests.
+$blockcheckTemp=Join-Path $env:TEMP ('antidpi_blockcheck_test_'+[guid]::NewGuid().ToString('N').Substring(0,8))
+try{
+    [IO.Directory]::CreateDirectory($blockcheckTemp)|Out-Null
+    # Find-AntiDPIBundleRoot throws when no zapret-winws is present.
+    Assert-Throws { Find-AntiDPIBundleRoot -Directory $blockcheckTemp } 'Find-AntiDPIBundleRoot throws on missing bundle root.'
+    # Find-AntiDPIBlockcheckTools returns Available=$false for an empty directory.
+    $tools=Find-AntiDPIBlockcheckTools -BundleRoot $blockcheckTemp
+    Assert-True ($tools.Available -eq $false) 'Find-AntiDPIBlockcheckTools reports unavailable for empty directory.'
+    # Test-AntiDPIBlockcheckAvailable returns $false for a non-existent path.
+    Assert-True ((Test-AntiDPIBlockcheckAvailable -BundleRoot $blockcheckTemp) -eq $false) 'Test-AntiDPIBlockcheckAvailable returns false for missing bundle.'
+    # Export-AntiDPIBlockcheckStrategyLists writes list files for each domain.
+    $exportDir=Join-Path $blockcheckTemp 'blockcheck_lists'
+    $sampleProfiles=@{1=([pscustomobject]@{Number=1;Args=@('--dpi-desync=fake','--new')});2=([pscustomobject]@{Number=2;Args=@('--dpi-desync=multidisorder')})}
+    Export-AntiDPIBlockcheckStrategyLists -Profiles $sampleProfiles -OutputDirectory $exportDir -Domains @('example.com','test.local')
+    $exportedFiles=@(Get-ChildItem -LiteralPath $exportDir -Filter 'list_https_*.txt' -File)
+    Assert-Equal 2 $exportedFiles.Count 'Export writes one list file per domain.'
+    $exampleContent=Get-Content -LiteralPath (Join-Path $exportDir 'list_https_example_com.txt')
+    Assert-True ($exampleContent -like '*--filter-tcp=443*--hostlist="example.com"*--dpi-desync=fake*--new*') 'Exported list contains filter, hostlist, and strategy args.'
+    Assert-True ($exampleContent -like '*--dpi-desync=multidisorder*') 'Exported list contains the second strategy args.'
+    # Export with empty domains writes no files.
+    $emptyExport=Join-Path $blockcheckTemp 'blockcheck_empty'
+    Export-AntiDPIBlockcheckStrategyLists -Profiles $sampleProfiles -OutputDirectory $emptyExport -Domains @()
+    Assert-Equal 0 @(Get-ChildItem -LiteralPath $emptyExport -Filter 'list_https_*.txt' -File).Count 'Export with no domains writes no files.'
+    # Export with whitespace-only domain is skipped.
+    $wsExport=Join-Path $blockcheckTemp 'blockcheck_ws'
+    Export-AntiDPIBlockcheckStrategyLists -Profiles $sampleProfiles -OutputDirectory $wsExport -Domains @('   ','')
+    Assert-Equal 0 @(Get-ChildItem -LiteralPath $wsExport -Filter 'list_https_*.txt' -File).Count 'Export with blank domains writes no files.'
+} finally {
+    if(Test-Path -LiteralPath $blockcheckTemp){Remove-Item -LiteralPath $blockcheckTemp -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
 Write-Host 'Windows regression checks passed.' -ForegroundColor Green
