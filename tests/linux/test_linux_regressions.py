@@ -1023,9 +1023,20 @@ class ResourceTests(unittest.TestCase):
         self.assertNotIn('actions/setup-go@44694675',workflow)
         self.assertNotIn('actions/setup-java@c5195efe',workflow)
 
+    def test_combined_release_versions_match_platform_sources_and_dispatch_defaults(self):
+        release=json.loads((REPO/'linux/data/release.json').read_text())
+        linux_build=(REPO/'packaging/linux/build.sh').read_text()
+        windows_manager=(REPO/'windows/AntiDPI_Manager.ps1').read_text(encoding='utf-8-sig')
+        workflow=(REPO/'.github/workflows/build.yml').read_text()
+        self.assertEqual(release['version'],'1.20')
+        self.assertIn("parser.add_argument('--version', default='1.20')",linux_build)
+        self.assertIn("DisplayVersion='GUI + CLI Version 1.20'",windows_manager)
+        self.assertRegex(workflow,r"(?s)linux_version:\s*description:.*?default: '1.20'")
+        self.assertRegex(workflow,r"(?s)windows_version:\s*description:.*?default: '1.20'")
+
     def test_release_workflow_attests_then_verifies_packages_before_publishing(self):
         workflow=(REPO/'.github/workflows/build.yml').read_text()
-        self.assertLess(workflow.index('Attest release packages'),workflow.index('Verify release package attestations'))
+        self.assertLess(workflow.index('Attest combined release packages'),workflow.index('Verify release package attestations'))
         self.assertLess(workflow.index('Verify release package attestations'),workflow.index('Create release with verified binaries'))
         self.assertIn('gh attestation verify "$package"',workflow)
         self.assertIn('--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build.yml"',workflow)
