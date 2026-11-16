@@ -212,7 +212,8 @@ class TerminalTests(unittest.TestCase):
 
     def test_read_only_commands_run_directly_without_opening_a_terminal(self):
         for arguments in (['update','--check'],['profile','list','--json'],
-                          ['profile','validate','--file','profiles.json'],['status','--json']):
+                          ['profile','validate','--file','profiles.json'],['status','--json'],
+                          ['test','--target','example.org:443','--json']):
             with self.subTest(arguments=arguments), \
                  patch.object(terminal.os,'execv',side_effect=SystemExit(0)) as execute, \
                  patch.object(terminal,'find_terminal') as find_terminal:
@@ -365,6 +366,54 @@ class EndpointProbeTests(unittest.TestCase):
         raw.connect.assert_called_once_with(info[4])
         context.wrap_socket.assert_called_once_with(raw,server_hostname='front.example.org')
         secure.sendall.assert_not_called()
+
+    def test_connectivity_diagnostic_separates_dns_tcp_and_tls_without_persisting_target(self):
+        raw=Mock();secure=Mock();secure.version.return_value='TLSv1.3'
+        context=Mock();context.wrap_socket.return_value=secure
+        info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
+        target={'host':'vpn.example.org','port':443,'sni':'front.example.org','verify_certificate':True}
+        report=target_probe.diagnose_target(target,'eth0',resolver=Mock(return_value=[info]),
+            socket_factory=Mock(return_value=raw),context_factory=Mock(return_value=context))
+        self.assertEqual(report['schema'],'antidpi.connectivity-test.v1')
+        self.assertEqual(report['status'],'ok')
+        self.assertEqual([report[name]['status'] for name in ('dns','tcp','tls')],['ok','ok','ok'])
+        self.assertEqual(report['tls']['version'],'TLSv1.3')
+        self.assertTrue(report['interface_bound'])
+        serialized=json.dumps(report)
+        self.assertNotIn('vpn.example.org',serialized)
+        self.assertNotIn('front.example.org',serialized)
+        self.assertNotIn('203.0.113.9',serialized)
+        raw.setsockopt.assert_any_call(target_probe.socket.SOL_SOCKET,target_probe.socket.SO_BINDTODEVICE,b'eth0\0')
+        context.wrap_socket.assert_called_once_with(raw,server_hostname='front.example.org')
+        secure.sendall.assert_not_called()
+
+    def test_connectivity_diagnostic_marks_dns_and_tls_failures_by_stage(self):
+        target={'host':'vpn.example.org','port':443,'sni':'front.example.org','verify_certificate':True}
+        missing=target_probe.diagnose_target(target,resolver=Mock(side_effect=target_probe.socket.gaierror()))
+        self.assertEqual(missing['dns']['reason'],'DNS_ERROR')
+        self.assertEqual(missing['tcp']['status'],'skipped')
+        raw=Mock();context=Mock();context.wrap_socket.side_effect=target_probe.ssl.SSLCertVerificationError('fixture')
+        info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
+        report=target_probe.diagnose_target(target,resolver=Mock(return_value=[info]),
+            socket_factory=Mock(return_value=raw),context_factory=Mock(return_value=context))
+        self.assertEqual(report['dns']['status'],'ok')
+        self.assertEqual(report['tcp']['status'],'ok')
+        self.assertEqual(report['tls']['reason'],'CERTIFICATE_VERIFY_FAILED')
+        self.assertEqual(report['status'],'error')
+        raw.close.assert_called_once()
+
+    def test_connectivity_diagnostic_stops_before_tls_when_tcp_connect_fails(self):
+        raw=Mock();raw.connect.side_effect=TimeoutError()
+        info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
+        context=Mock()
+        report=target_probe.diagnose_target({'host':'example.org','port':443},
+            resolver=Mock(return_value=[info]),socket_factory=Mock(return_value=raw),context_factory=context)
+        self.assertEqual(report['dns']['status'],'ok')
+        self.assertEqual(report['tcp']['reason'],'TIMEOUT')
+        self.assertEqual(report['tls']['status'],'skipped')
+        self.assertEqual(report['status'],'error')
+        context.assert_not_called()
+        raw.close.assert_called_once()
 
     def test_cli_target_argument_requires_explicit_tcp_port(self):
         with self.assertRaises(ValueError):
@@ -912,6 +961,7 @@ class ResourceTests(unittest.TestCase):
         commands.append((REPO/'linux/START.sh',['diagnostics','--help']))
         commands.append((REPO/'linux/START.sh',['doctor','--help']))
         commands.append((REPO/'linux/START.sh',['status','--help']))
+        commands.append((REPO/'linux/START.sh',['test','--help']))
         commands.append((REPO/'linux/START.sh',['profile','export','--help']))
         for script,arguments in commands:
             command=['bash',str(script),*arguments] if script.suffix=='.sh' else [sys.executable,str(script),*arguments]
@@ -929,6 +979,9 @@ class ResourceTests(unittest.TestCase):
                 self.assertIn('--deep',result.stdout)
             if arguments == ['status','--help']:
                 self.assertIn('status',result.stdout)
+            if arguments == ['test','--help']:
+                self.assertIn('--target',result.stdout)
+                self.assertIn('--interface',result.stdout)
             if arguments == ['profile','export','--help']:
                 self.assertIn('--file',result.stdout)
 

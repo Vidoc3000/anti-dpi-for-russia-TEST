@@ -1407,6 +1407,36 @@ def ask_parallel():
             return int(answer)
 
 
+def print_connectivity_report(report):
+    reasons={'DNS_ERROR':'не удалось разрешить имя',
+             'INTERFACE_PERMISSION_ERROR':'недостаточно прав для привязки к интерфейсу',
+             'TCP_CONNECT_ERROR':'TCP-соединение не установлено','TIMEOUT':'истёк таймаут',
+             'CERTIFICATE_VERIFY_FAILED':'сертификат не прошёл проверку',
+             'TLS_HANDSHAKE_ERROR':'TLS handshake не завершился',
+             'DNS_FAILED':'пропущено после ошибки DNS','TCP_FAILED':'пропущено после ошибки TCP'}
+    reason=lambda stage: reasons.get(stage.get('reason'),stage.get('reason',''))
+    print(f"Проверка TCP/TLS: IPv{6 if report['address_family']=='ipv6' else 4}; ID {report['target_id']}")
+    dns=report['dns']
+    print('DNS: '+('OK' if dns['status']=='ok' else 'ОШИБКА')+
+          (f"; адресов: {dns['addresses']}" if dns['status']=='ok' else '')+
+          (f"; {dns['seconds']} с" if dns['seconds'] is not None else '')+
+          (('; '+reason(dns)) if dns.get('reason') else ''))
+    tcp=report['tcp']
+    tcp_label='OK' if tcp['status']=='ok' else 'пропущено' if tcp['status']=='skipped' else 'ОШИБКА'
+    print('TCP connect: '+tcp_label+
+          (f"; {tcp['seconds']} с" if tcp['seconds'] is not None else '')+
+          (('; '+reason(tcp)) if tcp.get('reason') else ''))
+    tls=report['tls']
+    tls_label='OK' if tls['status']=='ok' else 'пропущено' if tls['status']=='skipped' else 'ОШИБКА'
+    print('TLS handshake: '+tls_label+
+          (f"; {tls['version']}" if tls.get('version') else '')+
+          (f"; {tls['seconds']} с" if tls['seconds'] is not None else '')+
+          (('; '+reason(tls)) if tls.get('reason') else ''))
+    if not report['certificate_verification']:
+        print('ВНИМАНИЕ: проверка сертификата отключена; TLS-успех не подтверждает подлинность узла.')
+    print('Проба не отправляет HTTP/приложенческие данные и не проверяет VPN/Tor или обход DPI.')
+
+
 def parse_target_argument(value, sni=None, verify=True):
     if not isinstance(value,str):
         raise ValueError('Введите узел как имя:порт или IPv6 в квадратных скобках:порт.')
@@ -1436,7 +1466,7 @@ def choose_benchmark_target(args):
 
 def main():
     parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.9 — Linux Ubuntu/Debian')
-    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback','diagnostics','doctor','history','profile','status'))
+    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','test','list','show','check-engine','recover','update','rollback','diagnostics','doctor','history','profile','status'))
     parser.add_argument('profile_operation',nargs='?',choices=('list','save','delete','run','export','import','validate'))
     parser.add_argument('profile_name',nargs='?')
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
@@ -1447,7 +1477,7 @@ def main():
     parser.add_argument('--replace',action='store_true',help='Заменить совпадающие имена при profile import')
     parser.add_argument('--deep',action='store_true',help='Дополнительные read-only проверки capabilities и nft --check; используется с doctor')
     parser.add_argument('--report-file',help='Путь экспорта benchmark-отчёта (.json или .csv)')
-    parser.add_argument('--json',action='store_true',help='Вывести doctor/status/history или проверку profile в машиночитаемом JSON')
+    parser.add_argument('--json',action='store_true',help='Вывести doctor/status/history/test или проверку profile в машиночитаемом JSON')
     parser.add_argument('--limit',type=int,default=20,help='Число последних результатов для history (1–100)')
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
@@ -1456,14 +1486,14 @@ def main():
     parser.add_argument('--quic-profile', choices=tuple(QUIC_PROFILES), help='QUIC-профиль: fake2 или fake11')
     parser.add_argument('--recipes', default=None)
     parser.add_argument('--parallel', type=int, choices=range(1, 6))
-    parser.add_argument('--target', help='TLS-узел для benchmark в формате имя:порт (по умолчанию тестируются Golden 1-45)')
+    parser.add_argument('--target', help='TLS-узел для benchmark/test в формате имя:порт')
     parser.add_argument('--sni', help='TLS SNI; по умолчанию совпадает с именем узла')
     parser.add_argument('--insecure', action='store_true', help='не проверять сертификат (только для диагностики; небезопасно)')
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='Порты выбранного TCP/UDP протокола: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
-    if args.json and args.action not in ('doctor','status','history','profile'):
-        parser.error('--json используется только с doctor, status, history или profile list|validate.')
+    if args.json and args.action not in ('doctor','status','history','profile','test'):
+        parser.error('--json используется только с doctor, status, history, test или profile list|validate.')
     if args.json and args.action=='profile' and args.profile_operation not in ('list','validate'):
         parser.error('--json для profile доступен только с list или validate.')
     if args.deep and args.action!='doctor':
@@ -1476,6 +1506,12 @@ def main():
         if args.action!='benchmark':parser.error('--report-file используется только с benchmark.')
         if Path(args.report_file).suffix.lower() not in ('.json','.csv'):
             parser.error('--report-file должен иметь расширение .json или .csv.')
+    if args.target and args.action not in ('benchmark','test'):
+        parser.error('--target используется только с benchmark или test.')
+    if args.sni and args.action not in ('benchmark','test'):
+        parser.error('--sni используется только с benchmark или test.')
+    if args.insecure and args.action not in ('benchmark','test'):
+        parser.error('--insecure используется только с benchmark или test.')
     if args.limit!=20 and args.action!='history':
         parser.error('--limit используется только с history.')
     if not 1<=args.limit<=100:
@@ -1491,6 +1527,17 @@ def main():
     if args.action=='profile':
         finished=handle_profile_command(args,parser)
         if finished:return
+    if args.action=='test':
+        if not args.target:parser.error('Для `test` укажите --target имя:порт.')
+        if args.protocol=='udp-quic':parser.error('Команда test проверяет только TCP/TLS; QUIC Initial этим тестом не проверяется.')
+        try:target=parse_target_argument(args.target,args.sni,not args.insecure)
+        except ValueError as error:parser.error(str(error))
+        try:report=target_probe.diagnose_target(target,args.interface,args.family or 'ipv4')
+        except ValueError as error:parser.error(str(error))
+        if args.json:print(json.dumps(report,ensure_ascii=False,indent=2))
+        else:print_connectivity_report(report)
+        if report['status']=='error':raise SystemExit(1)
+        return
     if args.action == 'doctor':
         report=doctor_report(deep=args.deep)
         if args.json:
