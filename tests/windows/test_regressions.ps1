@@ -130,6 +130,9 @@ Assert-True ($guiText.Contains('WindowBounds=$null') -and $guiText.Contains('$fo
 Assert-True ($guiText.Contains('$script:guiSettings.FirstRunComplete=$true') -and $guiText.Contains('FirstRunComplete')) 'GUI guides first-time users through a safe initial setup'
 Assert-True ($guiText.Contains('[System.Windows.Forms.Keys]::Enter') -and $guiText.Contains('[System.Windows.Forms.Keys]::L') -and $guiText.Contains('Ctrl+F')) 'GUI documents and implements quick keyboard commands'
 Assert-True ($guiText.Contains('function ConvertTo-GuiConnectionProfile') -and $guiText.Contains('connection-profiles.json') -and $guiText.Contains('function Apply-GuiConnectionProfile')) 'GUI saves, validates, and applies named connection profiles'
+Assert-True ($guiText.Contains('MonitorTargetHost') -and $guiText.Contains('MonitorIntervalMinutes') -and $guiText.Contains('Set-GuiConnectionControls')) 'connection profiles also retain the monitoring endpoint and interval'
+Assert-True ($guiText.Contains('function Start-GuiConnectionMonitorCheck') -and $guiText.Contains('function Update-GuiConnectionMonitor') -and $guiText.Contains('ShowBalloonTip') -and $guiText.Contains('MonitorEnabled')) 'GUI supports periodic connection checks, local history, and transition notifications'
+Assert-True ($guiText.Contains('networkCandidateCount -ge 2') -and $guiText.Contains('monitorNextRunUtc=[DateTime]::UtcNow.AddSeconds(2)')) 'stable network changes trigger a one-off connection recheck'
 Assert-True ($guiText.Contains('antidpi.gui-backup.v1') -and $guiText.Contains('Export-GuiConfiguration') -and $guiText.Contains('Import-GuiConfiguration')) 'GUI exports and validates importable settings backups'
 Assert-True ($guiText.Contains('function Get-GuiReadiness') -and $guiText.Contains('Assert-GuiReadiness') -and $guiText.Contains('Show-GuiReadiness')) 'GUI performs a pre-launch system and adapter readiness check'
 Assert-True ($guiText.Contains('NotifyIcon') -and $guiText.Contains('MinimizeToTray') -and $guiText.Contains('Request-GuiStop')) 'GUI exposes safe system-tray controls and optional minimize-to-tray'
@@ -495,6 +498,8 @@ $guiTokens = $null
 $guiParseErrors = $null
 $guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'), [ref]$guiTokens, [ref]$guiParseErrors)
 Assert-Equal 0 $guiParseErrors.Count 'GUI source parses before CSV helper extraction'
+$monitorCheckAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Start-GuiConnectionMonitorCheck'},$true)
+Assert-True ($null -ne $monitorCheckAst -and $monitorCheckAst.Extent.Text.Contains('--interface') -and $monitorCheckAst.Extent.Text.Contains('--max-time') -and $monitorCheckAst.Extent.Text.Contains('https://') -and -not $monitorCheckAst.Extent.Text.Contains('Start-GuiStrategy')) 'monitor uses a bounded HTTPS request on the selected adapter and never launches a strategy'
 $targetProbeFunctionAst=$guiAst.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Start-GuiTargetProbe'},$true)
 Assert-True ($null -ne $targetProbeFunctionAst) 'GUI exposes a custom TCP/TLS endpoint diagnostic'
 $targetProbeFunctionText=$targetProbeFunctionAst.Extent.Text
@@ -510,6 +515,7 @@ foreach($functionName in @('Get-GuiAnalysisRecommendation','Get-GuiObjectPropert
     Assert-True ($null -ne $functionAst) ('CSV helper is available: '+$functionName)
     . ([scriptblock]::Create($functionAst.Extent.Text))
 }
+$script:knownMonitorTargetHosts=@('www.google.com','cloudflare.com','www.youtube.com','www.netflix.com','www.twitch.tv')
 $profileRows=@([pscustomobject]@{Number=37;Name='Example; "strategy"'})
 $longTrayTooltip=Get-GuiTrayTooltipText ('Останавливается управляемый процесс и восстанавливается состояние сети '+('x'*100))
 Assert-True ($longTrayTooltip.Length -le 63) 'long status text is safely shortened for the system tray'
@@ -517,6 +523,13 @@ $connectionProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='До�
 Assert-Equal 493 $connectionProfile.ProfileNumber 'connection profile supports QUIC catalog numbers'
 Assert-Equal 'ipv6' $connectionProfile.AddressFamily 'connection profile keeps the selected IP family'
 Assert-Equal '443' $connectionProfile.Ports 'connection profile normalizes its port scope'
+Assert-Equal 'cloudflare.com' $connectionProfile.MonitorTargetHost 'legacy connection profiles default to a known HTTPS monitor target'
+Assert-Equal 5 $connectionProfile.MonitorIntervalMinutes 'legacy connection profiles default to a five-minute monitor interval'
+$monitorProfile=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Мобильная сеть';ProfileNumber=12;AddressFamily='ipv4';Protocol='tls';Ports='80,443';MonitorTargetHost='www.youtube.com';MonitorIntervalMinutes=10})
+Assert-Equal 'www.youtube.com' $monitorProfile.MonitorTargetHost 'connection profile preserves its monitor target'
+Assert-Equal 10 $monitorProfile.MonitorIntervalMinutes 'connection profile preserves its monitor interval'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=12;AddressFamily='ipv4';Protocol='tls';Ports='443';MonitorTargetHost='attacker.invalid'}) } 'connection profiles reject arbitrary monitor hosts'
+Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=12;AddressFamily='ipv4';Protocol='tls';Ports='443';MonitorIntervalMinutes=0}) } 'connection profiles reject an out-of-range monitor interval'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=999;AddressFamily='ipv4';Protocol='tls';Ports='443'}) } 'connection profiles reject unknown strategy numbers'
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
