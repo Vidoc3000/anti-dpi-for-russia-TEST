@@ -9,6 +9,7 @@ $bundle=Join-Path $installRoot 'zapret-winws'
 $state=Join-Path $PSScriptRoot '_state'
 $catalogue=Join-Path $PSScriptRoot 'Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
 $script:analysisWorker=$null
+$script:worker=$null
 $script:analysisResultPath=''
 $script:analysisCurrentData=$null
 $script:analysisExportButton=$null
@@ -21,6 +22,9 @@ $script:appIcon=$null
 $script:networkSignature=''
 $script:networkMatrixJob=$null
 $script:networkMatrixCancelPath=''
+$script:targetProbeJob=$null
+$script:targetProbeCancelPath=''
+$script:targetProbeDisplayTarget=''
 $script:tunnelCheckJob=$null
 $script:releaseCheckJob=$null
 $script:assetVerificationJob=$null
@@ -590,6 +594,7 @@ function Get-GuiSelectedNetworkSignature {
 }
 function Start-GuiConnectivityMatrix {
     if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){return}
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Сначала безопасно остановите активную задачу: матрица должна измерять сеть без стратегии.'}
     if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите физический сетевой адаптер.'}
     if($null -eq $matrixTargetBox.SelectedItem){throw 'Выберите целевой сервис для проверки.'}
@@ -656,8 +661,88 @@ function Start-GuiConnectivityMatrix {
 function Stop-GuiConnectivityMatrix {
     if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:networkMatrixCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{};$analysisStatusLabel.Text='Запрошена отмена; текущий запрос завершится по таймауту (максимум около 15 секунд).';$matrixCancelButton.Enabled=$false;Add-GuiHistory 'Матрица сети' 'ОТМЕНА ЗАПРОШЕНА' 'Дождитесь завершения текущего ограниченного по времени сетевого запроса.'}
 }
+function Start-GuiTargetProbe {
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Проверка узла уже выполняется.'}
+    if(($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running') -or ($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running')){throw 'Сначала дождитесь завершения другой сетевой проверки.'}
+    if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Для базовой проверки узла сначала безопасно остановите движок и анализ.'}
+    $hostName=[string]$targetProbeHostBox.Text.Trim().Trim([char[]]'[]')
+    if(-not $hostName -or $hostName.Length -gt 253 -or $hostName -match '[\x00-\x20/\\@?#]'){throw 'Введите имя узла или IP-адрес без схемы, пути и пробелов.'}
+    $port=0
+    if(-not [int]::TryParse([string]$targetProbePortBox.Text,[Globalization.NumberStyles]::None,[Globalization.CultureInfo]::InvariantCulture,[ref]$port) -or $port -lt 1 -or $port -gt 65535){throw 'Порт должен быть целым числом от 1 до 65535.'}
+    $literalAddress=$null
+    if(-not [Net.IPAddress]::TryParse($hostName,[ref]$literalAddress)){
+        try{$hostName=([Globalization.IdnMapping]::new()).GetAscii($hostName)}catch{throw 'Некорректное DNS-имя.'}
+        if([Uri]::CheckHostName($hostName) -ne [System.UriHostNameType]::Dns){throw 'Введите корректное DNS-имя или IP-адрес.'}
+    }
+    $sni=[string]$targetProbeSniBox.Text.Trim()
+    if(-not $sni){$sni=$hostName}
+    if($sni.Length -gt 253 -or $sni -match '[\x00-\x20/\\@?#]' -or [Uri]::CheckHostName($sni) -ne [System.UriHostNameType]::Dns){
+        if([Net.IPAddress]::TryParse($hostName,[ref]$literalAddress) -and -not $targetProbeSniBox.Text.Trim()){$sni=$hostName}
+        else{throw 'SNI должен быть DNS-именем; для IP можно оставить поле пустым.'}
+    }
+    if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите сетевой адаптер.'}
+    $family=[string]$addressFamilyBox.SelectedItem.Value
+    $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'}
+    $socketFamily=if($family -eq 'ipv6'){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork}
+    $sourceAddress=@(Get-NetIPAddress -InterfaceIndex ([int]$adapterBox.SelectedItem.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'ipv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})}|Select-Object -First 1 -ExpandProperty IPAddress)
+    if(-not $sourceAddress.Count){throw ('У выбранного адаптера нет пригодного адреса '+$netFamily+'.')}
+    $timeout=[int]$targetProbeTimeoutBox.Value
+    $sourceAddressValue=[string]$sourceAddress[0]
+    $script:targetProbeDisplayTarget=if($hostName.Contains(':')){'[{0}]:{1}' -f $hostName,$port}else{'{0}:{1}' -f $hostName,$port}
+    $script:targetProbeCancelPath=Join-Path $state ('target-probe-cancel-'+[guid]::NewGuid().ToString('N')+'.flag')
+    $cancelPath=$script:targetProbeCancelPath
+    $script:targetProbeJob=Start-Job -ArgumentList $hostName,$port,$sni,$family,$sourceAddressValue,$timeout,$cancelPath -ScriptBlock {
+        param([string]$HostName,[int]$Port,[string]$ServerName,[string]$Family,[string]$SourceAddress,[int]$TimeoutSeconds,[string]$CancelPath)
+        $socketFamily=if($Family -eq 'ipv6'){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork}
+        $report=[ordered]@{schema='antidpi.windows-connectivity-test.v1';run_id=[guid]::NewGuid().ToString('N').Substring(0,10);family=$Family;interface_bound=$true;certificate_verification=$true;dns=[ordered]@{status='pending';addresses=0;seconds=$null;reason=$null};tcp=[ordered]@{status='skipped';seconds=$null;reason=$null};tls=[ordered]@{status='skipped';seconds=$null;version=$null;reason=$null};status='error';elapsed_seconds=0}
+        $total=[Diagnostics.Stopwatch]::StartNew();$client=$null;$ssl=$null
+        try{
+            $dnsWatch=[Diagnostics.Stopwatch]::StartNew();$dnsTask=[Net.Dns]::GetHostAddressesAsync($HostName)
+            while(-not $dnsTask.IsCompleted -and $dnsWatch.Elapsed.TotalSeconds -lt $TimeoutSeconds){if(Test-Path -LiteralPath $CancelPath){$dnsWatch.Stop();$report.dns.status='cancelled';$report.dns.reason='CANCELLED';$report.dns.seconds=[Math]::Round($dnsWatch.Elapsed.TotalSeconds,3);$report.tcp.reason='CANCELLED';$report.tls.reason='CANCELLED';$report.status='cancelled';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);return ($report|ConvertTo-Json -Compress -Depth 5)};Start-Sleep -Milliseconds 100}
+            if(-not $dnsTask.IsCompleted){$report.dns.status='error';$report.dns.reason='TIMEOUT';$dnsWatch.Stop();$report.dns.seconds=[Math]::Round($dnsWatch.Elapsed.TotalSeconds,3);$report.tcp.reason='DNS_FAILED';$report.tls.reason='DNS_FAILED';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);return ($report|ConvertTo-Json -Compress -Depth 5)}
+            $allAddresses=$dnsTask.GetAwaiter().GetResult();$addresses=@($allAddresses|Where-Object {$_.AddressFamily -eq $socketFamily}|Select-Object -First 8)
+            $dnsWatch.Stop();$report.dns.seconds=[Math]::Round($dnsWatch.Elapsed.TotalSeconds,3);$report.dns.addresses=$addresses.Count
+            if(-not $addresses.Count){$report.dns.status='error';$report.dns.reason='DNS_ERROR';$report.tcp.reason='DNS_FAILED';$report.tls.reason='DNS_FAILED';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);return ($report|ConvertTo-Json -Compress -Depth 5)}
+            $report.dns.status='ok'
+        }catch{$dnsWatch.Stop();$report.dns.status='error';$report.dns.reason='DNS_ERROR';$report.dns.seconds=[Math]::Round($dnsWatch.Elapsed.TotalSeconds,3);$report.tcp.reason='DNS_FAILED';$report.tls.reason='DNS_FAILED';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);return ($report|ConvertTo-Json -Compress -Depth 5)}
+        if(Test-Path -LiteralPath $CancelPath){$report.dns.status='cancelled';$report.tcp.reason='CANCELLED';$report.tls.reason='CANCELLED';$report.status='cancelled';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);return ($report|ConvertTo-Json -Compress -Depth 5)}
+        $tcpWatch=[Diagnostics.Stopwatch]::StartNew();$pending=$null
+        try{
+            $client=[Net.Sockets.TcpClient]::new($socketFamily);$client.Client.Bind([Net.IPEndPoint]::new([Net.IPAddress]::Parse($SourceAddress),0));$pending=$client.BeginConnect($addresses[0],$Port,$null,$null)
+            while(-not $pending.IsCompleted -and $tcpWatch.Elapsed.TotalSeconds -lt $TimeoutSeconds){if(Test-Path -LiteralPath $CancelPath){$report.tcp.status='cancelled';$report.tcp.reason='CANCELLED';break};$pending.AsyncWaitHandle.WaitOne(100)|Out-Null}
+            if($report.tcp.status -eq 'cancelled'){throw [OperationCanceledException]::new()}
+            if(-not $pending.IsCompleted){$report.tcp.status='error';$report.tcp.reason='TIMEOUT';throw [TimeoutException]::new()}
+            $client.EndConnect($pending);$report.tcp.status='ok'
+        }catch{if(-not $report.tcp.status -or $report.tcp.status -eq 'skipped'){$report.tcp.status='error';$report.tcp.reason=if($_.Exception -is [TimeoutException]){'TIMEOUT'}else{'TCP_CONNECT_ERROR'}}}
+        finally{if($null -ne $pending){try{$pending.AsyncWaitHandle.Dispose()}catch{}};$tcpWatch.Stop();$report.tcp.seconds=[Math]::Round($tcpWatch.Elapsed.TotalSeconds,3)}
+        if($report.tcp.status -ne 'ok'){$report.tls.status=if($report.tcp.status -eq 'cancelled'){'cancelled'}else{'skipped'};$report.tls.reason=if($report.tcp.status -eq 'cancelled'){'CANCELLED'}else{'TCP_FAILED'};if($report.tcp.status -eq 'cancelled'){$report.status='cancelled'};$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);if($null -ne $client){$client.Close()};return ($report|ConvertTo-Json -Compress -Depth 5)}
+        if(Test-Path -LiteralPath $CancelPath){$report.tcp.status='cancelled';$report.tls.status='cancelled';$report.tls.reason='CANCELLED';$report.status='cancelled';$report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3);if($null -ne $client){$client.Close()};return ($report|ConvertTo-Json -Compress -Depth 5)}
+        $tlsWatch=[Diagnostics.Stopwatch]::StartNew();$certificateState=[hashtable]::Synchronized(@{Errors=''})
+        try{
+            $validationScript={param($sender,$certificate,$chain,$errors);if($errors -ne [Net.Security.SslPolicyErrors]::None){$certificateState.Errors=[string]$errors;return $false};return $true}.GetNewClosure()
+            $validationCallback=[Net.Security.RemoteCertificateValidationCallback]$validationScript
+            $ssl=[Net.Security.SslStream]::new($client.GetStream(),$false,$validationCallback);$tlsTask=$ssl.AuthenticateAsClientAsync($ServerName);$tlsWatch.Start()
+            while(-not $tlsTask.IsCompleted -and $tlsWatch.Elapsed.TotalSeconds -lt $TimeoutSeconds){if(Test-Path -LiteralPath $CancelPath){throw [OperationCanceledException]::new()};Start-Sleep -Milliseconds 100}
+            if(-not $tlsTask.IsCompleted){$report.tls.status='error';$report.tls.reason='TIMEOUT';throw [TimeoutException]::new()}
+            $tlsTask.GetAwaiter().GetResult();$report.tls.status='ok';$report.tls.version=[string]$ssl.SslProtocol
+        }catch{
+            if($_.Exception -is [OperationCanceledException]){$report.tls.status='cancelled';$report.tls.reason='CANCELLED'}
+            elseif($certificateState.Errors){$report.tls.status='error';$report.tls.reason='CERTIFICATE_VERIFY_FAILED'}
+            elseif($report.tls.reason -ne 'TIMEOUT'){$report.tls.status='error';$report.tls.reason='TLS_HANDSHAKE_ERROR'}
+        }finally{$tlsWatch.Stop();$report.tls.seconds=[Math]::Round($tlsWatch.Elapsed.TotalSeconds,3);if($null -ne $ssl){try{$ssl.Dispose()}catch{}};if($null -ne $client){try{$client.Close()}catch{}}}
+        if($report.tls.status -eq 'cancelled'){$report.status='cancelled'}elseif($report.tls.status -eq 'ok'){$report.status='ok'}else{$report.status='error'}
+        $report.elapsed_seconds=[Math]::Round($total.Elapsed.TotalSeconds,3)
+        return ($report|ConvertTo-Json -Compress -Depth 5)
+    }
+    $analysisStatusLabel.Text=('Проверяю {0} по {1} через выбранный адаптер; только DNS/TCP/TLS handshake, без HTTP.' -f $script:targetProbeDisplayTarget,$family.ToUpperInvariant())
+    $targetProbeButton.Enabled=$false;$targetProbeCancelButton.Enabled=$true
+}
+function Stop-GuiTargetProbe {
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:targetProbeCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{};$analysisStatusLabel.Text='Запрошена отмена проверки узла; текущий этап завершится или прервётся по таймауту.';$targetProbeCancelButton.Enabled=$false}
+}
 function Start-GuiTorVerification {
     if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){throw 'Проверка VPN/Tor уже выполняется.'}
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Для отдельной проверки Tor сначала безопасно остановите движок/анализ.'}
     $script:tunnelCheckJob=Start-Job -ScriptBlock {
         $curl=Join-Path $env:SystemRoot 'System32\curl.exe';if(-not (Test-Path -LiteralPath $curl)){return 'Tor: НЕ ПРОВЕРЕНО — curl.exe не найден.'}
@@ -671,6 +756,7 @@ function Start-GuiTorVerification {
 }
 function Start-GuiVpnVerification {
     if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){throw 'Проверка VPN/Tor уже выполняется.'}
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Для отдельной проверки VPN сначала безопасно остановите движок/анализ.'}
     $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Отдельная проверка VPN-маршрута';$dialog.Size=[System.Drawing.Size]::new(560,210);$dialog.StartPosition='CenterParent';$dialog.FormBorderStyle='FixedDialog';$dialog.MaximizeBox=$false
     $label=[System.Windows.Forms.Label]::new();$label.Text='Выберите активный VPN/TUN/TAP адаптер. Проверка привяжет HTTPS к его адресу и подтвердит маршрут; это не аудит утечки или политики VPN.';$label.Location=[System.Drawing.Point]::new(12,12);$label.Size=[System.Drawing.Size]::new(520,52);$dialog.Controls.Add($label)
@@ -709,6 +795,7 @@ function Show-GuiProfileDetails([string]$Mode) {
 }
 
 function Start-GuiStrategy([switch]$CheckOnly) {
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла перед запуском стратегии.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){return}
     try{
         $selectedProfile=Get-GuiSelectedProfile
@@ -922,6 +1009,7 @@ function Set-GuiAnalysisResults([string]$Path) {
     return $results.Count
 }
 function Start-GuiAnalysis {
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла перед анализом.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){return}
     try{
         if($null -eq $adapterBox.SelectedItem){throw 'Для анализа выберите доступный физический адаптер.'}
@@ -1244,6 +1332,18 @@ try{
     $matrixCancelButton=New-Object System.Windows.Forms.Button;$matrixCancelButton.Text='Отменить';$matrixCancelButton.Location=[System.Drawing.Point]::new(570,580);$matrixCancelButton.Size=[System.Drawing.Size]::new(120,38);$matrixCancelButton.Enabled=$false;$matrixCancelButton.Add_Click({Stop-GuiConnectivityMatrix});$analysisTab.Controls.Add($matrixCancelButton)
     $vpnTestButton=New-Object System.Windows.Forms.Button;$vpnTestButton.Text='VPN: отдельный тест';$vpnTestButton.Location=[System.Drawing.Point]::new(310,625);$vpnTestButton.Size=[System.Drawing.Size]::new(190,38);$vpnTestButton.Add_Click({try{Start-GuiVpnVerification}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($vpnTestButton)
     $torTestButton=New-Object System.Windows.Forms.Button;$torTestButton.Text='Tor: SOCKS5 тест';$torTestButton.Location=[System.Drawing.Point]::new(510,625);$torTestButton.Size=[System.Drawing.Size]::new(190,38);$torTestButton.Add_Click({try{Start-GuiTorVerification}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($torTestButton)
+    $targetProbeHeading=New-Object System.Windows.Forms.Label;$targetProbeHeading.Text='Проверка собственного узла (без HTTP и прикладных данных)';$targetProbeHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$targetProbeHeading.Location=[System.Drawing.Point]::new(22,677);$targetProbeHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($targetProbeHeading)
+    $targetProbeInfo=New-Object System.Windows.Forms.Label;$targetProbeInfo.Text='Раздельно проверяет DNS, TCP и TLS handshake на выбранном адаптере. SNI по умолчанию совпадает с узлом; сертификат проверяется. Это не проверка обхода DPI или работоспособности VPN/Tor.';$targetProbeInfo.Location=[System.Drawing.Point]::new(22,704);$targetProbeInfo.Size=[System.Drawing.Size]::new(690,38);$analysisTab.Controls.Add($targetProbeInfo)
+    $targetProbeHostLabel=New-Object System.Windows.Forms.Label;$targetProbeHostLabel.Text='Узел:';$targetProbeHostLabel.Location=[System.Drawing.Point]::new(22,750);$targetProbeHostLabel.Size=[System.Drawing.Size]::new(48,24);$analysisTab.Controls.Add($targetProbeHostLabel)
+    $targetProbeHostBox=New-Object System.Windows.Forms.TextBox;$targetProbeHostBox.Text='example.org';$targetProbeHostBox.Location=[System.Drawing.Point]::new(72,746);$targetProbeHostBox.Size=[System.Drawing.Size]::new(175,28);$analysisTab.Controls.Add($targetProbeHostBox)
+    $targetProbePortLabel=New-Object System.Windows.Forms.Label;$targetProbePortLabel.Text='Порт:';$targetProbePortLabel.Location=[System.Drawing.Point]::new(257,750);$targetProbePortLabel.Size=[System.Drawing.Size]::new(45,24);$analysisTab.Controls.Add($targetProbePortLabel)
+    $targetProbePortBox=New-Object System.Windows.Forms.NumericUpDown;$targetProbePortBox.Minimum=1;$targetProbePortBox.Maximum=65535;$targetProbePortBox.Value=443;$targetProbePortBox.Location=[System.Drawing.Point]::new(303,746);$targetProbePortBox.Size=[System.Drawing.Size]::new(82,28);$analysisTab.Controls.Add($targetProbePortBox)
+    $targetProbeSniLabel=New-Object System.Windows.Forms.Label;$targetProbeSniLabel.Text='SNI:';$targetProbeSniLabel.Location=[System.Drawing.Point]::new(395,750);$targetProbeSniLabel.Size=[System.Drawing.Size]::new(40,24);$analysisTab.Controls.Add($targetProbeSniLabel)
+    $targetProbeSniBox=New-Object System.Windows.Forms.TextBox;$targetProbeSniBox.Location=[System.Drawing.Point]::new(437,746);$targetProbeSniBox.Size=[System.Drawing.Size]::new(265,28);$analysisTab.Controls.Add($targetProbeSniBox)
+    $targetProbeTimeoutLabel=New-Object System.Windows.Forms.Label;$targetProbeTimeoutLabel.Text='Таймаут каждого этапа (сек):';$targetProbeTimeoutLabel.Location=[System.Drawing.Point]::new(22,790);$targetProbeTimeoutLabel.Size=[System.Drawing.Size]::new(190,24);$analysisTab.Controls.Add($targetProbeTimeoutLabel)
+    $targetProbeTimeoutBox=New-Object System.Windows.Forms.NumericUpDown;$targetProbeTimeoutBox.Minimum=1;$targetProbeTimeoutBox.Maximum=30;$targetProbeTimeoutBox.Value=8;$targetProbeTimeoutBox.Location=[System.Drawing.Point]::new(215,786);$targetProbeTimeoutBox.Size=[System.Drawing.Size]::new(62,28);$analysisTab.Controls.Add($targetProbeTimeoutBox)
+    $targetProbeButton=New-Object System.Windows.Forms.Button;$targetProbeButton.Text='Проверить DNS / TCP / TLS';$targetProbeButton.Location=[System.Drawing.Point]::new(290,783);$targetProbeButton.Size=[System.Drawing.Size]::new(220,36);$targetProbeButton.Add_Click({try{Start-GuiTargetProbe}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($targetProbeButton)
+    $targetProbeCancelButton=New-Object System.Windows.Forms.Button;$targetProbeCancelButton.Text='Отменить';$targetProbeCancelButton.Location=[System.Drawing.Point]::new(520,783);$targetProbeCancelButton.Size=[System.Drawing.Size]::new(110,36);$targetProbeCancelButton.Enabled=$false;$targetProbeCancelButton.Add_Click({Stop-GuiTargetProbe});$analysisTab.Controls.Add($targetProbeCancelButton)
 
     $historySearchLabel=New-Object System.Windows.Forms.Label;$historySearchLabel.Text='Поиск истории';$historySearchLabel.Location=[System.Drawing.Point]::new(22,24);$historySearchLabel.Size=[System.Drawing.Size]::new(105,24);$historyTab.Controls.Add($historySearchLabel)
     $historySearchBox=New-Object System.Windows.Forms.TextBox;$script:historySearchBox=$historySearchBox;$historySearchBox.Location=[System.Drawing.Point]::new(130,20);$historySearchBox.Size=[System.Drawing.Size]::new(352,30);$historySearchBox.Anchor='Top,Left,Right';$historySearchBox.Add_TextChanged({Update-GuiHistory});$historyTab.Controls.Add($historySearchBox)
@@ -1509,6 +1609,20 @@ try{
         if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -in @('Completed','Failed','Stopped')){try{$tunnelResult=(Receive-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue|Out-String).Trim();if(-not $tunnelResult){$tunnelResult='Проверка VPN/Tor не вернула данных.'};$analysisStatusLabel.Text='Проверка VPN/Tor завершена.';Add-GuiHistory 'Проверка VPN/Tor' 'ЗАВЕРШЕНА' $tunnelResult;Show-GuiTextDialog 'Отдельный результат VPN/Tor' $tunnelResult}catch{Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue;$script:tunnelCheckJob=$null}}
         if($null -ne $script:assetVerificationJob -and $script:assetVerificationJob.State -in @('Completed','Failed','Stopped')){try{$verification=Receive-Job -Job $script:assetVerificationJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $verification -or -not $verification.Verified){throw 'Asset не прошёл проверку SHA-256.'};Add-GuiHistory 'Проверка целостности' 'УСПЕХ' ([string]$verification.Name+' — SHA-256 совпал с GitHub API');[System.Windows.Forms.MessageBox]::Show(($verification.Message+[Environment]::NewLine+[Environment]::NewLine+'SHA-256: '+$verification.Sha256),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null}catch{Add-GuiHistory 'Проверка целостности' 'ОШИБКА' $_.Exception.Message;[System.Windows.Forms.MessageBox]::Show(('Проверка asset не прошла: '+$_.Exception.Message),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null}finally{Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue;$script:assetVerificationJob=$null}}
         if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){$matrixState=[string]$script:networkMatrixJob.State;try{$matrixText=(Receive-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue|Out-String).Trim();$matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false;if(-not $matrixText){$matrixText='Проверка матрицы не вернула данных.'};if($matrixState -eq 'Completed' -and -not (Test-Path -LiteralPath $script:networkMatrixCancelPath)){Add-GuiHistory 'Матрица сети' 'ЗАВЕРШЕНА' 'Базовые HTTPS и HTTP/3 проверки для выбранного сервиса; без стратегии.'}else{Add-GuiHistory 'Матрица сети' 'ОТМЕНЕНА' 'Проверка завершила текущий запрос после запроса отмены.'};Show-GuiTextDialog 'Базовая матрица доступности сети' ($matrixText+[Environment]::NewLine+[Environment]::NewLine+'Это базовая проверка без стратегии. HTTPS выполняет реальный TLS/HTTP запрос; HTTP/3 считается успешным только при завершённом запросе с HTTP-версией 3.0. Если curl без поддержки HTTP/3, тест явно помечается как не выполненный. Успех не доказывает обход DPI, а отказ не доказывает блокировку: возможны DNS, маршрут, сервер или локальный firewall.')}catch{$matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false;Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue;if($script:networkMatrixCancelPath -and (Test-Path -LiteralPath $script:networkMatrixCancelPath)){Remove-Item -LiteralPath $script:networkMatrixCancelPath -Force -ErrorAction SilentlyContinue};$script:networkMatrixCancelPath='';$script:networkMatrixJob=$null}}
+        if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -in @('Completed','Failed','Stopped')){
+            try{
+                $probeJson=Receive-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue|Select-Object -Last 1
+                if(-not $probeJson){throw 'Проверка не вернула структурированный результат.'}
+                $probe=$probeJson|ConvertFrom-Json -ErrorAction Stop
+                $reasonText=@{DNS_ERROR='ошибка разрешения имени';TIMEOUT='истёк таймаут';TCP_CONNECT_ERROR='TCP-соединение не установлено';CERTIFICATE_VERIFY_FAILED='сертификат не прошёл проверку';TLS_HANDSHAKE_ERROR='TLS handshake не завершился';DNS_FAILED='пропущено после ошибки DNS';TCP_FAILED='пропущено после ошибки TCP';CANCELLED='отменено'}
+                $lines=[Collections.Generic.List[string]]::new();$lines.Add(('Узел: {0}; семейство: {1}; ID запуска: {2}' -f $script:targetProbeDisplayTarget,$probe.family,$probe.run_id));$lines.Add('Проверка read-only: отправлен только TLS handshake; HTTP/прикладные данные не отправлялись.')
+                foreach($stageName in @('dns','tcp','tls')){$stage=$probe.$stageName;$stageLabel=@{dns='DNS';tcp='TCP connect';tls='TLS handshake'}[$stageName];$statusLabel=if($stage.status -eq 'ok'){'OK'}elseif($stage.status -eq 'skipped'){'пропущено'}elseif($stage.status -eq 'cancelled'){'отменено'}else{'ОШИБКА'};$detail=if($stage.seconds -ne $null){'; '+$stage.seconds+' с'}else{''};if($stageName -eq 'dns' -and $stage.status -eq 'ok'){$detail+='; адресов выбранного семейства: '+$stage.addresses};if($stageName -eq 'tls' -and $stage.version){$detail+='; '+$stage.version};if($stage.reason){$reason=if($reasonText.ContainsKey([string]$stage.reason)){$reasonText[[string]$stage.reason]}else{[string]$stage.reason};$detail+='; '+$reason};$lines.Add(($stageLabel+': '+$statusLabel+$detail))}
+                $lines.Add('Успешный TLS handshake сам по себе не доказывает обход DPI или работу VPN/Tor.')
+                $probeStatus=if($probe.status -eq 'ok'){'УСПЕХ'}elseif($probe.status -eq 'cancelled'){'ОТМЕНЕНА'}else{'ОШИБКА'};$summary=('ID {0}; {1}; DNS={2}; TCP={3}; TLS={4}' -f $probe.run_id,$probeStatus,$probe.dns.status,$probe.tcp.status,$probe.tls.status)
+                Add-GuiHistory 'Проверка собственного узла' $probeStatus $summary;$analysisStatusLabel.Text=('Проверка узла завершена: '+$probeStatus+' (ID '+$probe.run_id+').');Show-GuiTextDialog 'Проверка собственного узла' ($lines -join [Environment]::NewLine)
+            }catch{$analysisStatusLabel.Text='Проверка узла завершилась с ошибкой.';Add-GuiHistory 'Проверка собственного узла' 'ОШИБКА' 'Не удалось обработать результат read-only проверки.';Show-GuiError ('Не удалось обработать результат проверки узла: '+$_.Exception.Message)}
+            finally{$targetProbeButton.Enabled=$true;$targetProbeCancelButton.Enabled=$false;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue;$script:targetProbeJob=$null;if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};$script:targetProbeCancelPath='';$script:targetProbeDisplayTarget=''}
+        }
         if($script:closeWhenStopped -and $null -eq $script:worker -and $null -eq $script:analysisWorker){$form.Close()}
     })
     $timer.Start();$networkTimer.Start()
@@ -1529,7 +1643,7 @@ try{
             $_.Handled=$true;Request-GuiStop
         }
     })
-    $form.Add_FormClosing({if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiConnectivityMatrix};if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){$_.Cancel=$true;Set-GuiStatus 'Дождитесь окончания VPN/Tor проверки (ограниченной таймаутом), чтобы не оставить curl-процесс.' ([System.Drawing.Color]::DarkOrange)}})
+    $form.Add_FormClosing({if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiConnectivityMatrix};if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiTargetProbe};if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){$_.Cancel=$true;Set-GuiStatus 'Дождитесь окончания VPN/Tor проверки (ограниченной таймаутом), чтобы не оставить curl-процесс.' ([System.Drawing.Color]::DarkOrange)}})
     $form.Add_FormClosing({
         $strategyActive=$null -ne $script:worker -and -not $script:worker.HasExited
         $analysisActive=$null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited
@@ -1544,7 +1658,7 @@ try{
         }
     })
     $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
-    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue}})
+    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:targetProbeJob){Stop-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue};if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue}})
     Write-GuiLog 'Showing main form'
     $form.Add_Shown({Show-GuiOrphanRecoveryPrompt})
     [void]$form.ShowDialog()
