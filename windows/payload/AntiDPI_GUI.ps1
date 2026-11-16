@@ -217,6 +217,12 @@ function ConvertTo-GuiAnalysisCsv($Data) {
             BaselineSuccesses=[int](Get-GuiObjectProperty $baseline 'Successes' 0)
             BaselineAttempts=[int](Get-GuiObjectProperty $baseline 'Attempts' 0)
             BaselineAfterSuccesses=[int](Get-GuiObjectProperty $baselineAfter 'Successes' 0)
+            BaselineSuccessRatePercent=(Get-GuiObjectProperty $baseline 'SuccessRatePercent' $null)
+            BaselineSuccessRateLow95Percent=(Get-GuiObjectProperty $baseline 'SuccessRateLow95Percent' $null)
+            BaselineSuccessRateHigh95Percent=(Get-GuiObjectProperty $baseline 'SuccessRateHigh95Percent' $null)
+            BaselineAfterSuccessRatePercent=(Get-GuiObjectProperty $baselineAfter 'SuccessRatePercent' $null)
+            BaselineAfterSuccessRateLow95Percent=(Get-GuiObjectProperty $baselineAfter 'SuccessRateLow95Percent' $null)
+            BaselineAfterSuccessRateHigh95Percent=(Get-GuiObjectProperty $baselineAfter 'SuccessRateHigh95Percent' $null)
             Mode=$mode
             StrategyNumber=$number
             StrategyName=$name
@@ -225,6 +231,15 @@ function ConvertTo-GuiAnalysisCsv($Data) {
             SuccessfulAttempts=[int](Get-GuiObjectProperty $result 'Successes' 0)
             ExpectedAttempts=[int](Get-GuiObjectProperty $result 'ExpectedAttempts' 0)
             MeanSuccessSeconds=(Get-GuiObjectProperty $result 'MeanSuccessSeconds' $null)
+            MedianSuccessSeconds=(Get-GuiObjectProperty $result 'MedianSuccessSeconds' $null)
+            MinSuccessSeconds=(Get-GuiObjectProperty $result 'MinSuccessSeconds' $null)
+            MaxSuccessSeconds=(Get-GuiObjectProperty $result 'MaxSuccessSeconds' $null)
+            SampleSize=(Get-GuiObjectProperty $result 'SampleSize' (Get-GuiObjectProperty $result 'ExpectedAttempts' 0))
+            SuccessRatePercent=(Get-GuiObjectProperty $result 'SuccessRatePercent' $null)
+            SuccessRateLow95Percent=(Get-GuiObjectProperty $result 'SuccessRateLow95Percent' $null)
+            SuccessRateHigh95Percent=(Get-GuiObjectProperty $result 'SuccessRateHigh95Percent' $null)
+            SuccessRateDeltaVsBaselinePercentagePoints=(Get-GuiObjectProperty $result 'SuccessRateDeltaVsBaselinePercentagePoints' $null)
+            Evidence=[string](Get-GuiObjectProperty $result 'Evidence' '')
             AttemptDetails=[string](Get-GuiObjectProperty $result 'AttemptDetails' '')
             Details=[string](Get-GuiObjectProperty $result 'Details' '')
         }
@@ -947,6 +962,14 @@ function Set-GuiProfileItems([string]$Protocol) {
     $portsHint.Text=if($Protocol -eq 'quic'){'443 по умолчанию; all охватывает весь UDP — осторожно'}else{'443 по умолчанию; all — любые TCP-порты, выше нагрузка'}
 }
 
+function Get-GuiBaselineSummary($Baseline,[string]$Label) {
+    if($null -eq $Baseline){return ($Label+': нет данных')}
+    $successes=[int](Get-GuiObjectProperty $Baseline 'Successes' 0)
+    $attempts=[int](Get-GuiObjectProperty $Baseline 'Attempts' 0)
+    $summary=('{0}: {1}/{2}' -f $Label,$successes,$attempts)
+    if($null -ne $Baseline.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $Baseline.SuccessRateLow95Percent -and $null -ne $Baseline.SuccessRateHigh95Percent){$summary+=(' (95% {0:N0}–{1:N0}%)' -f [double]$Baseline.SuccessRateLow95Percent,[double]$Baseline.SuccessRateHigh95Percent)}
+    return $summary
+}
 function Set-GuiAnalysisResults([string]$Path) {
     if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){return 0}
     try{$file=Get-Item -LiteralPath $Path -ErrorAction Stop;$identity=('{0}:{1}' -f $file.Length,$file.LastWriteTimeUtc.Ticks);if($identity -ceq $script:analysisSnapshotIdentity){return @($analysisGrid.Rows.Count)};$data=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop}catch{return 0}
@@ -955,6 +978,7 @@ function Set-GuiAnalysisResults([string]$Path) {
     if($null -ne $script:analysisExportButton){$script:analysisExportButton.Enabled=(@($data.Results).Count -gt 0)}
     $results=@($data.Results)
     if($results.Count -eq 1 -and $null -eq $results[0]){$results=@()}
+    $baseline=Get-GuiObjectProperty $data 'Baseline' $null
     $baselineAfter=Get-GuiObjectProperty $data 'BaselineAfter' $null
     if($null -ne $baselineAfter -and [int]$baselineAfter.Successes -gt 0){foreach($item in $results){if([string]$item.Status -eq 'PASS'){$item.Status='INCONCLUSIVE';$item.Details=('Control succeeded after the scan ({0}/{1}); strategy effect cannot be isolated.' -f [int]$baselineAfter.Successes,[int]$baselineAfter.Attempts)}}}
     $rowByNumber=@{}
@@ -974,13 +998,19 @@ function Set-GuiAnalysisResults([string]$Path) {
         }
         $status=[string]$result.Status
         $recommendation=Get-GuiAnalysisRecommendation $status
-        if($null -ne $result.PSObject.Properties['MeanSuccessSeconds'] -and $null -ne $result.MeanSuccessSeconds){$recommendation+=(' · ср. {0:N2} с' -f [double]$result.MeanSuccessSeconds)}
+        if($null -ne $result.PSObject.Properties['MedianSuccessSeconds'] -and $null -ne $result.MedianSuccessSeconds){$recommendation+=(' · медиана {0:N2} с' -f [double]$result.MedianSuccessSeconds)}
+        if($null -ne $result.PSObject.Properties['MinSuccessSeconds'] -and $null -ne $result.MinSuccessSeconds -and $null -ne $result.MaxSuccessSeconds){$recommendation+=(' · разброс {0:N2}–{1:N2} с' -f [double]$result.MinSuccessSeconds,[double]$result.MaxSuccessSeconds)}
+        elseif($null -ne $result.PSObject.Properties['MeanSuccessSeconds'] -and $null -ne $result.MeanSuccessSeconds){$recommendation+=(' · ср. {0:N2} с' -f [double]$result.MeanSuccessSeconds)}
+        if($null -ne $result.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $result.SuccessRateLow95Percent -and $null -ne $result.SuccessRateHigh95Percent){$recommendation+=(' · 95% {0:N0}–{1:N0}%' -f [double]$result.SuccessRateLow95Percent,[double]$result.SuccessRateHigh95Percent)}
+        if($null -ne $result.PSObject.Properties['SuccessRateDeltaVsBaselinePercentagePoints'] -and $null -ne $result.SuccessRateDeltaVsBaselinePercentagePoints){$recommendation+=(' · к контролю {0:N1} п.п.' -f [double]$result.SuccessRateDeltaVsBaselinePercentagePoints)}
+        if($null -ne $result.PSObject.Properties['Evidence'] -and [string]$result.Evidence){$recommendation+=(' · '+[string]$result.Evidence)}
         $row.Cells['Status'].Value=$status
         $attemptText=if($result.PSObject.Properties['AttemptDetails']){[string]$result.AttemptDetails}else{''}
         if(-not $attemptText -and $result.PSObject.Properties['Successes']){$attemptText=('{0}/{1} успешных попыток' -f [int]$result.Successes,[int]$result.ExpectedAttempts)}
         $row.Cells['Attempts'].Value=$attemptText
         $row.Cells['Attempts'].ToolTipText=$attemptText
         $row.Cells['Recommendation'].Value=$recommendation
+        $row.Cells['Recommendation'].ToolTipText=$recommendation
         $row.Cells['Details'].Value=[string]$result.Details
         $row.Cells['Details'].ToolTipText=[string]$result.Details
         if($status -eq 'PASS'){$row.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(225,245,233)}
@@ -996,16 +1026,15 @@ function Set-GuiAnalysisResults([string]$Path) {
     $errors=@($results|Where-Object {$_.Status -eq 'ERROR'}).Count
     $baselinePass=@($results|Where-Object {$_.Status -eq 'BASELINE_PASS'}).Count
     $inconclusive=@($results|Where-Object {$_.Status -eq 'INCONCLUSIVE'}).Count
-    $baselineText=if($data.PSObject.Properties['Baseline'] -and $null -ne $data.Baseline){('контроль без стратегии: {0}/{1}' -f [int]$data.Baseline.Successes,[int]$data.Baseline.Attempts)}else{'контроль без стратегии: нет данных'}
-    if($null -ne $baselineAfter){$baselineText+=('; контроль после серии: {0}/{1}' -f [int]$baselineAfter.Successes,[int]$baselineAfter.Attempts)}
+    $baselineText=Get-GuiBaselineSummary $baseline 'контроль без стратегии'
+    if($null -ne $baselineAfter){$baselineText+='; '+(Get-GuiBaselineSummary $baselineAfter 'контроль после серии')}
     $when=if($data.CreatedUtc){([DateTime]::Parse([string]$data.CreatedUtc).ToLocalTime().ToString('g'))}else{'—'}
     $total=[int]$data.LastProfile-[int]$data.FirstProfile+1
     $current=0;if($data.PSObject.Properties['CurrentProfile']){$current=[int]$data.CurrentProfile}
     if($current -gt 0){$analysisStatusLabel.Text=('YouTube: {0}/{1}; сейчас №{2} | {3} | PASS: {4}; уже доступно: {5}; неоднозначно: {6}; нестабильно: {7}; FAIL: {8}; ошибки: {9}' -f $results.Count,$total,$current,$baselineText,$passed,$baselinePass,$inconclusive,$unstable,$failed,$errors)}
     else{$analysisStatusLabel.Text=('Результаты {0} | проверено: {1}/{2} | {3} | PASS: {4}; уже доступно: {5}; неоднозначно: {6}; нестабильно: {7}; FAIL: {8}; ошибки: {9}' -f $when,$results.Count,$total,$baselineText,$passed,$baselinePass,$inconclusive,$unstable,$failed,$errors)}
     if([string](Get-GuiObjectProperty $data 'Mode' 'standard') -eq 'sequential-bracketed'){$analysisStatusLabel.Text+=' | контроль до/после'}
-    $leader=@($results|Where-Object {$_.Status -eq 'PASS'}|Sort-Object @{Expression='Successes';Descending=$true},@{Expression={if($null -ne $_.MeanSuccessSeconds){[double]$_.MeanSuccessSeconds}else{[double]::MaxValue}};Ascending=$true}|Select-Object -First 1)
-    if($leader.Count){$analysisStatusLabel.Text+=(' | лучший кандидат по этим измерениям: №{0} ({1}/{2}, без гарантии для других сервисов)' -f [int]$leader[0].Number,[int]$leader[0].Successes,[int]$leader[0].ExpectedAttempts)}
+    if([string](Get-GuiObjectProperty $data 'Mode' 'standard') -eq 'sequential-bracketed'){$analysisStatusLabel.Text+=' | результаты не выбирают и не применяют стратегию автоматически'}
     return $results.Count
 }
 function Start-GuiAnalysis {
@@ -1024,7 +1053,7 @@ function Start-GuiAnalysis {
         if($first -lt 1 -or $last -lt $first -or $last -gt 492){throw 'Диапазон стратегий должен находиться в пределах 1-492.'}
         $benchmarkMode=[bool]$benchmarkModeCheck.Checked
         $parallelism=if($benchmarkMode){1}else{[int]$analysisParallelismBox.Value}
-        $attempts=if($benchmarkMode){3}else{[int]$script:guiSettings.AnalysisAttempts}
+        $attempts=if($benchmarkMode){5}else{[int]$script:guiSettings.AnalysisAttempts}
         $timeoutSeconds=[int]$script:guiSettings.AnalysisTimeoutSeconds
         $thresholdKB=[int]$script:guiSettings.AnalysisThresholdKB
         $logs=Get-AntiDPILogDirectory $bundle
@@ -1037,7 +1066,7 @@ function Start-GuiAnalysis {
         $script:analysisSnapshotIdentity=''
         $script:analysisCurrentData=$null
         $script:analysisExportButton.Enabled=$false
-        $analysisStatusLabel.Text=if($benchmarkMode){('Сравнительный режим: контроль до/после, стратегии по одной, 3 попытки ({0}-{1})…' -f $first,$last)}else{('Подготовка контрольного HTTPS-запроса; затем стратегии {0}-{1}, {2} параллельно…' -f $first,$last,$parallelism)}
+        $analysisStatusLabel.Text=if($benchmarkMode){('Сравнительный режим: контроль до/после, стратегии по одной, 5 попыток ({0}-{1})…' -f $first,$last)}else{('Подготовка контрольного HTTPS-запроса; затем стратегии {0}-{1}, {2} параллельно…' -f $first,$last,$parallelism)}
         $stdout=Join-Path $logs ('analysis_'+$stamp+'.out.log')
         $stderr=Join-Path $logs ('analysis_'+$stamp+'.err.log')
         $script:analysisStdoutPath=$stdout;$script:analysisStderrPath=$stderr
@@ -1050,7 +1079,7 @@ function Start-GuiAnalysis {
         Add-GuiHistory 'Анализ YouTube' 'ЗАПУСК' ('Стратегии {0}-{1}; адаптер {2}; параллельность {3}' -f $first,$last,$selectedAdapter.Name,$parallelism)
         $analysisButton.Enabled=$false;$analysisCancelButton.Enabled=$true;$startButton.Enabled=$false;$settingsSaveButton.Enabled=$false
         $analysisRangeBox.Enabled=$false
-        $analysisStatusLabel.Text=if($benchmarkMode){('Сравнение: контроль до и после; стратегии {0}-{1} последовательно; 3 попытки, таймаут {2} сек.' -f $first,$last,$timeoutSeconds)}else{('Контроль и YouTube IPv4/TCP/TLS: стратегии {0}-{1}; параллельно {2}, {3} попытки × {4} КиБ, таймаут {5} сек.' -f $first,$last,$parallelism,$attempts,$thresholdKB,$timeoutSeconds)}
+        $analysisStatusLabel.Text=if($benchmarkMode){('Сравнение: контроль до и после; стратегии {0}-{1} последовательно; 5 попыток, таймаут {2} сек.' -f $first,$last,$timeoutSeconds)}else{('Контроль и YouTube IPv4/TCP/TLS: стратегии {0}-{1}; параллельно {2}, {3} попытки × {4} КиБ, таймаут {5} сек.' -f $first,$last,$parallelism,$attempts,$thresholdKB,$timeoutSeconds)}
     }catch{Show-GuiError $_.Exception.Message}
 }
 function Request-GuiAnalysisCancel {
@@ -1278,7 +1307,7 @@ try{
     $addressFamilyBox.Add_SelectedIndexChanged({Update-GuiDashboard});$protocolBox.Add_SelectedIndexChanged({Update-GuiDashboard});$adapterBox.Add_SelectedIndexChanged({Update-GuiDashboard});$portsBox.Add_TextChanged({Update-GuiDashboard})
 
     $analysisInfo=New-Object System.Windows.Forms.Label
-    $analysisInfo.Text='Обычный анализ измеряет только YouTube IPv4/TCP/TLS. Сравнительный режим запускает стратегии по одной, делает 3 попытки и повторяет контроль после серии. Матрица ниже проверяет реальные HTTPS-ответы и HTTP/3 по IPv4/IPv6, если системный curl поддерживает HTTP/3. Это сетевые измерения, не гарантия обхода DPI.'
+    $analysisInfo.Text='Обычный анализ измеряет только YouTube IPv4/TCP/TLS. Сравнительный режим перемешивает порядок стратегий, делает 5 попыток, повторяет контроль после серии и показывает ориентировочный 95% интервал успешности и медианную задержку. Даже пять повторов дают лишь ориентировочную оценку; стратегию выбираете вы вручную. Матрица ниже проверяет реальные HTTPS-ответы и HTTP/3 по IPv4/IPv6, если системный curl поддерживает HTTP/3. Это сетевые измерения, не гарантия обхода DPI.'
     $analysisInfo.Location=[System.Drawing.Point]::new(20,18);$analysisInfo.Size=[System.Drawing.Size]::new(690,68);$analysisInfo.Anchor='Top,Left,Right'
     $analysisTab.Controls.Add($analysisInfo)
     $analysisRangeLabel=New-Object System.Windows.Forms.Label
@@ -1304,7 +1333,7 @@ try{
     $script:analysisExportButton.Text='Экспорт CSV';$script:analysisExportButton.Location=[System.Drawing.Point]::new(615,118);$script:analysisExportButton.Size=[System.Drawing.Size]::new(96,36);$script:analysisExportButton.Enabled=$false
     $script:analysisExportButton.Add_Click({Export-GuiAnalysisResults});$analysisTab.Controls.Add($script:analysisExportButton)
     $analysisGrid=New-Object System.Windows.Forms.DataGridView
-    $benchmarkModeCheck=New-Object System.Windows.Forms.CheckBox;$benchmarkModeCheck.Text='Сравнительный режим: последовательно, 3 повтора и контроль после серии';$benchmarkModeCheck.Location=[System.Drawing.Point]::new(22,158);$benchmarkModeCheck.Size=[System.Drawing.Size]::new(680,26);$benchmarkModeCheck.Checked=$false;$benchmarkModeCheck.Add_CheckedChanged({$analysisParallelismBox.Enabled=(-not $benchmarkModeCheck.Checked)});$analysisTab.Controls.Add($benchmarkModeCheck)
+    $benchmarkModeCheck=New-Object System.Windows.Forms.CheckBox;$benchmarkModeCheck.Text='Сравнительный режим: перемешанный порядок, 5 повторов, контроль до/после';$benchmarkModeCheck.Location=[System.Drawing.Point]::new(22,158);$benchmarkModeCheck.Size=[System.Drawing.Size]::new(680,26);$benchmarkModeCheck.Checked=$false;$benchmarkModeCheck.Add_CheckedChanged({$analysisParallelismBox.Enabled=(-not $benchmarkModeCheck.Checked)});$analysisTab.Controls.Add($benchmarkModeCheck)
     $analysisGrid.Location=[System.Drawing.Point]::new(20,190);$analysisGrid.Size=[System.Drawing.Size]::new(690,340);$analysisGrid.Anchor='Top,Bottom,Left,Right'
     $analysisGrid.ReadOnly=$true;$analysisGrid.AllowUserToAddRows=$false;$analysisGrid.AllowUserToDeleteRows=$false;$analysisGrid.RowHeadersVisible=$false
     $analysisGrid.AutoSizeColumnsMode='Fill';$analysisGrid.SelectionMode='FullRowSelect';$analysisGrid.MultiSelect=$false
