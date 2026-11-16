@@ -1,6 +1,7 @@
 """Offline checks for Linux launch, dependency and container regressions."""
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+import csv
 import io
 import json
 import os
@@ -210,7 +211,8 @@ class TerminalTests(unittest.TestCase):
         self.assertIsNone(desktop.graphical_user({'SSH_CONNECTION': 'fixture'}))
 
     def test_read_only_commands_run_directly_without_opening_a_terminal(self):
-        for arguments in (['update','--check'],['profile','list','--json']):
+        for arguments in (['update','--check'],['profile','list','--json'],
+                          ['profile','validate','--file','profiles.json'],['status','--json']):
             with self.subTest(arguments=arguments), \
                  patch.object(terminal.os,'execv',side_effect=SystemExit(0)) as execute, \
                  patch.object(terminal,'find_terminal') as find_terminal:
@@ -745,6 +747,112 @@ class ResourceTests(unittest.TestCase):
             self.assertIn('route_ipv4',{item['id'] for item in report['checks']})
             json.dumps(report)
 
+    def test_doctor_deep_uses_only_capability_snapshot_and_nft_check_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'data').mkdir();(root/'engine').mkdir()
+            (root/'data/release.json').write_text('{"version":"1.19"}')
+            (root/'installation.json').write_text(json.dumps({'id':'a'*32,'prefix':str(root)}))
+            engine=root/'engine/nfqws2';engine.write_text('fixture');engine.chmod(0o755)
+            with patch.object(antidpi,'load_catalogue',return_value={'CatalogueInfo':{'ProfileCount':492}}), \
+                 patch.object(antidpi.shutil,'which',side_effect=lambda command:'/usr/bin/'+command), \
+                 patch.object(antidpi,'run',return_value=Mock(returncode=0,stdout='[{"dst":"default"}]')), \
+                 patch.object(antidpi.subprocess,'run',return_value=Mock(returncode=0)), \
+                 patch.object(antidpi.os,'geteuid',return_value=0), \
+                 patch.object(environment,'snapshot',return_value=state()), \
+                 patch.object(environment,'engine_identity',return_value=(65534,65534)), \
+                 patch.object(environment,'check_environment',return_value=(65534,65534)) as check:
+                report=antidpi.doctor_report(root,deep=True)
+            check.assert_called_once_with(check_nft=True)
+            checks={item['id']:item for item in report['checks']}
+            self.assertEqual(checks['deep_nft_dry_run']['status'],'ok')
+            self.assertIn('nft --check',checks['deep_nft_dry_run']['message'])
+
+    def test_status_report_reads_owned_runtime_without_mutating_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);state_dir=root/'_state';state_dir.mkdir()
+            install_id='a'*32
+            (root/'installation.json').write_text(json.dumps({'id':install_id,'prefix':str(root)}))
+            session=antidpi.Session.__new__(antidpi.Session)
+            session.table='antidpi_z2_'+install_id[:12];session.journal=state_dir/'runtime.json'
+            session.sysctls={};session.processes={};session.interface='eth0';session.scope='443'
+            session.address_family='ipv4';session.protocol='tcp-tls'
+            session.entries=[{'queue':24001,'ports':None,'number':25}]
+            session.save();before=session.journal.read_bytes()
+            def nft(argv,**_kwargs):
+                return Mock(returncode=0 if argv[3]=='ip' else 1,stderr='' if argv[3]=='ip' else 'No such file or directory')
+            with patch.object(antidpi.shutil,'which',side_effect=lambda command:'/usr/sbin/nft' if command=='nft' else None), \
+                 patch.object(antidpi,'run',side_effect=nft), \
+                 patch.object(antidpi,'queue_numbers',return_value={24001}):
+                report=antidpi.status_report(root)
+            self.assertEqual(report['schema'],'antidpi.status.v1')
+            self.assertEqual(report['status'],'running')
+            self.assertEqual(report['nftables'],{'ipv4':'active','ipv6':'inactive'})
+            self.assertEqual(report['runtime']['interface'],'eth0')
+            self.assertEqual(report['runtime']['entries'][0]['strategy'],25)
+            self.assertEqual(report['owned_queues'],[24001])
+            self.assertEqual(session.journal.read_bytes(),before)
+
+    def test_profile_bundle_export_validate_import_and_collision_policy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);state_dir=root/'_state';state_dir.mkdir()
+            profiles_path=state_dir/'profiles.json';bundle_path=root/'portable.json'
+            saved={'home':{'family':'ipv4','protocol':'tcp-tls','interface':'wlan0','scope':'443','strategy':25}}
+            antidpi.atomic_json(profiles_path,{'schema':antidpi.PROFILE_SCHEMA,'profiles':saved})
+            def args(operation,name=None,file=None,replace=False,json_output=False):
+                return type('Args',(),{'profile_operation':operation,'profile_name':name,'file':str(file) if file else None,
+                    'replace':replace,'json':json_output,'family':None,'protocol':None,'interface':None,'scope':None,
+                    'strategy':None,'quic_profile':None})()
+            with patch.object(antidpi,'_profiles_path',return_value=profiles_path), \
+                 patch.object(antidpi.os,'geteuid',return_value=0),redirect_stdout(StringIO()):
+                self.assertTrue(antidpi.handle_profile_command(args('export','home',bundle_path),Mock()))
+                exported=json.loads(bundle_path.read_text())
+                self.assertEqual(exported['schema'],antidpi.PROFILE_BUNDLE_SCHEMA)
+                self.assertEqual(exported['profiles'],saved)
+                self.assertEqual(antidpi._read_profile_bundle(bundle_path),saved)
+                with self.assertRaisesRegex(RuntimeError,'Для замены'):
+                    antidpi.handle_profile_command(args('import',file=bundle_path),Mock())
+                self.assertTrue(antidpi.handle_profile_command(args('import',file=bundle_path,replace=True),Mock()))
+                self.assertTrue(antidpi.handle_profile_command(args('validate',file=bundle_path,json_output=True),Mock()))
+            self.assertEqual(antidpi._read_profiles(profiles_path),saved)
+            exported['profiles']['home']['interface']='../../etc'
+            bundle_path.write_text(json.dumps(exported))
+            with self.assertRaisesRegex(RuntimeError,'интерфейс'):
+                antidpi._read_profile_bundle(bundle_path)
+
+    def test_benchmark_report_computes_baseline_percentiles_and_csv_without_endpoint_data(self):
+        baseline=[{'attempt':1,'pass':True,'seconds':1.0,'reason':'TLS_HANDSHAKE_OK','tls':'TLSv1.3'},
+                  {'attempt':2,'pass':True,'seconds':2.0,'reason':'TLS_HANDSHAKE_OK','tls':'TLSv1.3'}]
+        scores=[{'number':25,'stage':'representative','successes':2,'attempts':2,'success_rate':1.0,
+                 'median_seconds':0.4,'p95_seconds':0.49,'latency_samples':2}]
+        report=antidpi.benchmark_report('random-id',1,1,True,[25],baseline,scores)
+        self.assertEqual(report['baseline']['median_seconds'],1.5)
+        self.assertEqual(report['baseline']['p95_seconds'],1.95)
+        self.assertEqual(report['ranking'][0]['p95_seconds'],0.49)
+        serialized=json.dumps(report)
+        self.assertNotIn('vpn.example',serialized)
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'report.csv';antidpi.write_benchmark_report(report,path)
+            with path.open(encoding='utf-8') as stream:
+                rows=list(csv.DictReader(stream))
+            self.assertEqual(rows[0]['strategy'],'25')
+            self.assertEqual(rows[0]['baseline_success_rate'],'1.0')
+            self.assertEqual(rows[0]['p95_seconds'],'0.49')
+            json_path=Path(temporary)/'report.json';antidpi.write_benchmark_report(report,json_path)
+            self.assertEqual(json.loads(json_path.read_text()),report)
+
+    def test_baseline_probe_uses_selected_interface_and_strips_endpoint_identifiers(self):
+        session=type('Session',(),{'interface':'wlan0','address_family':'ipv6'})()
+        target={'host':'vpn.example','port':443,'sni':'front.example','verify_certificate':True}
+        with patch.object(antidpi,'reserve_ports',return_value=(20000,20063)), \
+             patch.object(target_probe,'probe',side_effect=[ \
+                 {'pass':True,'seconds':1.2,'host':'vpn.example','sni':'front.example','error':'private'}, \
+                 {'pass':False,'seconds':2.0,'host':'vpn.example','reason':'TIMEOUT'}]) as probe:
+            results=antidpi.baseline_endpoint_results(session,target)
+        self.assertEqual([item['attempt'] for item in results],[1,2])
+        self.assertNotIn('host',results[0]);self.assertNotIn('sni',results[0]);self.assertNotIn('error',results[0])
+        self.assertEqual(probe.call_count,2)
+        self.assertEqual(probe.call_args.kwargs['address_family'],'ipv6')
+
     def test_network_profiles_round_trip_and_history_is_newest_first(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);state=root/'_state';state.mkdir();profiles_path=state/'profiles.json'
@@ -803,19 +911,26 @@ class ResourceTests(unittest.TestCase):
                   (REPO/'linux/app/install.py',['rollback','--help'])]
         commands.append((REPO/'linux/START.sh',['diagnostics','--help']))
         commands.append((REPO/'linux/START.sh',['doctor','--help']))
+        commands.append((REPO/'linux/START.sh',['status','--help']))
+        commands.append((REPO/'linux/START.sh',['profile','export','--help']))
         for script,arguments in commands:
             command=['bash',str(script),*arguments] if script.suffix=='.sh' else [sys.executable,str(script),*arguments]
             result = subprocess.run(command,env=env,capture_output=True,text=True,timeout=20)
             self.assertEqual(result.returncode,0,result.stderr)
             if arguments == ['benchmark', '--help']:
                 self.assertIn('--target',result.stdout)
+                self.assertIn('--report-file',result.stdout)
                 self.assertIn('TLS-узел',result.stdout)
             if arguments == ['update','--help']:
                 self.assertTrue('update' in result.stdout or 'Обновление' in result.stdout)
             if arguments == ['diagnostics','--help']:
                 self.assertIn('--output',result.stdout)
             if arguments == ['doctor','--help']:
-                self.assertIn('--json',result.stdout)
+                self.assertIn('--deep',result.stdout)
+            if arguments == ['status','--help']:
+                self.assertIn('status',result.stdout)
+            if arguments == ['profile','export','--help']:
+                self.assertIn('--file',result.stdout)
 
     def test_traceback_is_visible_and_private_log_is_created(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:

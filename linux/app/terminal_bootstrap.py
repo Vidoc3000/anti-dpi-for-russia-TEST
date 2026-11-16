@@ -247,10 +247,10 @@ def launch_desktop(role, arguments):
 
 def launch(role, arguments):
     from desktop_integration import graphical_user
-    # Pure information commands retain their original non-root CLI behavior.
+    # One-shot CLI actions run directly instead of spawning a graphical terminal.
     if ('--help' in arguments or '-h' in arguments or
-            (role == 'run' and arguments and arguments[0] in ('list','show','check-engine','diagnostics','doctor')) or
-            (role == 'run' and len(arguments)>1 and arguments[0]=='profile' and arguments[1]=='list') or
+            (role == 'run' and arguments and arguments[0] in ('list','show','check-engine','diagnostics','doctor','status')) or
+            (role == 'run' and len(arguments)>1 and arguments[0]=='profile' and arguments[1] in ('list','save','delete','export','import','validate')) or
             (role == 'run' and arguments and arguments[0]=='update' and '--check' in arguments)):
         os.execv(sys.executable, program_command(role, arguments))
     user = graphical_user()

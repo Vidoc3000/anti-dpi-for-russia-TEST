@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import csv
 from collections import deque
 import fcntl
 import hashlib
 import ipaddress
+import io
 import json
 import os
 from pathlib import Path
@@ -20,7 +22,6 @@ import shlex
 import shutil
 import signal
 import socket
-import statistics
 import stat
 import subprocess
 import sys
@@ -56,6 +57,38 @@ def atomic_json(path, value):
     temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     temp.chmod(0o600)
     os.replace(temp, path)
+
+
+def atomic_text(path, text, mode=0o600):
+    path=Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+    try:
+        fd=os.open(temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,mode)
+        with os.fdopen(fd,'w',encoding='utf-8',newline='') as stream:
+            stream.write(text)
+        os.replace(temp,path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def atomic_export_json(path,value):
+    path=Path(path)
+    path.parent.mkdir(parents=True,exist_ok=True)
+    temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+    fd=os.open(temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+    try:
+        uid=os.environ.get('SUDO_UID','');gid=os.environ.get('SUDO_GID','')
+        if os.geteuid()==0 and uid.isdecimal():os.fchown(fd,int(uid),int(gid) if gid.isdecimal() else -1)
+        with os.fdopen(fd,'w',encoding='utf-8') as stream:
+            json.dump(value,stream,ensure_ascii=False,indent=2);stream.write('\n')
+        os.replace(temp,path)
+    except BaseException:
+        try:os.close(fd)
+        except OSError:pass
+        raise
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def load_catalogue(root=ROOT):
@@ -299,7 +332,10 @@ class Session:
 
     def save(self):
         atomic_json(self.journal, {'table': self.table, 'sysctls': self.sysctls,
-                    'engines': [{'pid': p.pid, 'stamp': process_stamp(p.pid)} for p, _ in self.processes.values()]})
+                    'engines': [{'pid': p.pid, 'stamp': process_stamp(p.pid)} for p, _ in self.processes.values()],
+                    'runtime': {'interface': self.interface, 'scope': self.scope,
+                                'address_family': self.address_family, 'protocol': self.protocol,
+                                'entries': self.entries}})
 
     def recover(self):
         record = json.loads(self.journal.read_text()) if self.journal.exists() else {'table': self.table}
@@ -554,7 +590,91 @@ def show_table(data):
     cli_ui.catalogue(data)
 
 
-def doctor_report(root=ROOT):
+def status_report(root=ROOT):
+    """Read-only snapshot of this installation's owned processes and nftables table."""
+    from diagnostics import application_root
+    root=application_root(root)
+    result={'schema':'antidpi.status.v1','installed':False,'status':'unknown',
+            'table':None,'journal':'unknown','nftables':{'ipv4':'unknown','ipv6':'unknown'},'engines':[],
+            'active_queues':[],'owned_queues':[],'runtime':None,'recovery_pending':False}
+    manifest_path=root/'installation.json'
+    try:
+        info=manifest_path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size>64*1024: return result
+        manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+        install_id=manifest.get('id')
+        if (manifest.get('standard_uninstalled') or not isinstance(install_id,str) or
+                not re.fullmatch(r'[0-9a-f]{32}',install_id) or Path(manifest.get('prefix',''))!=root):
+            return result
+    except (OSError,ValueError,TypeError):
+        return result
+    result['installed']=True
+    table='antidpi_z2_'+install_id[:12]
+    result['table']=table
+    journal_path=root/'_state/runtime.json'
+    journal=None;journal_present=False
+    try:
+        info=journal_path.lstat();journal_present=True
+        if stat.S_ISREG(info.st_mode) and info.st_size<=256*1024:
+            candidate=json.loads(journal_path.read_text(encoding='utf-8'))
+            if isinstance(candidate,dict) and candidate.get('table')==table:journal=candidate
+    except FileNotFoundError:
+        pass
+    except (OSError,ValueError,TypeError):
+        pass
+    result['journal']='valid' if journal is not None else 'invalid' if journal_present else 'absent'
+    result['recovery_pending']=journal_present
+    if journal is not None:
+        runtime=journal.get('runtime')
+        if isinstance(runtime,dict):
+            entries=[]
+            for entry in runtime.get('entries',[]) if isinstance(runtime.get('entries',[]),list) else []:
+                if not isinstance(entry,dict):continue
+                clean={'queue':entry.get('queue'),'strategy':entry.get('number')}
+                if isinstance(entry.get('ports'),(list,tuple)) and len(entry['ports'])==2 and all(type(x) is int for x in entry['ports']):
+                    clean['source_ports']=list(entry['ports'])
+                entries.append(clean)
+            result['runtime']={key:runtime.get(key) for key in ('interface','scope','address_family','protocol')}
+            result['runtime']['entries']=entries
+        expected_engine=(root/'engine/nfqws2').resolve()
+        for record in journal.get('engines',[]) if isinstance(journal.get('engines',[]),list) else []:
+            if not isinstance(record,dict) or type(record.get('pid')) is not int:continue
+            pid=record['pid']
+            alive=bool(record.get('stamp') and process_stamp(pid)==record['stamp'])
+            owned=False
+            if alive:
+                try:owned=Path(f'/proc/{pid}/exe').resolve()==expected_engine
+                except OSError:owned=None
+            result['engines'].append({'pid':pid,'alive':owned if alive else False})
+    try:
+        result['active_queues']=sorted(queue_numbers())
+        entries=result['runtime']['entries'] if result['runtime'] else []
+        result['owned_queues']=sorted({item['queue'] for item in entries
+                                       if type(item.get('queue')) is int and item['queue'] in result['active_queues']})
+    except (OSError,ValueError):
+        result['active_queues']=None;result['owned_queues']=None
+    nft=shutil.which('nft')
+    if nft:
+        for family,key in (('ip','ipv4'),('ip6','ipv6')):
+            try:
+                listed=run([nft,'list','table',family,table])
+                if listed.returncode==0:state='active'
+                elif re.search(r'no such (?:file|table)|does not exist',listed.stderr,re.I):state='inactive'
+                else:state='unknown'
+            except (OSError,subprocess.TimeoutExpired):state='unknown'
+            result['nftables'][key]=state
+    engine_running=any(item['alive'] is True for item in result['engines'])
+    engine_unknown=any(item['alive'] is None for item in result['engines'])
+    table_running='active' in result['nftables'].values()
+    if engine_running or table_running:result['status']='running'
+    elif (engine_unknown or result['journal']=='invalid' or 'unknown' in result['nftables'].values() or
+          result['active_queues'] is None):result['status']='unknown'
+    else:result['status']='stopped'
+    result['recovery_pending']=bool(journal_present and not (engine_running or table_running))
+    return result
+
+
+def doctor_report(root=ROOT,deep=False):
     """Read-only environment report; does not alter interfaces, modules or sysctls."""
     from diagnostics import application_root
     root=application_root(root)
@@ -638,13 +758,42 @@ def doctor_report(root=ROOT):
     add('nf_conntrack_acct','ok' if acct.is_file() else 'warning',
         'Параметр nf_conntrack_acct доступен.' if acct.is_file() else 'Параметр nf_conntrack_acct пока не виден ядру.',
         None if acct.is_file() else 'Модуль nf_conntrack может загрузиться при первом запуске стратегии.')
+    if deep:
+        from engine_environment import CAPABILITIES, check_environment, engine_identity, snapshot
+        try:
+            state=snapshot()
+            capabilities=int(state['cap_effective'],16)
+            missing=[name for bit,name in CAPABILITIES.items() if not capabilities & (1<<bit)]
+            if missing:
+                level='warning' if os.geteuid()!=0 else 'error'
+                add('deep_capabilities',level,'Недостаточно текущих Linux capabilities: '+', '.join(missing)+'.',
+                    'Запустите deep-проверку через sudo; для контейнера проверьте разрешения на хосте.')
+            else:
+                uid,gid=engine_identity(state)
+                add('deep_capabilities','ok',f'Capabilities NFQUEUE доступны; движок может сбросить UID/GID до {uid}:{gid}.')
+        except (OSError,ValueError,RuntimeError) as error:
+            add('deep_capabilities','error','Не удалось проверить capabilities и UID/GID: '+str(error))
+        if os.geteuid()!=0:
+            add('deep_nft_dry_run','warning','Проверка nft --check пропущена: для неё нужны root и доступ к NFQUEUE.',
+                'Повторите команду: sudo antidpi doctor --deep.')
+        elif not shutil.which('nft'):
+            add('deep_nft_dry_run','error','Не найдена команда nft; dry-run правил пропущен.')
+        else:
+            try:
+                check_environment(check_nft=True)
+                add('deep_nft_dry_run','ok','Тестовая транзакция nft --check принята; правила не применялись.')
+            except (OSError,RuntimeError,subprocess.TimeoutExpired) as error:
+                add('deep_nft_dry_run','error','Read-only nft --check не прошёл: '+str(error),
+                    'Проверка использует nft --check и не применяет правила к трафику.')
     statuses={item['status'] for item in checks}
     overall='error' if 'error' in statuses else 'warning' if 'warning' in statuses else 'ok'
     return {'schema':'antidpi.doctor.v1','version':version,'status':overall,'checks':checks}
 
 
 PROFILE_SCHEMA='antidpi.profiles.v1'
+PROFILE_BUNDLE_SCHEMA='antidpi.profile-bundle.v1'
 PROFILE_NAME=re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,31}')
+INTERFACE_NAME=re.compile(r'[A-Za-z0-9_.:@-]{1,15}')
 
 def _profiles_path(root=ROOT):
     root=Path(root).resolve()
@@ -654,31 +803,77 @@ def _profiles_path(root=ROOT):
         raise RuntimeError('Каталог состояния установки небезопасен.')
     return state/'profiles.json'
 
+def _validate_profiles(profiles):
+    if not isinstance(profiles,dict) or not profiles or len(profiles)>50:
+        raise RuntimeError('Файл должен содержать от 1 до 50 сетевых профилей.')
+    rows={row['Number'] for row in load_catalogue()['ProfileRows']}
+    validated={}
+    for name,profile in profiles.items():
+        if not isinstance(name,str) or not PROFILE_NAME.fullmatch(name) or not isinstance(profile,dict):
+            raise RuntimeError('Имя или описание сетевого профиля некорректно.')
+        if set(profile)-{'family','protocol','interface','scope','strategy','quic_profile'}:
+            raise RuntimeError('Профиль содержит неподдерживаемые параметры.')
+        family=profile.get('family');protocol=profile.get('protocol')
+        interface=profile.get('interface');scope=profile.get('scope')
+        if (family not in ('ipv4','ipv6') or protocol not in ('tcp-tls','udp-quic') or
+                not isinstance(interface,str) or not INTERFACE_NAME.fullmatch(interface) or
+                not isinstance(scope,str)):
+            raise RuntimeError('Семейство, протокол, интерфейс или scope профиля некорректен.')
+        try:scope=parse_ports(scope)
+        except ValueError as error:raise RuntimeError('Scope профиля некорректен.') from error
+        strategy=profile.get('strategy');quic_profile=profile.get('quic_profile')
+        if strategy is not None and (type(strategy) is not int or strategy not in rows):
+            raise RuntimeError('TLS-стратегия профиля отсутствует в каталоге.')
+        if strategy is not None and protocol!='tcp-tls':
+            raise RuntimeError('TLS-стратегия задана для не-TLS профиля.')
+        if quic_profile is not None and (protocol!='udp-quic' or not isinstance(quic_profile,str) or quic_profile not in QUIC_PROFILES):
+            raise RuntimeError('QUIC-профиль не соответствует протоколу или неизвестен.')
+        clean={'family':family,'protocol':protocol,'interface':interface,'scope':scope}
+        if strategy is not None:clean['strategy']=strategy
+        if quic_profile is not None:clean['quic_profile']=quic_profile
+        validated[name]=clean
+    return validated
+
+
+def _read_json_file(path,limit=64*1024):
+    path=Path(path)
+    try:
+        info=path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size>limit:
+            raise RuntimeError('Файл должен быть обычным файлом допустимого размера.')
+        return json.loads(path.read_text(encoding='utf-8'))
+    except (OSError,ValueError) as error:
+        raise RuntimeError('Не удалось прочитать JSON-файл профилей.') from error
+
+
 def _read_profiles(path):
     path=Path(path)
     if path.is_symlink():raise RuntimeError('Файл профилей не может быть символической ссылкой.')
     if not path.exists():return {}
-    if path.stat().st_size>64*1024:raise RuntimeError('Файл профилей превышает допустимый размер.')
-    try:data=json.loads(path.read_text(encoding='utf-8'))
-    except (OSError,ValueError) as error:raise RuntimeError('Не удалось прочитать файл профилей.') from error
-    profiles=data.get('profiles') if isinstance(data,dict) and data.get('schema')==PROFILE_SCHEMA else None
-    if not isinstance(profiles,dict) or len(profiles)>50:raise RuntimeError('Повреждён файл профилей сети.')
-    for name,profile in profiles.items():
-        if not PROFILE_NAME.fullmatch(name) or not isinstance(profile,dict):
-            raise RuntimeError('Повреждён файл профилей сети.')
-        if (profile.get('family') not in ('ipv4','ipv6') or profile.get('protocol') not in ('tcp-tls','udp-quic') or
-                not isinstance(profile.get('interface'),str) or not isinstance(profile.get('scope'),str)):
-            raise RuntimeError('Повреждён файл профилей сети.')
-        parse_ports(profile['scope'])
-    return profiles
+    data=_read_json_file(path)
+    if not isinstance(data,dict) or data.get('schema')!=PROFILE_SCHEMA:
+        raise RuntimeError('Повреждён файл профилей сети.')
+    profiles=data.get('profiles')
+    if profiles=={}:return {}
+    return _validate_profiles(profiles)
+
+
+def _read_profile_bundle(path):
+    data=_read_json_file(path)
+    if (not isinstance(data,dict) or data.get('schema')!=PROFILE_BUNDLE_SCHEMA or
+            set(data)!={'schema','profiles'}):
+        raise RuntimeError('Неизвестный формат или версия переносимого файла профилей.')
+    return _validate_profiles(data.get('profiles'))
 
 def handle_profile_command(args,parser):
     operation=args.profile_operation
     name=args.profile_name
     path=_profiles_path()
-    if operation is None:parser.error('Используйте profile list|save|delete|run.')
+    file_path=getattr(args,'file',None)
+    replace_existing=getattr(args,'replace',False)
+    if operation is None:parser.error('Используйте profile list|save|delete|run|export|import|validate.')
     if operation=='list':
-        if name:parser.error('Укажите только `profile list`.')
+        if name or file_path or replace_existing:parser.error('Используйте `profile list` без дополнительных параметров.')
         profiles=_read_profiles(path)
         if args.json:print(json.dumps({'schema':PROFILE_SCHEMA,'profiles':profiles},ensure_ascii=False,indent=2))
         elif not profiles:print('Сохранённых сетевых профилей пока нет.')
@@ -688,6 +883,45 @@ def handle_profile_command(args,parser):
                 selected=profile.get('quic_profile') or profile.get('strategy') or 'меню выбора'
                 print(f"{key}: {profile['family']} {mode}, {profile['interface']}, порты {profile['scope']}, профиль {selected}")
         return True
+    if operation=='validate':
+        if name or replace_existing:parser.error('Для `profile validate` имя и --replace не используются.')
+        validated=_read_profile_bundle(file_path) if file_path else _read_profiles(path)
+        report={'schema':'antidpi.profile-validation.v1','valid':True,'count':len(validated),
+                'profiles':sorted(validated)}
+        print(json.dumps(report,ensure_ascii=False,indent=2) if args.json else
+              f"Профили проверены: {len(validated)} шт.; ошибок формата нет.")
+        return True
+    if operation=='export':
+        if not file_path:parser.error('Для `profile export` укажите --file путь.json.')
+        if replace_existing or any((args.family,args.protocol,args.interface,args.scope,args.strategy,args.quic_profile)):
+            parser.error('Сетевые параметры и --replace не используются для экспорта.')
+        profiles=_read_profiles(path)
+        if name:
+            if not PROFILE_NAME.fullmatch(name):parser.error('Некорректное имя профиля.')
+            if name not in profiles:parser.error('Сохранённый профиль не найден: '+name)
+            profiles={name:profiles[name]}
+        if not profiles:raise RuntimeError('Нет профилей для экспорта.')
+        export_path=Path(file_path)
+        atomic_export_json(export_path,{'schema':PROFILE_BUNDLE_SCHEMA,'profiles':profiles})
+        print(f'Экспортировано профилей: {len(profiles)}; файл: {file_path}')
+        return True
+    if operation=='import':
+        if not file_path:parser.error('Для `profile import` укажите --file путь.json.')
+        if name or any((args.family,args.protocol,args.interface,args.scope,args.strategy,args.quic_profile)):
+            parser.error('При импорте имя и сетевые параметры не указываются; имена берутся из файла.')
+        if os.geteuid()!=0:raise RuntimeError('Импорт профилей установки выполняйте через sudo.')
+        incoming=_read_profile_bundle(file_path)
+        profiles=_read_profiles(path)
+        collisions=sorted(set(profiles)&set(incoming))
+        if collisions and not replace_existing:
+            raise RuntimeError('Имена уже существуют: '+', '.join(collisions)+'. Для замены добавьте --replace.')
+        merged={**profiles,**incoming}
+        if len(merged)>50:raise RuntimeError('После импорта будет больше 50 профилей; удалите лишние и повторите.')
+        atomic_json(path,{'schema':PROFILE_SCHEMA,'profiles':merged})
+        print(f'Импортировано профилей: {len(incoming)}; заменено: {len(collisions)}.')
+        return True
+    if operation in ('save','delete','run') and (file_path or replace_existing):
+        parser.error('--file/--replace используются только с profile export|import|validate.')
     if not name or not PROFILE_NAME.fullmatch(name):parser.error('Имя профиля: 1–32 латинских букв, цифр, `_` или `-`; первый символ — буква/цифра.')
     profiles=_read_profiles(path)
     if operation=='delete':
@@ -873,9 +1107,68 @@ def endpoint_id(target):
     return hashlib.sha256(key.encode('utf-8')).hexdigest()[:10]
 
 
+def percentile(values,percent):
+    values=sorted(float(value) for value in values)
+    if not values:return None
+    position=(len(values)-1)*percent/100
+    lower=int(position);upper=min(lower+1,len(values)-1)
+    result=values[lower]+(values[upper]-values[lower])*(position-lower)
+    return round(result,3)
+
+
 def rank_endpoint_scores(scores):
     return sorted(scores,key=lambda x:(-x['success_rate'],-x['successes'],
                   x['median_seconds'] if x['median_seconds'] is not None else float('inf'),x['number']))
+
+
+def benchmark_report(target_id,requested,completed,adaptive,representatives,baseline,scores):
+    baseline_times=[item['seconds'] for item in baseline if item.get('pass') and isinstance(item.get('seconds'),(int,float))]
+    baseline_successes=sum(bool(item.get('pass')) for item in baseline)
+    return {'schema':'antidpi.benchmark.v1','target_id':target_id,'protocol':'tcp-tls',
+            'requested':requested,'completed':completed,'adaptive':bool(adaptive),
+            'representatives':list(representatives),
+            'baseline':{'attempts':len(baseline),'successes':baseline_successes,
+                        'success_rate':baseline_successes/len(baseline) if baseline else 0.0,
+                        'median_seconds':percentile(baseline_times,50),
+                        'p95_seconds':percentile(baseline_times,95),
+                        'results':[{'attempt':item.get('attempt'),'pass':bool(item.get('pass')),
+                                    'reason':item.get('reason'),'seconds':item.get('seconds'),
+                                    'tls':item.get('tls','')} for item in baseline]},
+            'ranking':rank_endpoint_scores(scores)}
+
+
+def benchmark_csv(report):
+    fields=('target_id','baseline_successes','baseline_attempts','baseline_success_rate',
+            'baseline_median_seconds','baseline_p95_seconds','strategy','stage','successes',
+            'attempts','success_rate','median_seconds','p95_seconds')
+    stream=io.StringIO(newline='')
+    writer=csv.DictWriter(stream,fieldnames=fields,lineterminator='\n')
+    writer.writeheader()
+    baseline=report['baseline']
+    if not report['ranking']:
+        writer.writerow({'target_id':report.get('target_id'),
+            'baseline_successes':baseline['successes'],'baseline_attempts':baseline['attempts'],
+            'baseline_success_rate':baseline['success_rate'],
+            'baseline_median_seconds':baseline['median_seconds'],'baseline_p95_seconds':baseline['p95_seconds']})
+    for score in report['ranking']:
+        writer.writerow({'target_id':report.get('target_id'),
+            'baseline_successes':baseline['successes'],'baseline_attempts':baseline['attempts'],
+            'baseline_success_rate':baseline['success_rate'],
+            'baseline_median_seconds':baseline['median_seconds'],'baseline_p95_seconds':baseline['p95_seconds'],
+            'strategy':score['number'],'stage':score['stage'],'successes':score['successes'],
+            'attempts':score['attempts'],'success_rate':score['success_rate'],
+            'median_seconds':score['median_seconds'],'p95_seconds':score['p95_seconds']})
+    return stream.getvalue()
+
+
+def write_benchmark_report(report,path,private=False):
+    path=Path(path)
+    if path.suffix.lower()=='.json':
+        payload=json.dumps(report,ensure_ascii=False,indent=2)+'\n'
+    elif path.suffix.lower()=='.csv':
+        payload=benchmark_csv(report)
+    else:raise ValueError('Отчёт benchmark должен иметь расширение .json или .csv.')
+    atomic_text(path,payload,0o600 if private else 0o644)
 
 
 def adaptive_representatives(rows,numbers):
@@ -957,7 +1250,19 @@ def reserve_ports(excluded=(),address_family='ipv4'):
     raise RuntimeError('Не найден блок свободных TCP-портов.')
 
 
-def scan(session, rows, numbers, parallel, target=None, adaptive=False):
+def baseline_endpoint_results(session,target,attempts=2):
+    ports=reserve_ports((),session.address_family)
+    results=[]
+    for attempt in range(1,attempts+1):
+        result=target_probe.probe(session.interface,ports,target,timeout=12,
+                                  address_family=session.address_family)
+        result.pop('error',None);result.pop('remote_ip',None);result.pop('host',None);result.pop('sni',None)
+        result['attempt']=attempt
+        results.append(result)
+    return results
+
+
+def scan(session, rows, numbers, parallel, target=None, adaptive=False, report_file=None):
     if not 1 <= parallel <= 5:
         raise ValueError('Число параллелей должно быть от 1 до 5.')
     if target is None and not any(a<=443<=b for a,b in port_ranges(getattr(session,'scope','all'))):
@@ -985,8 +1290,9 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
     initial=representatives if adaptive else numbers
     pending=deque(initial);scheduled=set(initial);expanded_families=set()
     stop=threading.Event();found=[];scores=[];jobs={};used=set();finished=SimpleQueue()
+    baseline_results=[]
     log=session.scan_logs/'results.jsonl'
-    completed=0;interrupted=False
+    completed=0;interrupted=False;benchmark_result=None
     def worker(number,ports):
         results=[]
         for attempt in (1,2):
@@ -1002,11 +1308,12 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
             file.write(json.dumps({'number':number,'status':status,'attempts':results},ensure_ascii=False)+'\n')
         completed+=1
         if target:
-            samples=[x.get('seconds',0) for x in results if x.get('pass')]
+            samples=[x['seconds'] for x in results if x.get('pass') and isinstance(x.get('seconds'),(int,float))]
             scores.append({'number':number,'stage':'representative' if number in representative_set else 'expanded',
                            'successes':successes,'attempts':len(results),
                            'success_rate':successes/len(results) if results else 0.0,
-                           'median_seconds':round(statistics.median(samples),3) if samples else None})
+                           'median_seconds':percentile(samples,50),'p95_seconds':percentile(samples,95),
+                           'latency_samples':len(samples)})
         if adaptive and number in representative_set and successes:
             family=rows[number]['Family']
             candidates=adaptive_family_candidates(rows,numbers,family,scheduled)
@@ -1018,6 +1325,13 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
             print(cli_ui.color((', ' if found else '')+f'{number} ({status})','92'),end='',flush=True)
             found.append(number)
     try:
+        if target:
+            print('Контрольный TLS baseline: два соединения без активной AntiDPI-стратегии.')
+            baseline_results=baseline_endpoint_results(session,target)
+            atomic_json(session.scan_logs/'baseline.json',{'target_id':endpoint_id(target),
+                        'results':[{'attempt':item['attempt'],'pass':item.get('pass',False),
+                                    'reason':item.get('reason'),'seconds':item.get('seconds'),
+                                    'tls':item.get('tls','')} for item in baseline_results]})
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool,Keyboard() as keyboard:
             try:
                 while True:
@@ -1059,10 +1373,20 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
     finally:
         ranking=rank_endpoint_scores(scores)
         atomic_json(session.scan_logs/'summary.json',{'requested':len(numbers),'scheduled':len(scheduled),'completed':completed,'interrupted':interrupted,'found':found,'target_id':endpoint_id(target) if target else None,'adaptive':adaptive,'representatives':representatives,'expanded_families':sorted(expanded_families),'ranking':ranking})
+        if target:
+            benchmark_result=benchmark_report(endpoint_id(target),len(numbers),completed,adaptive,
+                                              representatives,baseline_results,scores)
+            atomic_json(session.scan_logs/'benchmark_report.json',benchmark_result)
         archive=shutil.make_archive(str(session.scan_logs),'zip',str(session.scan_logs))
         # The full diagnostic ZIP is saved silently; only working recipes are printed.
         print()
         del session.scan_logs
+    if report_file and benchmark_result is not None:
+        write_benchmark_report(benchmark_result,report_file)
+        print('Benchmark-отчёт сохранён: '+str(report_file))
+    if target and benchmark_result is not None:
+        baseline=benchmark_result['baseline']
+        print(f"Baseline без стратегии: {baseline['successes']}/{baseline['attempts']} успешных; медиана {baseline['median_seconds'] if baseline['median_seconds'] is not None else '—'} с; p95 {baseline['p95_seconds'] if baseline['p95_seconds'] is not None else '—'} с.")
     if not found:
         if interrupted:print('Проверка остановлена пользователем.')
         print('Не найдены стратегии с успешным TLS-handshake.' if target else 'Рабочие стратегии не найдены')
@@ -1071,7 +1395,7 @@ def scan(session, rows, numbers, parallel, target=None, adaptive=False):
     if target and scores:
         print('Рейтинг TLS-проверки (сначала доля успехов, затем медианная задержка):')
         ranking=rank_endpoint_scores(scores)
-        cli_ui.table(['Место','Этап','Стратегия','Успехи','Медиана, с'],[[str(i),'Предст.' if x['stage']=='representative' else 'Расшир.',str(x['number']),f"{x['successes']}/{x['attempts']}",str(x['median_seconds'] if x['median_seconds'] is not None else '—')] for i,x in enumerate(ranking,1)],[6,9,10,8,12])
+        cli_ui.table(['Место','Этап','Стратегия','Успехи','p50, с','p95, с'],[[str(i),'Предст.' if x['stage']=='representative' else 'Расшир.',str(x['number']),f"{x['successes']}/{x['attempts']}",str(x['median_seconds'] if x['median_seconds'] is not None else '—'),str(x['p95_seconds'] if x['p95_seconds'] is not None else '—')] for i,x in enumerate(ranking,1)],[6,9,10,8,10,10])
     print('----------------------')
     return found
 
@@ -1112,14 +1436,18 @@ def choose_benchmark_target(args):
 
 def main():
     parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.9 — Linux Ubuntu/Debian')
-    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback','diagnostics','doctor','history','profile'))
-    parser.add_argument('profile_operation',nargs='?',choices=('list','save','delete','run'))
+    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback','diagnostics','doctor','history','profile','status'))
+    parser.add_argument('profile_operation',nargs='?',choices=('list','save','delete','run','export','import','validate'))
     parser.add_argument('profile_name',nargs='?')
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--yes',action='store_true',help='Подтвердить обновление/откат или создание архива после ознакомления с его составом')
     parser.add_argument('--check',action='store_true',help='Проверить доступность и целостность обновления без установки; используется с update')
     parser.add_argument('--output',help='Путь к ZIP диагностическому архиву; используется с diagnostics')
-    parser.add_argument('--json',action='store_true',help='Вывести doctor/history в машиночитаемом JSON')
+    parser.add_argument('--file',help='JSON-файл для profile export/import/validate')
+    parser.add_argument('--replace',action='store_true',help='Заменить совпадающие имена при profile import')
+    parser.add_argument('--deep',action='store_true',help='Дополнительные read-only проверки capabilities и nft --check; используется с doctor')
+    parser.add_argument('--report-file',help='Путь экспорта benchmark-отчёта (.json или .csv)')
+    parser.add_argument('--json',action='store_true',help='Вывести doctor/status/history или проверку profile в машиночитаемом JSON')
     parser.add_argument('--limit',type=int,default=20,help='Число последних результатов для history (1–100)')
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
@@ -1134,10 +1462,20 @@ def main():
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='Порты выбранного TCP/UDP протокола: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
-    if args.json and args.action not in ('doctor','history','profile'):
-        parser.error('--json используется только с doctor, history или profile list.')
-    if args.json and args.action=='profile' and args.profile_operation!='list':
-        parser.error('--json для profile доступен только с list.')
+    if args.json and args.action not in ('doctor','status','history','profile'):
+        parser.error('--json используется только с doctor, status, history или profile list|validate.')
+    if args.json and args.action=='profile' and args.profile_operation not in ('list','validate'):
+        parser.error('--json для profile доступен только с list или validate.')
+    if args.deep and args.action!='doctor':
+        parser.error('--deep используется только с doctor.')
+    if args.file and args.action!='profile':
+        parser.error('--file используется только с profile export|import|validate.')
+    if args.replace and not (args.action=='profile' and args.profile_operation=='import'):
+        parser.error('--replace используется только с profile import.')
+    if args.report_file:
+        if args.action!='benchmark':parser.error('--report-file используется только с benchmark.')
+        if Path(args.report_file).suffix.lower() not in ('.json','.csv'):
+            parser.error('--report-file должен иметь расширение .json или .csv.')
     if args.limit!=20 and args.action!='history':
         parser.error('--limit используется только с history.')
     if not 1<=args.limit<=100:
@@ -1154,7 +1492,7 @@ def main():
         finished=handle_profile_command(args,parser)
         if finished:return
     if args.action == 'doctor':
-        report=doctor_report()
+        report=doctor_report(deep=args.deep)
         if args.json:
             print(json.dumps(report,ensure_ascii=False,indent=2))
         else:
@@ -1166,6 +1504,29 @@ def main():
             print('Итог: '+report['status'].upper())
         if report['status']=='error':
             raise SystemExit(1)
+        return
+    if args.action=='status':
+        report=status_report(ROOT)
+        if args.json:
+            print(json.dumps(report,ensure_ascii=False,indent=2))
+        else:
+            print('Состояние AntiDPI: '+report['status'].upper())
+            if not report['installed']:
+                print('Установка не найдена или маркер повреждён.')
+            else:
+                print('Таблица nftables: IPv4 '+report['nftables']['ipv4']+'; IPv6 '+report['nftables']['ipv6'])
+                print('Процессы движка: '+str(sum(item['alive'] is True for item in report['engines'])))
+                print('Собственные активные NFQUEUE: '+(', '.join(map(str,report['owned_queues'])) if report['owned_queues'] else 'нет'))
+                if report['runtime']:
+                    runtime=report['runtime']
+                    print(f"Последняя конфигурация: {runtime.get('address_family')} {runtime.get('protocol')}, интерфейс {runtime.get('interface')}, порты {runtime.get('scope')}")
+                if report['journal']=='invalid':
+                    print('Журнал восстановления повреждён или не совпадает с установкой; автоматическое восстановление не запускалось.')
+                elif report['recovery_pending']:
+                    print('Есть незавершённое состояние; после проверки соединения выполните: sudo antidpi recover')
+                elif report['status']=='stopped':
+                    print('Собственная перехватывающая таблица не активна.')
+        if not report['installed']:raise SystemExit(1)
         return
     if args.action=='history':
         report=history_report(ROOT,args.limit)
@@ -1221,7 +1582,8 @@ def main():
             except ValueError as error:
                 parser.error(str(error))
             session.scope=str(target['port'])
-            scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target,adaptive=not args.exhaustive)
+            scan(session,rows,recipe_range(args.recipes),args.parallel or ask_parallel(),target=target,adaptive=not args.exhaustive,
+                 report_file=args.report_file)
             return
         noninteractive_scope=('443' if session.protocol=='udp-quic' else 'all') if not sys.stdin.isatty() else None
         choose_ports(session,args.scope if args.scope is not None else noninteractive_scope)

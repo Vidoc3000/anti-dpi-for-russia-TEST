@@ -78,7 +78,18 @@ sudo antidpi profile run home
 sudo antidpi profile delete home
 ```
 
-Профили сохраняются в каталоге состояния установки, а `profile run` запускает выбранную сеть с сохранёнными параметрами. Benchmark выполняет TLS/TCP handshake с заданным узлом; он не является проверкой VPN/Tor-туннеля. YouTube и benchmark не проверяют авторизацию или передачу данных через сторонний VPN-клиент.
+Профили сохраняются в каталоге состояния установки, а `profile run` запускает выбранную сеть с сохранёнными параметрами. Для переноса используйте версионированный JSON-bundle; импорт валидирует значения и по умолчанию отказывается перезаписывать совпадающие имена:
+
+```bash
+sudo antidpi profile export home --file "$HOME/home-profile.json"
+sudo antidpi profile validate --file "$HOME/home-profile.json"
+sudo antidpi profile import --file "$HOME/home-profile.json"
+# Для явной замены совпадающих имён: sudo antidpi profile import --file "$HOME/home-profile.json" --replace
+```
+
+`sudo antidpi status --json` показывает принадлежащие установке таблицы, процессы движка и последнюю конфигурацию, не меняя систему. `sudo antidpi doctor --deep --json` дополнительно проверяет capabilities и выполняет только `nft --check` — правила не применяются. Benchmark делает два контрольных TLS-handshake без стратегии, затем сравнивает результаты тестируемых стратегий; для CSV или JSON используйте, например, `sudo antidpi benchmark --target example.org:443 --report-file "$HOME/benchmark.csv"`. В отчёте нет адреса или SNI узла, только случайный ID запуска, baseline, доля успехов и перцентили задержки.
+
+Benchmark выполняет TLS/TCP handshake с заданным узлом; он не является проверкой VPN/Tor-туннеля. YouTube и benchmark не проверяют авторизацию или передачу данных через сторонний VPN-клиент.
 
 Для предварительной проверки нового релиза без установки и без прав администратора выполните `antidpi update --check`. Обычное применение обновления по-прежнему требует `sudo`.
 
