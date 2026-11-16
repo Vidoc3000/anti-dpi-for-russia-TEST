@@ -30,6 +30,12 @@
 | --- | --- |
 | Add a Linux CLI updater that fetches the latest stable GitHub release, verifies the archive SHA-256, rejects unsafe archive entries, and stages a fresh build before replacing the installed tree. Settings and logs are carried forward; the previous installation remains available for rollback. Also resolve the packaged catalogue through the shared resource map in the Linux installer. | Добавить обновление Linux из CLI: загрузка последнего стабильного релиза GitHub, проверка SHA-256, безопасная распаковка и предварительная сборка до замены установленной программы. Настройки и журналы переносятся, предыдущая установка остаётся для отката. Также исправить получение каталога стратегий установщиком через общую карту ресурсов. |
 
+## Windows 1.18 — Statistical strategy analysis (standalone release)
+
+| English | Русский |
+| --- | --- |
+| Run five comparative trials per strategy in shuffled order and retain before/after controls. Report median and range of successful response time, observed success rate, 95% Wilson intervals, and change against the control. Label small samples as indicative and keep strategy choice manual. Publish as a standalone Windows release so the existing combined latest release remains the Linux updater target. | В сравнительном режиме выполнять пять проб на стратегию в перемешанном порядке и сохранять контроль до и после серии. Показывать медиану и разброс времени успешных ответов, долю успехов, 95% интервалы Уилсона и изменение относительно контроля. Помечать малую выборку как ориентировочную и оставлять выбор стратегии пользователю. Выпустить Windows отдельно, не меняя Latest-релиз для Linux-обновлятора. |
+
 ## 1.18 — Guided Windows update and stop controls
 
 | English | Русский |

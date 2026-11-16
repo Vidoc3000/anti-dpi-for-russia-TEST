@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.19)**: Windows GUI + CLI версии **1.17**, Linux CLI версии **1.19**.
+Последний общий выпуск — **[v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.19)** (Linux CLI **1.19**, Windows GUI + CLI **1.17**). Отдельный Windows-выпуск **[v1.18](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/windows-v1.18)** содержит обновлённый анализ стратегий и не меняет Latest-релиз для Linux.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.17_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.17_Windows_x64.zip).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/AntiDPI_CLI_v1.18_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/AntiDPI_CLI_v1.18_Windows_x64.zip).
 - **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.19_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Windows_v1.17.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Linux_v1.19.txt).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/SHA256SUMS_Windows_v1.18.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Linux_v1.19.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -32,7 +32,7 @@
 ### Вкладки
 
 - **Стратегии** — выбрать IPv4/IPv6, TCP/TLS или UDP/QUIC, стратегию, физический сетевой адаптер и порты; затем запустить или штатно остановить обработку. В списке адаптеров показываются имена устройств.
-- **Анализ** — сравнивать стратегии с контрольными YouTube-запросами до и после серии, видеть повторные результаты и среднее время успешных ответов, экспортировать CSV. Рекомендация не включает профиль автоматически.
+- **Анализ** — сравнивать стратегии с контрольными YouTube-запросами до и после серии; сравнительный режим выполняет пять проб в перемешанном порядке и показывает медиану/разброс времени, долю успехов и ориентировочный 95% интервал. Даже пять проб — малая выборка; стратегия не выбирается и не применяется автоматически. Результаты можно экспортировать в CSV.
 - **Базовая матрица** — повторно проверять HTTPS и, если системный curl поддерживает, HTTP/3 для веб- и видеосервисов. HTTP-ответ с кодом вне 2xx/3xx показывается отдельно от сбоя соединения; матрица работает без стратегии и может быть отменена.
 - **Проверка собственного узла** — ввести DNS-имя или IP, порт и необязательный SNI; отдельно проверить DNS, TCP connect и TLS handshake с проверкой сертификата, с привязкой к адресу выбранного адаптера. Отправляется только handshake, без HTTP/прикладных данных; адрес узла не попадает в локальную историю.
 - **VPN/Tor** — отдельный маршрутный HTTPS-тест через выбранный интерфейс и Tor-проверка через локальный SOCKS5 с подтверждением Tor Project API. Они не смешиваются с прямыми пробами.
