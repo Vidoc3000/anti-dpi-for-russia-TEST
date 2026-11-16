@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
