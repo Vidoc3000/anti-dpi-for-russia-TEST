@@ -21,7 +21,7 @@ on:
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.18'
+        default: '1.19'
         type: string
       publish_release:
         description: 'Publish a combined release (platform=all) or standalone Windows release (platform=windows), from main only'

@@ -7,11 +7,11 @@
 
 ## Скачать
 
-Последний общий выпуск — **[v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.19)** (Linux CLI **1.19**, Windows GUI + CLI **1.17**). Отдельный Windows-выпуск **[v1.18](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/windows-v1.18)** содержит обновлённый анализ стратегий и не меняет Latest-релиз для Linux.
+Последний общий выпуск — **[v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.19)** (Linux CLI **1.19**, Windows GUI + CLI **1.17**). Последний отдельный Windows-выпуск — **[windows-v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/windows-v1.19)** (Windows GUI + CLI **1.19**); он не меняет Latest-релиз для Linux.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/AntiDPI_CLI_v1.18_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/AntiDPI_CLI_v1.18_Windows_x64.zip).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.19/AntiDPI_CLI_v1.19_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.19/AntiDPI_CLI_v1.19_Windows_x64.zip).
 - **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.19_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.18/SHA256SUMS_Windows_v1.18.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Linux_v1.19.txt).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/windows-v1.19/SHA256SUMS_Windows_v1.19.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Linux_v1.19.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 

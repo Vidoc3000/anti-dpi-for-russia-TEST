@@ -36,6 +36,12 @@
 | --- | --- |
 | Add a Linux CLI updater that fetches the latest stable GitHub release, verifies the archive SHA-256, rejects unsafe archive entries, and stages a fresh build before replacing the installed tree. Settings and logs are carried forward; the previous installation remains available for rollback. Also resolve the packaged catalogue through the shared resource map in the Linux installer. | Добавить обновление Linux из CLI: загрузка последнего стабильного релиза GitHub, проверка SHA-256, безопасная распаковка и предварительная сборка до замены установленной программы. Настройки и журналы переносятся, предыдущая установка остаётся для отката. Также исправить получение каталога стратегий установщиком через общую карту ресурсов. |
 
+## Windows 1.19 — Updater diagnostics, tray lifecycle, and refreshed manuals
+
+| English | Русский |
+| --- | --- |
+| Add a persistent update log with progress, failures, and rollback results; identify a foreign WinDivert service without changing it. Defer minimize-to-tray hiding and provide explicit restore actions. Rewrite installation/troubleshooting instructions and regenerate the strategy reference for all 492 profiles. Refresh the pinned official Zapret2 bundle and validate the IPv4 exclusions. Publish as a standalone Windows release; keep the combined Linux release as Latest. | Добавить постоянный журнал обновления с этапами, ошибками и результатом отката; распознавать чужую службу WinDivert, не изменяя её. Отложить скрытие окна при сворачивании в трей и добавить явные команды восстановления окна. Переписать инструкции установки и диагностики и обновить справочник всех 492 профилей. Обновить закреплённый официальный архив Zapret2 и проверить IPv4-исключения. Выпустить Windows отдельно, оставив общий Linux-релиз Latest. |
+
 ## Windows 1.18 — Statistical strategy analysis (standalone release)
 
 | English | Русский |

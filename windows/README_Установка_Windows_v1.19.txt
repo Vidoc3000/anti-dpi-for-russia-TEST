@@ -1,6 +1,6 @@
 ﻿AntiDPI Strategies + Bol-Van Zapret2
 РУКОВОДСТВО ДЛЯ WINDOWS — УСТАНОВКА, ОБНОВЛЕНИЕ И ДИАГНОСТИКА
-Версия приложения: GUI + CLI 1.18 | Windows 10/11 x64
+Версия приложения: GUI + CLI 1.19 | Windows 10/11 x64
 ====================================================================
 
 1. НАЗНАЧЕНИЕ И ГРАНИЦЫ
@@ -143,4 +143,4 @@ QUIC использует UDP и не принимает TCP/TLS probe-порт�
 
 Официальный репозиторий Zapret2: https://github.com/bol-van/zapret-win-bundle
 Исходный проект: https://github.com/Vidoc3000/anti-dpi-for-russia-TEST
-Подробное описание всех 492 профилей: README_Стратегии_Windows_v1.18.txt
+Подробное описание всех 492 профилей: README_Стратегии_Windows_v1.19.txt
