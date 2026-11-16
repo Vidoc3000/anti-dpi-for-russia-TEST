@@ -616,8 +616,8 @@ try{
     $exportedFiles=@(Get-ChildItem -LiteralPath $exportDir -Filter 'list_https_*.txt' -File)
     Assert-Equal 2 $exportedFiles.Count 'Export writes one list file per domain.'
     $exampleContent=Get-Content -LiteralPath (Join-Path $exportDir 'list_https_example_com.txt')
-    Assert-True ($exampleContent -like '*--filter-tcp=443*--hostlist="example.com"*--dpi-desync=fake*--new*') 'Exported list contains filter, hostlist, and strategy args.'
-    Assert-True ($exampleContent -like '*--dpi-desync=multidisorder*') 'Exported list contains the second strategy args.'
+    Assert-True (($exampleContent -like '*--filter-tcp=443*--hostlist="example.com"*--dpi-desync=fake*--new*').Count -gt 0) 'Exported list contains filter, hostlist, and strategy args.'
+    Assert-True (($exampleContent -like '*--dpi-desync=multidisorder*').Count -gt 0) 'Exported list contains the second strategy args.'
     # Export with empty domains writes no files.
     $emptyExport=Join-Path $blockcheckTemp 'blockcheck_empty'
     Export-AntiDPIBlockcheckStrategyLists -Profiles $sampleProfiles -OutputDirectory $emptyExport -Domains @()
