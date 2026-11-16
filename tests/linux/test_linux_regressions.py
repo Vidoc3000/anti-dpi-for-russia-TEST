@@ -664,6 +664,17 @@ class ResourceTests(unittest.TestCase):
         for name in app_paths.FILE_LAYOUT:
             self.assertTrue(app_paths.resource_path(REPO/'linux/app', name).is_file(), name)
 
+    def test_release_workflow_attests_then_verifies_packages_before_publishing(self):
+        workflow=(REPO/'.github/workflows/build.yml').read_text()
+        self.assertLess(workflow.index('Attest release packages'),workflow.index('Verify release package attestations'))
+        self.assertLess(workflow.index('Verify release package attestations'),workflow.index('Create release with verified binaries'))
+        self.assertIn('gh attestation verify "$package"',workflow)
+        self.assertIn('--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build.yml"',workflow)
+        self.assertIn('--deny-self-hosted-runners',workflow)
+        self.assertIn('attestations: write',workflow)
+        self.assertIn('id-token: write',workflow)
+        self.assertIn('GH_TOKEN: ${{ github.token }}',workflow)
+
     def test_help_and_catalogue_work_without_display(self):
         env = dict(os.environ, DISPLAY='', WAYLAND_DISPLAY='', PYTHONDONTWRITEBYTECODE='1')
         commands=[(REPO/'linux/START.sh',['--help']),

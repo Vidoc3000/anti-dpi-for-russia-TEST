@@ -10,7 +10,7 @@
 
 | English | Русский |
 | --- | --- |
-| Generate GitHub artifact provenance attestations for published ZIP/EXE/TAR.GZ packages and document verification with `gh attestation verify`. | Добавить GitHub artifact attestations для публикуемых ZIP/EXE/TAR.GZ и инструкцию проверки командой `gh attestation verify`. |
+| Generate GitHub artifact provenance attestations for published ZIP/EXE/TAR.GZ packages, verify them in the release workflow, and document local verification with `gh attestation verify`. | Добавить GitHub artifact attestations для ZIP/EXE/TAR.GZ, проверять их в workflow публикации и описать локальную проверку командой `gh attestation verify`. |
 
 ## Next — Previewable, redacted Linux diagnostic archive
 
