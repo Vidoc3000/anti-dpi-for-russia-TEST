@@ -453,24 +453,54 @@ function Write-AntiDPIDiagnostic([string]$Path,$Data) {
         [IO.File]::WriteAllText($fallback,$line+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
     }
 }
+function Get-AntiDPIWilsonInterval([int]$Successes,[int]$Trials) {
+    if($Trials -lt 0 -or $Successes -lt 0 -or $Successes -gt $Trials){throw 'Число успешных попыток должно быть в пределах фактической выборки.'}
+    if($Trials -eq 0){return [pscustomobject]@{Low95Percent=$null;High95Percent=$null}}
+    $z=1.959963984540054;$n=[double]$Trials;$p=[double]$Successes/$n;$z2=$z*$z;$denominator=1.0+($z2/$n)
+    $center=($p+($z2/(2.0*$n)))/$denominator
+    $margin=$z*[Math]::Sqrt((($p*(1.0-$p))+($z2/(4.0*$n)))/$n)/$denominator
+    return [pscustomobject]@{Low95Percent=[Math]::Round([Math]::Max(0.0,$center-$margin)*100.0,1);High95Percent=[Math]::Round([Math]::Min(1.0,$center+$margin)*100.0,1)}
+}
+function Get-AntiDPIScanOrder($Range,[switch]$Randomize) {
+    $order=[Collections.Generic.List[int]]::new()
+    for($number=[int]$Range.First;$number -le [int]$Range.Last;$number++){$order.Add($number)}
+    if($Randomize){
+        for($i=$order.Count-1;$i -gt 0;$i--){$j=Get-Random -Minimum 0 -Maximum ($i+1);$temporary=$order[$i];$order[$i]=$order[$j];$order[$j]=$temporary}
+    }
+    return $order.ToArray()
+}
 function Get-AntiDPIAnalysisRow($Result,[int]$Number,[int]$BaselineSuccesses=-1,[int]$ExpectedAttempts=2) {
     $successes=[int]$Result.Successes
     if($Result.Cancelled){$status='CANCELLED'}elseif($Result.Error){$status='ERROR'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -ge $ExpectedAttempts){$status='BASELINE_PASS'}elseif($successes -ge $ExpectedAttempts -and $BaselineSuccesses -gt 0){$status='INCONCLUSIVE'}elseif($successes -ge $ExpectedAttempts){$status='PASS'}elseif($successes -gt 0){$status='UNSTABLE'}else{$status='FAIL'}
     $attemptDetails=[Collections.Generic.List[string]]::new();$attemptNumber=0
-    if($null -ne $Result.PSObject.Properties['Attempts']){
-        foreach($attempt in @($Result.Attempts)){
-            if($null -eq $attempt){continue};$attemptNumber++
-            if($attempt.Success){$attemptDetails.Add(('Попытка {0}: HTTP {1}, {2:N0} байт, {3:N1} с' -f $attemptNumber,[int]$attempt.HttpStatus,[long]$attempt.Bytes,[double]$attempt.Seconds))}
-            else{$reason=if($attempt.Reason){[string]$attempt.Reason}else{'ошибка запроса'};$attemptDetails.Add(('Попытка {0}: {1}' -f $attemptNumber,$reason))}
-        }
+    $attemptRecords=@();$sampleSize=$ExpectedAttempts
+    if($null -ne $Result.PSObject.Properties['Attempts']){$attemptRecords=@($Result.Attempts|Where-Object {$null -ne $_});$sampleSize=$attemptRecords.Count}
+    elseif($Result.Error){$sampleSize=0}
+    if($sampleSize -lt 0){$sampleSize=0}
+    foreach($attempt in $attemptRecords){
+        $attemptNumber++
+        if($attempt.Success){$attemptDetails.Add(('Попытка {0}: HTTP {1}, {2:N0} байт, {3:N1} с' -f $attemptNumber,[int]$attempt.HttpStatus,[long]$attempt.Bytes,[double]$attempt.Seconds))}
+        else{$reason=if($attempt.Reason){[string]$attempt.Reason}else{'ошибка запроса'};$attemptDetails.Add(('Попытка {0}: {1}' -f $attemptNumber,$reason))}
     }
-    $durations=@();if($null -ne $Result.PSObject.Properties['Attempts']){$durations=@($Result.Attempts|Where-Object {$_.Success}|ForEach-Object {[double]$_.Seconds}|Sort-Object)}
-    $meanSeconds=$null;if($durations.Count){$meanSeconds=[Math]::Round((($durations|Measure-Object -Average).Average),3)}
-    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;ExpectedAttempts=$ExpectedAttempts;BaselineSuccesses=$BaselineSuccesses;MeanSuccessSeconds=$meanSeconds;AttemptDetails=($attemptDetails -join '; ');Details=[string]$Result.Error}
+    $observedSuccesses=[Math]::Min($successes,$sampleSize)
+    $ratePercent=$null;$low95=$null;$high95=$null
+    if($sampleSize -gt 0){$ratePercent=[Math]::Round(100.0*$observedSuccesses/$sampleSize,1);$interval=Get-AntiDPIWilsonInterval $observedSuccesses $sampleSize;$low95=$interval.Low95Percent;$high95=$interval.High95Percent}
+    $rateDelta=$null
+    if($sampleSize -gt 0 -and $BaselineSuccesses -ge 0 -and $ExpectedAttempts -gt 0){$baselineRate=100.0*[Math]::Min($BaselineSuccesses,$ExpectedAttempts)/$ExpectedAttempts;$rateDelta=[Math]::Round($ratePercent-$baselineRate,1)}
+    $durations=@($attemptRecords|Where-Object {$_.Success}|ForEach-Object {[double]$_.Seconds}|Sort-Object)
+    $meanSeconds=$null;$medianSeconds=$null;$minimumSeconds=$null;$maximumSeconds=$null
+    if($durations.Count){
+        $meanSeconds=[Math]::Round((($durations|Measure-Object -Average).Average),3)
+        $middle=[int][Math]::Floor($durations.Count/2)
+        if($durations.Count%2){$medianSeconds=[Math]::Round([double]$durations[$middle],3)}else{$medianSeconds=[Math]::Round((([double]$durations[$middle-1]+[double]$durations[$middle])/2.0),3)}
+        $minimumSeconds=[Math]::Round([double]$durations[0],3);$maximumSeconds=[Math]::Round([double]$durations[-1],3)
+    }
+    $evidence=if($sampleSize -eq 0){'Нет завершённых попыток'}elseif($sampleSize -lt 5){'Предварительно: мало повторов'}else{'Ограниченная выборка: интервал остаётся ориентировочным'}
+    return [pscustomobject]@{Number=$Number;Status=$status;Successes=$successes;ExpectedAttempts=$ExpectedAttempts;SampleSize=$sampleSize;SuccessRatePercent=$ratePercent;SuccessRateLow95Percent=$low95;SuccessRateHigh95Percent=$high95;SuccessRateDeltaVsBaselinePercentagePoints=$rateDelta;BaselineSuccesses=$BaselineSuccesses;MeanSuccessSeconds=$meanSeconds;MedianSuccessSeconds=$medianSeconds;MinSuccessSeconds=$minimumSeconds;MaxSuccessSeconds=$maximumSeconds;Evidence=$evidence;AttemptDetails=($attemptDetails -join '; ');Details=[string]$Result.Error}
 }
-function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0,$Baseline=$null,$BaselineAfter=$null,[switch]$BracketBaseline) {
+function Write-AntiDPIAnalysisSnapshot([string]$Path,$Range,[hashtable]$Results,[int]$CurrentProfile=0,$Baseline=$null,$BaselineAfter=$null,[int[]]$ScanOrder=@(),[switch]$BracketBaseline) {
     if(-not $Path){return}
-    $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';Mode=$(if($BracketBaseline){'sequential-bracketed'}else{'standard'});FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;CurrentProfile=$CurrentProfile;Baseline=$Baseline;BaselineAfter=$BaselineAfter;Results=@($Results.Values|Sort-Object Number)}
+    $document=[ordered]@{Schema='antidpi.strategy-analysis.v1';CreatedUtc=[DateTime]::UtcNow.ToString('o');Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';Mode=$(if($BracketBaseline){'sequential-bracketed'}else{'standard'});FirstProfile=[int]$Range.First;LastProfile=[int]$Range.Last;CurrentProfile=$CurrentProfile;Baseline=$Baseline;BaselineAfter=$BaselineAfter;ScanOrder=@($ScanOrder);Results=@($Results.Values|Sort-Object Number)}
     $parent=Split-Path -Parent $Path
     [IO.Directory]::CreateDirectory($parent)|Out-Null
     $temporary=$Path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
@@ -693,7 +723,8 @@ function Test-AntiDPIYoutubeBaseline([int]$Attempts,[int]$ThresholdBytes,[int]$T
         }
     }
     $status=if($successes -eq $Attempts){'PASS'}elseif($successes -gt 0){'UNSTABLE'}else{'FAIL'}
-    return [pscustomobject]@{Status=$status;Successes=$successes;Attempts=$Attempts;Details=@($attemptRows.ToArray())}
+    $interval=Get-AntiDPIWilsonInterval $successes $Attempts
+    return [pscustomobject]@{Status=$status;Successes=$successes;Attempts=$Attempts;SuccessRatePercent=[Math]::Round(100.0*$successes/$Attempts,1);SuccessRateLow95Percent=$interval.Low95Percent;SuccessRateHigh95Percent=$interval.High95Percent;Details=@($attemptRows.ToArray())}
 }
 
 function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]$PortScope,[string]$Bundle,[string]$State,[string]$Logs,[switch]$SkipTimestamps,[Parameter(Mandatory=$true)][ValidateRange(1,5)][int]$Parallelism,[Parameter()][ValidateRange(1,5)][int]$Attempts=2,[Parameter()][ValidateRange(16,1048576)][int]$ThresholdBytes=102400,[Parameter()][ValidateRange(5000,120000)][int]$TimeoutMilliseconds=15000,[string]$AnalysisResultPath='',[switch]$BracketBaseline) {
@@ -717,16 +748,16 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
     }
     try{
         $script:AntiDPIScanControl=[AntiDPI.Public10.YoutubeScanControl]::new($inputState.Supported)
-        $next=[int]$Range.First;$completed=0;$total=$Range.Last-$Range.First+1
+        $scanOrder=[int[]](Get-AntiDPIScanOrder $Range -Randomize:$BracketBaseline);$nextIndex=0;$next=[int]$scanOrder[0];$completed=0;$total=$Range.Last-$Range.First+1
         $baseline=$null
-        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline}
+        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline -ScanOrder $scanOrder}
         $sourceAddresses=@(Get-NetIPAddress -InterfaceIndex ([int]$Adapter.ifIndex) -AddressFamily IPv4 -ErrorAction Stop|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $_.IPAddress -notlike '169.254.*'}|Select-Object -First 1 -ExpandProperty IPAddress)
         if(-not $sourceAddresses.Count){throw 'Не найден IPv4-адрес выбранного адаптера для контрольного запроса.'}
         $sourceAddress=[string]$sourceAddresses[0]
         $baseline=Test-AntiDPIYoutubeBaseline $Attempts $ThresholdBytes $TimeoutMilliseconds $log $sourceAddress
         Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='BASELINE';Status=$baseline.Status;Successes=$baseline.Successes;Attempts=$baseline.Attempts})
         Write-Host ('Контроль без тестовой стратегии: {0}/{1} успешных запросов.' -f $baseline.Successes,$baseline.Attempts) -ForegroundColor Cyan
-        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline}
+        if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $next $baseline -ScanOrder $scanOrder}
         Write-Host '----------------------'
         Write-Host 'Для остановки проверки нажмите клавишу Esc. Если нашлась рабочая стратегия, проверку можно остановить заранее.' -ForegroundColor Yellow
         if($null -ne $previousTitle){Write-Host 'Ход проверки отображается в заголовке окна.'}
@@ -739,7 +770,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
             for($n=$Range.First;$n -le $Range.Last;$n++){if($Profiles[$n].NeedsTimestamps){$needsTimestamps=$true;break}}
             if($needsTimestamps){Enable-AntiDPITimestamps $State *> (Join-Path $Logs ('timestamps_'+$tag+'.log'))}
         }
-        while($next -le $Range.Last -or $jobs.Count -or $retryQueue.Count){
+        while($nextIndex -lt $scanOrder.Count -or $jobs.Count -or $retryQueue.Count){
             Test-AntiDPIScanCancellation
             # Publish finished recipes before doing any further preparation. Ordering is by completion,
             # never by catalogue number; a slow slot cannot hold up the other slot's result or refill.
@@ -756,7 +787,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                 }elseif($AnalysisResultPath){
                     $analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number) $baseline.Successes $Attempts
                     $current=if($retryQueue.Count){[int]$retryQueue.Peek()}else{[int]$next}
-                    Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $current $baseline
+                    Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults $current $baseline -ScanOrder $scanOrder
                 }
                 if($entry){
                     if($found.Count){Write-Host ', ' -NoNewline}
@@ -771,9 +802,9 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                 $script:AntiDPIRecoveryAwaitingStart=$false
                 $recoveryPending=$false
             }
-            while(-not $recoveryPending -and $jobs.Count -lt $Parallelism -and ($retryQueue.Count -or $next -le $Range.Last)){
+            while(-not $recoveryPending -and $jobs.Count -lt $Parallelism -and ($retryQueue.Count -or $nextIndex -lt $scanOrder.Count)){
                 Test-AntiDPIScanCancellation
-                if($retryQueue.Count){$number=$retryQueue.Dequeue()}else{$number=$next;$next++}
+                if($retryQueue.Count){$number=$retryQueue.Dequeue()}else{$number=[int]$scanOrder[$nextIndex];$nextIndex++;$next=if($nextIndex -lt $scanOrder.Count){[int]$scanOrder[$nextIndex]}else{0}}
                 $slot=0
                 for($candidate=1;$candidate -le $Parallelism;$candidate++){
                     if(-not @($jobs|Where-Object Slot -eq $candidate).Count){$slot=$candidate;break}
@@ -787,7 +818,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                     Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$number;Slot=$slot;Event='RECIPE_START';SourcePorts=$job.Ports;NativeLog=$nativeLog})
                 }catch{
                     Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Profile=$number;Slot=$slot;Event='TECHNICAL_ERROR';Error=$_.Exception.Message;Successes=0})
-                    if($AnalysisResultPath){$analysisResults[[int]$number]=[pscustomobject]@{Number=[int]$number;Status='ERROR';Successes=0;Details=$_.Exception.Message};Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults ([int]$next)}
+                    if($AnalysisResultPath){$analysisResults[[int]$number]=[pscustomobject]@{Number=[int]$number;Status='ERROR';Successes=0;Details=$_.Exception.Message};Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults ([int]$next) -ScanOrder $scanOrder}
                     $completed++
                 }
             }
@@ -809,7 +840,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
                     $jobResult=$job.Worker.Task.GetAwaiter().GetResult()
                     $job.Worker.Dispose()
                     $entry=Receive-AntiDPIYoutubeJob $job $log -BaselineSuccesses $baseline.Successes -ExpectedAttempts $Attempts
-                    if($AnalysisResultPath){$analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number) $baseline.Successes $Attempts;Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline}
+                    if($AnalysisResultPath){$analysisResults[[int]$job.Number]=Get-AntiDPIAnalysisRow $jobResult ([int]$job.Number) $baseline.Successes $Attempts;Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline -ScanOrder $scanOrder}
                     if($entry){
                         if($found.Count){Write-Host ', ' -NoNewline}
                         Write-Host $entry -NoNewline -ForegroundColor Green
@@ -843,7 +874,7 @@ function Invoke-AntiDPIYoutubeScan([hashtable]$Profiles,$Range,$Adapter,[string]
         $baselineAfter=Test-AntiDPIYoutubeBaseline $Attempts $ThresholdBytes $TimeoutMilliseconds $log $sourceAddress
         Write-AntiDPIDiagnostic $log ([ordered]@{Utc=[DateTime]::UtcNow.ToString('o');Event='BASELINE_AFTER';Status=$baselineAfter.Status;Successes=$baselineAfter.Successes;Attempts=$baselineAfter.Attempts})
     }
-    if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline $baselineAfter -BracketBaseline:$BracketBaseline}
+    if($AnalysisResultPath){Write-AntiDPIAnalysisSnapshot $AnalysisResultPath $Range $analysisResults 0 $baseline $baselineAfter -ScanOrder $scanOrder -BracketBaseline:$BracketBaseline}
     return ($script:AntiDPIScanSignal -eq 'Stop')
 }
 

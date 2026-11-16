@@ -155,7 +155,7 @@ Assert-True ($catalogueText.Contains('[int]$AnalysisAttempts=2') -and $catalogue
 
 Assert-True ($guiText.Contains('analysisRangeBox')) 'GUI accepts a single strategy number or an inclusive numeric range'
 Assert-True ($coreText.Contains('Write-AntiDPIAnalysisSnapshot') -and $coreText.Contains('Get-AntiDPIAnalysisRow')) 'YouTube results are written after each strategy without parsing diagnostic Event fields'
-Assert-True ($coreText.Contains('BaselineAfter') -and $coreText.Contains('BASELINE_AFTER') -and $coreText.Contains('MeanSuccessSeconds') -and $catalogueText.Contains('[switch]$BracketBaseline')) 'benchmark mode brackets serial strategy trials with a second baseline and records successful response times'
+Assert-True ($coreText.Contains('BaselineAfter') -and $coreText.Contains('BASELINE_AFTER') -and $coreText.Contains('MedianSuccessSeconds') -and $coreText.Contains('SuccessRateLow95Percent') -and $coreText.Contains('Get-AntiDPIScanOrder') -and $catalogueText.Contains('[switch]$BracketBaseline')) 'benchmark mode brackets randomized serial trials, persists robust timing metrics and an uncertainty interval'
 Assert-True ($coreText.Contains('Test-AntiDPIYoutubeBaseline') -and $coreText.Contains('$SourceAddress') -and $runtimeText.Contains('candidate.Client.Bind(new IPEndPoint(IPAddress.Parse(sourceAddress), 0))')) 'baseline HTTPS requests are bound to the selected physical adapter IPv4 address'
 $analysisSuccess = [pscustomobject]@{Successes=2;Cancelled=$false;Error=''}
 Assert-Equal 'BASELINE_PASS' (Get-AntiDPIAnalysisRow $analysisSuccess 1 2 2).Status 'strategy success is not reported as strategy-specific PASS when the control also succeeds'
@@ -166,6 +166,37 @@ $analysisRow = Get-AntiDPIAnalysisRow $analysisAttempts 1 0 2
 Assert-Equal 'UNSTABLE' $analysisRow.Status 'mixed results are not marked PASS'
 Assert-True ($analysisRow.AttemptDetails.Contains('HTTP 200') -and $analysisRow.AttemptDetails.Contains('TIMEOUT')) 'analysis rows carry useful per-attempt evidence'
 Assert-Equal 1.2 $analysisRow.MeanSuccessSeconds 'analysis row records mean successful response time'
+Assert-Equal 1.2 $analysisRow.MedianSuccessSeconds 'analysis row records median successful response time'
+Assert-Equal 50.0 $analysisRow.SuccessRatePercent 'analysis row reports observed success percentage'
+Assert-Equal 50.0 $analysisRow.SuccessRateDeltaVsBaselinePercentagePoints 'analysis row reports the percentage-point difference against its control'
+Assert-Equal 2 $analysisRow.SampleSize 'analysis row records the actual number of attempts'
+Assert-True ($analysisRow.SuccessRateLow95Percent -lt 50 -and $analysisRow.SuccessRateHigh95Percent -gt 50) 'Wilson interval exposes uncertainty instead of treating two trials as precise'
+$allSuccessRow=Get-AntiDPIAnalysisRow ([pscustomobject]@{Successes=3;Cancelled=$false;Error='';Attempts=@([pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=1.0},[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=2.0},[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=6.0})}) 2 0 3
+Assert-Equal 2.0 $allSuccessRow.MedianSuccessSeconds 'median is robust to a slow outlier'
+Assert-Equal 1.0 $allSuccessRow.MinSuccessSeconds 'analysis row records minimum successful time'
+Assert-Equal 6.0 $allSuccessRow.MaxSuccessSeconds 'analysis row records maximum successful time'
+Assert-Equal 'Предварительно: мало повторов' $allSuccessRow.Evidence 'small samples are explicitly labeled preliminary'
+$fiveAttemptRow=Get-AntiDPIAnalysisRow ([pscustomobject]@{Successes=5;Cancelled=$false;Error='';Attempts=@(1..5|ForEach-Object {[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=[double]$_}})}) 3 0 5
+Assert-Equal 'Ограниченная выборка: интервал остаётся ориентировочным' $fiveAttemptRow.Evidence 'even five trials are not presented as conclusive'
+Assert-Equal 43.9 (Get-AntiDPIWilsonInterval 3 3).Low95Percent 'Wilson lower interval for three successes is non-overconfident'
+$orderedScan=Get-AntiDPIScanOrder ([pscustomobject]@{First=4;Last=7})
+Assert-Equal '4,5,6,7' ([string]::Join(',', [string[]]$orderedScan)) 'ordinary scan order remains reproducible and ascending'
+$randomScan=Get-AntiDPIScanOrder ([pscustomobject]@{First=4;Last=7}) -Randomize
+Assert-Equal '4,5,6,7' ([string]::Join(',', [string[]]@($randomScan|Sort-Object))) 'randomized benchmark order contains each strategy exactly once'
+Assert-True ($guiText.Contains('MedianSuccessSeconds') -and $guiText.Contains('MinSuccessSeconds') -and $guiText.Contains('MaxSuccessSeconds') -and $guiText.Contains('SuccessRateLow95Percent') -and $guiText.Contains('SuccessRateDeltaVsBaselinePercentagePoints') -and $guiText.Contains('выбираете вы вручную') -and $guiText.Contains('$attempts=if($benchmarkMode){5}')) 'GUI shows robust metrics, uses five benchmark repeats, and keeps strategy choice manual'
+$analysisSnapshotRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-snapshot-test-'+[guid]::NewGuid().ToString('N'))
+try {
+    $snapshotPath=Join-Path $analysisSnapshotRoot 'analysis.json'
+    $snapshotResults=@{2=$allSuccessRow}
+    Write-AntiDPIAnalysisSnapshot $snapshotPath ([pscustomobject]@{First=2;Last=5}) $snapshotResults 0 $null $null ([int[]]@(5,2,4,3)) -BracketBaseline
+    $snapshot=Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8|ConvertFrom-Json
+    Assert-Equal 'sequential-bracketed' $snapshot.Mode 'snapshot records comparative benchmark mode'
+    Assert-Equal '5,2,4,3' ([string]::Join(',', [string[]]$snapshot.ScanOrder)) 'snapshot preserves the randomized test order'
+    Assert-Equal 2.0 ([double]$snapshot.Results[0].MedianSuccessSeconds) 'snapshot preserves median timing'
+    Assert-Equal 'Предварительно: мало повторов' $snapshot.Results[0].Evidence 'snapshot preserves sample caveat'
+} finally {
+    if(Test-Path -LiteralPath $analysisSnapshotRoot){Remove-Item -LiteralPath $analysisSnapshotRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
 Assert-True ($coreText.Contains('Get-AntiDPIAnalysisRow') -and $coreText.Contains('Write-AntiDPIAnalysisSnapshot')) 'YouTube result export uses structured analysis rows rather than diagnostic records'
 Assert-True ($installerText.Contains('мастер установки') -and $installerText.Contains('-NonInteractiveInstaller') -and $installerText.Contains('Start-Process')) 'Windows uses a graphical installer with explicit options and progress logs'
 Assert-True ($installerText.Contains('Test-InstallerExistingInstall') -and $installerText.Contains("'Update'") -and $installerText.Contains('сохранить настройки, логи')) 'installer offers safe in-place updates for recognized existing installations'
@@ -483,8 +514,8 @@ Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';Pro
 Assert-Throws { ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name='Bad';ProfileNumber=1;AddressFamily='ipv4';Protocol='tls';Ports='70000'}) } 'connection profiles reject invalid ports'
 $csvData=[pscustomobject]@{
     CreatedUtc='2026-11-10T12:00:00.0000000Z';Test='YouTube HTTPS';AddressFamily='ipv4';Protocol='tcp-tls';FirstProfile=37;LastProfile=37
-    Baseline=[pscustomobject]@{Successes=0;Attempts=2}
-    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='ошибка; строка "две"'})
+    Baseline=[pscustomobject]@{Successes=0;Attempts=2;SuccessRatePercent=0;SuccessRateLow95Percent=0;SuccessRateHigh95Percent=65.8}
+    Results=@([pscustomobject]@{Number=37;Status='FAIL';Successes=0;ExpectedAttempts=2;SampleSize=2;SuccessRatePercent=0;SuccessRateLow95Percent=0;SuccessRateHigh95Percent=65.8;SuccessRateDeltaVsBaselinePercentagePoints=0;MedianSuccessSeconds=$null;MinSuccessSeconds=$null;MaxSuccessSeconds=$null;Evidence='Предварительно: мало повторов';AttemptDetails='Попытка 1; HTTP 200, текст "ok"';Details='ошибка; строка "две"'})
 }
 $csvRoot=Join-Path ([IO.Path]::GetTempPath()) ('AntiDPI-csv-test-'+[guid]::NewGuid().ToString('N'))
 try {
@@ -502,6 +533,11 @@ try {
     Assert-Equal 'Попытка 1; HTTP 200, текст "ok"' $csvRows[0].AttemptDetails 'CSV preserves semicolons and quotes in attempt details'
     Assert-Equal 'ошибка; строка "две"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
+    Assert-Equal '2' $csvRows[0].SampleSize 'CSV exports the actual sample size'
+    Assert-Equal 65.8 ([double]$csvRows[0].SuccessRateHigh95Percent) 'CSV exports the uncertainty interval'
+    Assert-Equal 65.8 ([double]$csvRows[0].BaselineSuccessRateHigh95Percent) 'CSV exports baseline uncertainty too'
+    Assert-Equal 0 ([double]$csvRows[0].SuccessRateDeltaVsBaselinePercentagePoints) 'CSV exports percentage-point change against the control'
+    Assert-Equal 'Предварительно: мало повторов' $csvRows[0].Evidence 'CSV exports the preliminary-evidence warning'
     $csvData.Results[0].Status='UNSTABLE'
     Write-GuiAnalysisCsv $csvData $csvPath
     $replacedRows=@(([IO.File]::ReadAllText($csvPath,[Text.Encoding]::UTF8)|ConvertFrom-Csv -Delimiter ';'))
