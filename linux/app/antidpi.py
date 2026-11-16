@@ -1481,12 +1481,13 @@ def main():
     parser.add_argument('--limit',type=int,default=20,help='Число последних результатов для history (1–100)')
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
-    parser.add_argument('--family', choices=('ipv4','ipv6'), help='IP-семейство для перехвата')
+    parser.add_argument('--family', choices=('ipv4','ipv6'), help='IP-семейство для перехвата; для test — семейство цели')
     parser.add_argument('--protocol', choices=('tcp-tls','udp-quic'), help='Протокол обработки')
     parser.add_argument('--quic-profile', choices=tuple(QUIC_PROFILES), help='QUIC-профиль: fake2 или fake11')
     parser.add_argument('--recipes', default=None)
     parser.add_argument('--parallel', type=int, choices=range(1, 6))
     parser.add_argument('--target', help='TLS-узел для benchmark/test в формате имя:порт')
+    parser.add_argument('--timeout',type=float,help='Лимит TCP connect + TLS handshake для test, 0,5–60 секунд (DNS может занять дополнительное время)')
     parser.add_argument('--sni', help='TLS SNI; по умолчанию совпадает с именем узла')
     parser.add_argument('--insecure', action='store_true', help='не проверять сертификат (только для диагностики; небезопасно)')
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
@@ -1512,6 +1513,10 @@ def main():
         parser.error('--sni используется только с benchmark или test.')
     if args.insecure and args.action not in ('benchmark','test'):
         parser.error('--insecure используется только с benchmark или test.')
+    if args.timeout is not None and args.action!='test':
+        parser.error('--timeout используется только с test.')
+    if args.timeout is not None and not 0.5<=args.timeout<=60:
+        parser.error('--timeout для test должен быть от 0,5 до 60 секунд.')
     if args.limit!=20 and args.action!='history':
         parser.error('--limit используется только с history.')
     if not 1<=args.limit<=100:
@@ -1532,7 +1537,8 @@ def main():
         if args.protocol=='udp-quic':parser.error('Команда test проверяет только TCP/TLS; QUIC Initial этим тестом не проверяется.')
         try:target=parse_target_argument(args.target,args.sni,not args.insecure)
         except ValueError as error:parser.error(str(error))
-        try:report=target_probe.diagnose_target(target,args.interface,args.family or 'ipv4')
+        try:report=target_probe.diagnose_target(target,args.interface,args.family or 'ipv4',
+                                                timeout=args.timeout if args.timeout is not None else 8)
         except ValueError as error:parser.error(str(error))
         if args.json:print(json.dumps(report,ensure_ascii=False,indent=2))
         else:print_connectivity_report(report)

@@ -403,7 +403,7 @@ class EndpointProbeTests(unittest.TestCase):
         raw.close.assert_called_once()
 
     def test_connectivity_diagnostic_stops_before_tls_when_tcp_connect_fails(self):
-        raw=Mock();raw.connect.side_effect=TimeoutError()
+        raw=Mock();raw.connect.side_effect=TimeoutError();raw.close.side_effect=OSError('close fixture')
         info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
         context=Mock()
         report=target_probe.diagnose_target({'host':'example.org','port':443},
@@ -414,6 +414,91 @@ class EndpointProbeTests(unittest.TestCase):
         self.assertEqual(report['status'],'error')
         context.assert_not_called()
         raw.close.assert_called_once()
+
+    def test_connectivity_diagnostic_uses_requested_family_and_unlinkable_report_ids(self):
+        info=(target_probe.socket.AF_INET6,target_probe.socket.SOCK_STREAM,6,'',('2001:db8::9',443,0,0))
+        reports=[]
+        for _ in range(2):
+            raw=Mock();secure=Mock();secure.version.return_value='TLSv1.3'
+            context=Mock();context.wrap_socket.return_value=secure
+            resolver=Mock(return_value=[info])
+            reports.append(target_probe.diagnose_target({'host':'vpn.example.org','port':443},
+                address_family='ipv6',resolver=resolver,socket_factory=Mock(return_value=raw),
+                context_factory=Mock(return_value=context)))
+            resolver.assert_called_once_with('vpn.example.org',443,target_probe.socket.AF_INET6,
+                                             target_probe.socket.SOCK_STREAM)
+        self.assertEqual(reports[0]['address_family'],'ipv6')
+        self.assertNotEqual(reports[0]['target_id'],reports[1]['target_id'])
+        for report in reports:
+            serialized=json.dumps(report)
+            for private_value in ('vpn.example.org','2001:db8::9'):
+                self.assertNotIn(private_value,serialized)
+
+    def test_connectivity_deadline_prevents_a_late_tls_handshake(self):
+        raw=Mock()
+        context=Mock()
+        info=(target_probe.socket.AF_INET,target_probe.socket.SOCK_STREAM,6,'',('203.0.113.9',443))
+        with patch.object(target_probe.time,'monotonic',side_effect=(0,0,0,0,0,0,0,2,2,2)):
+            report=target_probe.diagnose_target({'host':'example.org','port':443},timeout=1,
+                resolver=Mock(return_value=[info]),socket_factory=Mock(return_value=raw),
+                context_factory=context)
+        self.assertEqual(report['tcp']['status'],'ok')
+        self.assertEqual(report['tls']['reason'],'TIMEOUT')
+        self.assertEqual(report['status'],'error')
+        context.assert_not_called()
+        raw.close.assert_called_once()
+
+    def test_connectivity_timeout_rejects_boolean_and_out_of_range_values(self):
+        for timeout in (True,False,0.49,60.01,float('nan'),float('inf')):
+            with self.subTest(timeout=timeout),self.assertRaises(ValueError):
+                target_probe.diagnose_target({'host':'example.org','port':443},timeout=timeout)
+        for timeout in (0.5,60):
+            report=target_probe.diagnose_target({'host':'example.org','port':443},timeout=timeout,
+                resolver=Mock(side_effect=target_probe.socket.gaierror()))
+            self.assertEqual(report['dns']['reason'],'DNS_ERROR')
+
+    def test_test_cli_json_contract_family_timeout_and_exit_status(self):
+        def report(status):
+            return {'schema':'antidpi.connectivity-test.v1','target_id':'0123456789',
+                    'address_family':'ipv6','interface_bound':False,'certificate_verification':True,
+                    'dns':{'status':'ok','addresses':1,'seconds':0.01},
+                    'tcp':{'status':'ok','seconds':0.02},
+                    'tls':{'status':'ok','version':'TLSv1.3','seconds':0.03},'status':status}
+        argv=['antidpi','test','--target','example.org:443','--family','ipv6',
+              '--timeout','1.25','--json']
+        with patch.object(sys,'argv',argv),patch.object(antidpi.target_probe,'diagnose_target',
+             return_value=report('ok')) as diagnose,redirect_stdout(StringIO()) as output:
+            antidpi.main()
+        diagnose.assert_called_once()
+        self.assertEqual(diagnose.call_args.args[2],'ipv6')
+        self.assertEqual(diagnose.call_args.kwargs['timeout'],1.25)
+        self.assertEqual(json.loads(output.getvalue())['status'],'ok')
+
+        with patch.object(sys,'argv',argv),patch.object(antidpi.target_probe,'diagnose_target',
+             return_value=report('error')),redirect_stdout(StringIO()) as output:
+            with self.assertRaises(SystemExit) as stopped:
+                antidpi.main()
+        self.assertEqual(stopped.exception.code,1)
+        self.assertEqual(json.loads(output.getvalue())['status'],'error')
+
+        warning=report('warning');warning['certificate_verification']=False
+        insecure_argv=argv+['--insecure']
+        with patch.object(sys,'argv',insecure_argv),patch.object(antidpi.target_probe,'diagnose_target',
+             return_value=warning) as diagnose,redirect_stdout(StringIO()) as output:
+            antidpi.main()
+        self.assertFalse(diagnose.call_args.args[0]['verify_certificate'])
+        self.assertEqual(json.loads(output.getvalue())['status'],'warning')
+
+    def test_test_cli_rejects_unsupported_timeout_usage_before_probing(self):
+        for argv in (['antidpi','test','--target','example.org:443','--timeout','0.4'],
+                     ['antidpi','doctor','--timeout','3']):
+            with self.subTest(argv=argv),patch.object(sys,'argv',argv), \
+                 patch.object(antidpi.target_probe,'diagnose_target') as diagnose, \
+                 redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as stopped:
+                    antidpi.main()
+            self.assertEqual(stopped.exception.code,2)
+            diagnose.assert_not_called()
 
     def test_cli_target_argument_requires_explicit_tcp_port(self):
         with self.assertRaises(ValueError):

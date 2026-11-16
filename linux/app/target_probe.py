@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import secrets
 from pathlib import Path
 import re
 import socket
@@ -63,6 +64,14 @@ def validate_target(target):
             'verify_certificate': verify}
 
 
+def _close_quietly(sock):
+    if sock is not None:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
 def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
                     resolver=socket.getaddrinfo,socket_factory=socket.socket,
                     context_factory=ssl.create_default_context):
@@ -70,16 +79,16 @@ def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
     target=validate_target(target)
     if address_family not in ('ipv4','ipv6'):
         raise ValueError('IP-семейство должно быть ipv4 или ipv6.')
-    if not isinstance(timeout,(int,float)) or not 0.5<=timeout<=60:
+    if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not 0.5<=timeout<=60:
         raise ValueError('Таймаут проверки должен быть в диапазоне 0,5–60 секунд.')
     if interface is not None and (not isinstance(interface,str) or
             not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,15}',interface)):
         raise ValueError('Некорректное имя сетевого интерфейса.')
     started=time.monotonic()
     family=socket.AF_INET6 if address_family=='ipv6' else socket.AF_INET
-    key='|'.join((target['host'].casefold(),str(target['port']),target['sni'].casefold()))
+    # Use a fresh random token before hashing; never derive report identifiers from endpoint data.
     report={'schema':'antidpi.connectivity-test.v1',
-            'target_id':hashlib.sha256(key.encode('utf-8')).hexdigest()[:10],
+            'target_id':hashlib.sha256(secrets.token_bytes(32)).hexdigest()[:10],
             'address_family':address_family,'interface_bound':bool(interface),
             'certificate_verification':target['verify_certificate'],
             'dns':{'status':'pending','addresses':0,'seconds':None},
@@ -125,15 +134,15 @@ def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
                 report['tcp'].update(status='ok',seconds=round(time.monotonic()-tcp_started,3))
                 break
             except PermissionError:
-                tcp_reason='INTERFACE_PERMISSION_ERROR'
-                if raw is not None:raw.close();raw=None
+                tcp_reason='INTERFACE_PERMISSION_ERROR' if interface else 'TCP_CONNECT_ERROR'
+                _close_quietly(raw);raw=None
                 break
             except (TimeoutError,socket.timeout):
                 tcp_reason='TIMEOUT'
-                if raw is not None:raw.close();raw=None
+                _close_quietly(raw);raw=None
             except OSError:
                 tcp_reason='TCP_CONNECT_ERROR'
-                if raw is not None:raw.close();raw=None
+                _close_quietly(raw);raw=None
         if report['tcp']['status']!='ok':
             report['tcp'].update(status='error',reason=tcp_reason,
                                  seconds=round(time.monotonic()-tcp_started,3))
@@ -141,8 +150,14 @@ def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
             return finish()
         tls_started=time.monotonic()
         try:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:
+                raise socket.timeout()
             context=context_factory() if target['verify_certificate'] else ssl._create_unverified_context()
-            raw.settimeout(max(0.1,deadline-time.monotonic()))
+            remaining=deadline-time.monotonic()
+            if remaining<=0:
+                raise socket.timeout()
+            raw.settimeout(remaining)
             secure=context.wrap_socket(raw,server_hostname=target['sni'])
             raw=None
             report['tls'].update(status='ok',version=secure.version(),
@@ -160,8 +175,8 @@ def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
         if secure is not None:
             try:secure.shutdown(socket.SHUT_RDWR)
             except OSError:pass
-            secure.close()
-        if raw is not None:raw.close()
+            _close_quietly(secure)
+        _close_quietly(raw)
     return finish()
 
 
