@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущая публикация: общий релиз **v1.20** содержит Linux CLI **1.20** и Windows GUI + CLI **1.20**. Версии платформ ведутся независимо, но общий релиз выпускает обе версии согласованно и остаётся Latest для Linux-обновлятора. Предыдущий отдельный Windows-релиз — **windows-v1.19**.
+Текущая публикация: общий релиз **v1.21** содержит Linux CLI **1.21** и Windows GUI + CLI **1.21**. Версии платформ ведутся независимо, но общий релиз выпускает обе версии согласованно и остаётся Latest для Linux-обновлятора. Предыдущий отдельный Windows-релиз — **windows-v1.19**.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.20_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.20_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.20.txt`
+- `dist/AntiDPI_CLI_v1.21_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.21_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.21.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -139,16 +139,16 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.20_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.20_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.20.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.21_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.21_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.21.txt
 ```
 
 Linux:
 
 ```bash
-(cd dist && sha256sum -c SHA256SUMS_Linux_v1.20.txt)
-tar -tzf dist/AntiDPI_CLI_v1.20_Linux_x64.tar.gz
+(cd dist && sha256sum -c SHA256SUMS_Linux_v1.21.txt)
+tar -tzf dist/AntiDPI_CLI_v1.21_Linux_x64.tar.gz
 ```
 
 
