@@ -1,5 +1,11 @@
 # Changelog / История изменений
 
+## Next — Linux in-place updater
+
+| English | Русский |
+| --- | --- |
+| Add a Linux CLI updater that fetches the latest stable GitHub release, verifies the archive SHA-256, rejects unsafe archive entries, and stages a fresh build before replacing the installed tree. Settings and logs are carried forward; the previous installation remains available for rollback. Also resolve the packaged catalogue through the shared resource map in the Linux installer. | Добавить обновление Linux из CLI: загрузка последнего стабильного релиза GitHub, проверка SHA-256, безопасная распаковка и предварительная сборка до замены установленной программы. Настройки и журналы переносятся, предыдущая установка остаётся для отката. Также исправить получение каталога стратегий установщиком через общую карту ресурсов. |
+
 ## 1.18 — Guided Windows update and stop controls
 
 | English | Русский |
