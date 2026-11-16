@@ -1089,5 +1089,80 @@ function Invoke-AntiDPICatalogue {
     }
 }
 
+function Find-AntiDPIBundleRoot([string]$Directory) {
+    foreach($p in @($Directory,(Join-Path $Directory 'zapret-winws'),(Split-Path -Parent $PSScriptRoot))) {
+        $zapretWs=Join-Path $p 'zapret-winws'
+        if(Test-Path -LiteralPath $zapretWs -PathType Container) {
+            return (Resolve-Path -LiteralPath $p).Path
+        }
+    }
+    throw 'Не найден корень комплекта Zapret2.'
+}
+
+function Find-AntiDPIBlockcheckTools([string]$BundleRoot) {
+    $blockcheck=Join-Path $BundleRoot 'blockcheck'
+    $cygwin=Join-Path $BundleRoot 'cygwin'
+    $tools=Join-Path $BundleRoot 'tools'
+    $zapretWs=Join-Path $BundleRoot 'zapret-winws'
+    $result=@{Available=$false}
+    if(-not (Test-Path -LiteralPath $blockcheck -PathType Container)) { return $result }
+    if(-not (Test-Path -LiteralPath $cygwin -PathType Container)) { return $result }
+    if(-not (Test-Path -LiteralPath $tools -PathType Container)) { return $result }
+    $blockcheckCmd=Join-Path $blockcheck 'blockcheck2.cmd'
+    $cygwinBash=Join-Path $cygwin 'bin\bash.exe'
+    $elevator=Join-Path $tools 'elevator.exe'
+    $winws2=Join-Path $zapretWs 'winws2.exe'
+    if(-not (Test-Path -LiteralPath $blockcheckCmd -PathType Leaf)) { return $result }
+    if(-not (Test-Path -LiteralPath $cygwinBash -PathType Leaf)) { return $result }
+    if(-not (Test-Path -LiteralPath $elevator -PathType Leaf)) { return $result }
+    if(-not (Test-Path -LiteralPath $winws2 -PathType Leaf)) { return $result }
+    $result.Available=$true
+    $result.BlockcheckCmd=$blockcheckCmd
+    $result.CygwinBash=$cygwinBash
+    $result.Elevator=$elevator
+    $result.ZapretWinDir=$zapretWs
+    return $result
+}
+
+function Test-AntiDPIBlockcheckAvailable([string]$BundleRoot) {
+    try { $tools=Find-AntiDPIBlockcheckTools -BundleRoot $BundleRoot; return [bool]$tools.Available } catch { return $false }
+}
+
+function Export-AntiDPIBlockcheckStrategyLists([hashtable]$Profiles,[string]$OutputDirectory,[string[]]$Domains=@('www.youtube.com','rutracker.org')) {
+    if($Profiles.Count -eq 0){throw 'Каталог стратегий пуст.'}
+    if(-not $OutputDirectory){throw 'Не указан каталог для списков стратегий.'}
+    [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
+    foreach($domain in $Domains) {
+        if([string]::IsNullOrWhiteSpace($domain)){continue}
+        $safeDomain=([string]$domain).ToLowerInvariant() -replace '[^a-z0-9]','_'
+        if(-not $safeDomain){$safeDomain='domain'}
+        $listPath=Join-Path $OutputDirectory ('list_https_'+$safeDomain+'.txt')
+        $lines=New-Object 'Collections.Generic.List[string]'
+        foreach($number in @($Profiles.Keys|Sort-Object)) {
+            $row=$Profiles[[int]$number]
+            $args=if($null -ne $row.PSObject.Properties['Args']){@($row.Args)}else{@()}
+            $line='--filter-tcp=443 --hostlist="'+$domain+'" '+($args -join ' ')
+            $lines.Add($line)
+        }
+        [IO.File]::WriteAllLines($listPath,$lines.ToArray(),[Text.UTF8Encoding]::new($false))
+    }
+}
+
+function Start-AntiDPIBlockcheckScan([string]$BundleRoot,[string[]]$Domains,[string]$TestType='standard') {
+    $tools=Find-AntiDPIBlockcheckTools -BundleRoot $BundleRoot
+    if(-not $tools.Available){throw 'Инструменты Blockcheck Zapret2 не найдены в комплекте.'}
+    if(-not (Test-AntiDPIAdmin)){throw 'Blockcheck требует прав администратора. Запустите от имени администратора.'}
+    if($Domains.Count -eq 0){throw 'Укажите хотя бы одну целевую доменную зону.'}
+    $cmd=('set BATCH=1 && set TEST_DEFAULT='+$TestType+' && set DOMAINS="'+($Domains -join ' ')+'" && '+$tools.BlockcheckCmd)
+    $startInfo=New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName='cmd.exe'
+    $startInfo.Arguments=(ConvertTo-WindowsArgument ('/c '+$cmd))
+    $startInfo.WorkingDirectory=Split-Path -Parent $tools.BlockcheckCmd
+    $startInfo.UseShellExecute=$true
+    $startInfo.Verb='runas'
+    $startInfo.WindowStyle='Normal'
+    $null=[Diagnostics.Process]::Start($startInfo)
+}
+
 if(-not (Get-Variable AntiDPILibraryOnly -ErrorAction SilentlyContinue) -or -not $AntiDPILibraryOnly){Invoke-AntiDPICatalogue}
 

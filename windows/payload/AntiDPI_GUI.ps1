@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
@@ -25,6 +25,9 @@ $script:networkMatrixCancelPath=''
 $script:targetProbeJob=$null
 $script:targetProbeCancelPath=''
 $script:targetProbeDisplayTarget=''
+$script:blockcheckJob=$null
+$script:blockcheckCancelPath=''
+$script:blockcheckResultPath=''
 $script:tunnelCheckJob=$null
 $script:releaseCheckJob=$null
 $script:assetVerificationJob=$null
@@ -777,6 +780,55 @@ function Start-GuiTargetProbe {
 function Stop-GuiTargetProbe {
     if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:targetProbeCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{};$analysisStatusLabel.Text='Запрошена отмена проверки узла; текущий этап завершится или прервётся по таймауту.';$targetProbeCancelButton.Enabled=$false}
 }
+function Start-GuiBlockcheckExport {
+    if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -eq 'Running'){throw 'Дождитесь завершения Blockcheck перед экспортом.'}
+    if(-not $bundle){throw 'Не найден каталог комплекта Zapret2.'}
+    $bundleRoot=Find-AntiDPIBundleRoot -Directory $bundle
+    $exportDir=Join-Path $state 'blockcheck_lists'
+    $domains=@()
+    foreach($d in ($blockcheckDomainBox.Text -split ',')){$d=$d.Trim();if($d){$domains+=$d}}
+    if($domains.Count -eq 0){throw 'Укажите хотя бы один домен.'}
+    $profilesByNumber=@{}
+    foreach($row in (Get-GuiProfiles 'tls')){$profilesByNumber[[int]$row.Number]=$row}
+    Export-AntiDPIBlockcheckStrategyLists -Profiles $profilesByNumber -OutputDirectory $exportDir -Domains $domains
+    $blockcheckStatusLabel.Text=('Списки стратегий экспортированы: '+$exportDir)
+    Add-GuiHistory 'Blockcheck Zapret2' 'ЭКСПОРТ' ('Домены: '+($domains -join ', ')+'; каталог '+$exportDir)
+    [System.Windows.Forms.MessageBox]::Show(('Списки стратегий экспортированы в '+$exportDir+'.'+[Environment]::NewLine+'Используйте их в Blockcheck Zapret2 (blockcheck2.d/custom/).','Экспорт Blockcheck',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
+}
+function Stop-GuiBlockcheckScan {
+    if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:blockcheckCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{};$blockcheckStatusLabel.Text='Запрошена остановка Blockcheck…';$blockcheckCancelButton.Enabled=$false}
+}
+function Start-GuiBlockcheckScan {
+    if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -eq 'Running'){throw 'Blockcheck уже выполняется.'}
+    if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
+    if($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited){throw 'Дождитесь завершения анализа YouTube.'}
+    if($null -ne $script:worker -and -not $script:worker.HasExited){throw 'Сначала безопасно остановите запущенную стратегию.'}
+    $bundleRoot=Find-AntiDPIBundleRoot -Directory $bundle
+    $tools=Find-AntiDPIBlockcheckTools -BundleRoot $bundleRoot
+    if(-not $tools.Available){throw 'Инструменты Blockcheck Zapret2 не найдены в комплекте. Убедитесь, что распакованы все каталоги: blockcheck, cygwin, tools, zapret-winws.'}
+    if(-not (Test-AntiDPIAdmin)){throw 'Blockcheck требует прав администратора. Перезапустите GUI от имени администратора.'}
+    $domains=@()
+    foreach($d in ($blockcheckDomainBox.Text -split ',')){$d=$d.Trim();if($d){$domains+=$d}}
+    if($domains.Count -eq 0){throw 'Укажите хотя бы один домен через запятую.'}
+    $script:blockcheckCancelPath=Join-Path $state ('blockcheck-cancel-'+[guid]::NewGuid().ToString('N')+'.flag')
+    $script:blockcheckResultPath=Join-Path $state ('blockcheck-result-'+[guid]::NewGuid().ToString('N')+'.txt')
+    [IO.File]::WriteAllText($script:blockcheckResultPath,'',[Text.UTF8Encoding]::new($false))
+    $blockcheckButton.Enabled=$false;$blockcheckCancelButton.Enabled=$true;$blockcheckExportButton.Enabled=$false
+    $blockcheckStatusLabel.Text='Запуск Blockcheck Zapret2 в отдельном окне консоли…'
+    Add-GuiHistory 'Blockcheck Zapret2' 'ЗАПУСК' ('Домены: '+($domains -join ', '))
+    $script:blockcheckJob=Start-Job -ArgumentList $tools.BlockcheckCmd,$domains -ScriptBlock {
+        param([string]$BlockcheckCmd,[string[]]$Domains)
+        $startInfo=New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName='cmd.exe'
+        $startInfo.Arguments=('/c "set BATCH=1 && set TEST_DEFAULT=standard && set DOMAINS='+($Domains -join ' ')+' && '+$BlockcheckCmd+'"')
+        $startInfo.WorkingDirectory=Split-Path -Parent $BlockcheckCmd
+        $startInfo.UseShellExecute=$true
+        $startInfo.Verb='runas'
+        $startInfo.WindowStyle='Normal'
+        $null=[Diagnostics.Process]::Start($startInfo)
+        return 'Blockcheck запущен во внешнем окне. Результаты смотрите в консоли Blockcheck Zapret2.'
+    }
+}
 function Start-GuiTorVerification {
     if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){throw 'Проверка VPN/Tor уже выполняется.'}
     if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
@@ -1451,7 +1503,15 @@ try{
     $targetProbeTimeoutBox=New-Object System.Windows.Forms.NumericUpDown;$targetProbeTimeoutBox.Minimum=1;$targetProbeTimeoutBox.Maximum=30;$targetProbeTimeoutBox.Value=8;$targetProbeTimeoutBox.Location=[System.Drawing.Point]::new(215,786);$targetProbeTimeoutBox.Size=[System.Drawing.Size]::new(62,28);$analysisTab.Controls.Add($targetProbeTimeoutBox)
     $targetProbeButton=New-Object System.Windows.Forms.Button;$targetProbeButton.Text='Проверить DNS / TCP / TLS';$targetProbeButton.Location=[System.Drawing.Point]::new(290,783);$targetProbeButton.Size=[System.Drawing.Size]::new(220,36);$targetProbeButton.Add_Click({try{Start-GuiTargetProbe}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($targetProbeButton)
     $targetProbeCancelButton=New-Object System.Windows.Forms.Button;$targetProbeCancelButton.Text='Отменить';$targetProbeCancelButton.Location=[System.Drawing.Point]::new(520,783);$targetProbeCancelButton.Size=[System.Drawing.Size]::new(110,36);$targetProbeCancelButton.Enabled=$false;$targetProbeCancelButton.Add_Click({Stop-GuiTargetProbe});$analysisTab.Controls.Add($targetProbeCancelButton)
-    $monitorHeading=New-Object System.Windows.Forms.Label;$monitorHeading.Text='Фоновый монитор соединения';$monitorHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$monitorHeading.Location=[System.Drawing.Point]::new(22,834);$monitorHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($monitorHeading)
+    $blockcheckHeading=New-Object System.Windows.Forms.Label;$blockcheckHeading.Text='Blockcheck Zapret2 — тест стратегий по списку доменов';$blockcheckHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$blockcheckHeading.Location=[System.Drawing.Point]::new(22,834);$blockcheckHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($blockcheckHeading)
+    $blockcheckInfo=New-Object System.Windows.Forms.Label;$blockcheckInfo.Text='Запускает встроенный блокчек Zapret2 (требует админи­стратора, отдельное окно консоли). Не модифицирует службы WinDivert и не останавливает чужой софт.';$blockcheckInfo.Location=[System.Drawing.Point]::new(22,861);$blockcheckInfo.Size=[System.Drawing.Size]::new(690,38);$blockcheckInfo.ForeColor=[System.Drawing.Color]::DarkOrange;$analysisTab.Controls.Add($blockcheckInfo)
+    $blockcheckDomainLabel=New-Object System.Windows.Forms.Label;$blockcheckDomainLabel.Text='Домены:';$blockcheckDomainLabel.Location=[System.Drawing.Point]::new(22,910);$blockcheckDomainLabel.Size=[System.Drawing.Size]::new(80,24);$analysisTab.Controls.Add($blockcheckDomainLabel)
+    $blockcheckDomainBox=New-Object System.Windows.Forms.TextBox;$blockcheckDomainBox.Text='www.youtube.com, rutracker.org';$blockcheckDomainBox.Location=[System.Drawing.Point]::new(105,906);$blockcheckDomainBox.Size=[System.Drawing.Size]::new(300,28);$analysisTab.Controls.Add($blockcheckDomainBox)
+    $blockcheckExportButton=New-Object System.Windows.Forms.Button;$blockcheckExportButton.Text='Экспорт списков стратегий';$blockcheckExportButton.Location=[System.Drawing.Point]::new(415,900);$blockcheckExportButton.Size=[System.Drawing.Size]::new(170,36);$blockcheckExportButton.Add_Click({try{Start-GuiBlockcheckExport}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($blockcheckExportButton)
+    $blockcheckButton=New-Object System.Windows.Forms.Button;$blockcheckButton.Text='Запустить Blockcheck';$blockcheckButton.Location=[System.Drawing.Point]::new(595,900);$blockcheckButton.Size=[System.Drawing.Size]::new(110,36);$blockcheckButton.Add_Click({try{Start-GuiBlockcheckScan}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($blockcheckButton)
+    $blockcheckCancelButton=New-Object System.Windows.Forms.Button;$blockcheckCancelButton.Text='Отменить';$blockcheckCancelButton.Location=[System.Drawing.Point]::new(715,900);$blockcheckCancelButton.Size=[System.Drawing.Size]::new(90,36);$blockcheckCancelButton.Enabled=$false;$blockcheckCancelButton.Add_Click({Stop-GuiBlockcheckScan});$analysisTab.Controls.Add($blockcheckCancelButton)
+    $blockcheckStatusLabel=New-Object System.Windows.Forms.Label;$blockcheckStatusLabel.Text='Blockcheck не запускался.';$blockcheckStatusLabel.Location=[System.Drawing.Point]::new(22,945);$blockcheckStatusLabel.Size=[System.Drawing.Size]::new(690,30);$analysisTab.Controls.Add($blockcheckStatusLabel)
+    $monitorHeading=New-Object System.Windows.Forms.Label;$monitorHeading.Text='Фоновый монитор соединения';$monitorHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$monitorHeading.Location=[System.Drawing.Point]::new(22,985);$monitorHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($monitorHeading)
     $monitorInfo=New-Object System.Windows.Forms.Label;$monitorInfo.Text='Проверяет выбранный выше сервис по HTTPS через выбранный адаптер и IP-семейство. Проверка отправляет только обычный GET без пользовательских данных; стратегию автоматически не выбирает и не меняет.';$monitorInfo.Location=[System.Drawing.Point]::new(22,861);$monitorInfo.Size=[System.Drawing.Size]::new(690,42);$analysisTab.Controls.Add($monitorInfo)
     $script:monitorEnabledCheck=New-Object System.Windows.Forms.CheckBox;$script:monitorEnabledCheck.Text='Включить регулярную проверку и уведомления о смене состояния';$script:monitorEnabledCheck.Checked=[bool]$script:guiSettings.MonitorEnabled;$script:monitorEnabledCheck.Location=[System.Drawing.Point]::new(22,909);$script:monitorEnabledCheck.Size=[System.Drawing.Size]::new(550,28);$analysisTab.Controls.Add($script:monitorEnabledCheck)
     $monitorIntervalLabel=New-Object System.Windows.Forms.Label;$monitorIntervalLabel.Text='Интервал (мин.):';$monitorIntervalLabel.Location=[System.Drawing.Point]::new(22,949);$monitorIntervalLabel.Size=[System.Drawing.Size]::new(130,26);$analysisTab.Controls.Add($monitorIntervalLabel)
@@ -1772,6 +1832,8 @@ try{
             }catch{$analysisStatusLabel.Text='Проверка узла завершилась с ошибкой.';Add-GuiHistory 'Проверка собственного узла' 'ОШИБКА' 'Не удалось обработать результат read-only проверки.';Show-GuiError ('Не удалось обработать результат проверки узла: '+$_.Exception.Message)}
             finally{$targetProbeButton.Enabled=$true;$targetProbeCancelButton.Enabled=$false;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue;$script:targetProbeJob=$null;if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};$script:targetProbeCancelPath='';$script:targetProbeDisplayTarget=''}
         }
+        if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -in @('Completed','Failed','Stopped')){try{$blockcheckResult=(Receive-Job -Job $script:blockcheckJob -ErrorAction SilentlyContinue|Out-String).Trim();if(-not $blockcheckResult){$blockcheckResult='Blockcheck не вернул результата.'};$blockcheckStatusLabel.Text='Blockcheck: '+$blockcheckResult;Add-GuiHistory 'Blockcheck Zapret2' 'ЗАВЕРШЁН' $blockcheckResult}catch{Add-GuiHistory 'Blockcheck Zapret2' 'ОШИБКА' $_.Exception.Message;$blockcheckStatusLabel.Text='Blockcheck завершился с ошибкой.'}finally{$blockcheckButton.Enabled=$true;$blockcheckCancelButton.Enabled=$false;$blockcheckExportButton.Enabled=$true;Remove-Job -Job $script:blockcheckJob -Force -ErrorAction SilentlyContinue;$script:blockcheckJob=$null;if($script:blockcheckCancelPath -and (Test-Path -LiteralPath $script:blockcheckCancelPath)){Remove-Item -LiteralPath $script:blockcheckCancelPath -Force -ErrorAction SilentlyContinue};$script:blockcheckCancelPath='';$script:blockcheckResultPath=''}
+        }
         if($script:closeWhenStopped -and $null -eq $script:worker -and $null -eq $script:analysisWorker){$form.Close()}
     })
     $script:monitorNextRunUtc=if($script:guiSettings.MonitorEnabled){[DateTime]::UtcNow.AddSeconds(2)}else{[DateTime]::MaxValue}
@@ -1794,7 +1856,7 @@ try{
             $_.Handled=$true;Request-GuiStop
         }
     })
-    $form.Add_FormClosing({if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiConnectivityMatrix};if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiTargetProbe};if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){$_.Cancel=$true;Set-GuiStatus 'Дождитесь окончания VPN/Tor проверки (ограниченной таймаутом), чтобы не оставить curl-процесс.' ([System.Drawing.Color]::DarkOrange)}})
+    $form.Add_FormClosing({if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiConnectivityMatrix};if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){$_.Cancel=$true;Stop-GuiTargetProbe};if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:blockcheckCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{}};if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -eq 'Running'){$_.Cancel=$true;Set-GuiStatus 'Дождитесь окончания VPN/Tor проверки (ограниченной таймаутом), чтобы не оставить curl-процесс.' ([System.Drawing.Color]::DarkOrange)}})
     $form.Add_FormClosing({
         $strategyActive=$null -ne $script:worker -and -not $script:worker.HasExited
         $analysisActive=$null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited
@@ -1809,7 +1871,7 @@ try{
         }
     })
     $form.Add_FormClosing({if($form.WindowState -ne 'Minimized'){$bounds=if($form.WindowState -eq 'Maximized'){$form.RestoreBounds}else{$form.Bounds};$script:guiSettings.WindowBounds=@{X=$bounds.X;Y=$bounds.Y;Width=$bounds.Width;Height=$bounds.Height};$script:guiSettings.WindowMaximized=($form.WindowState -eq 'Maximized');$script:guiSettings.FirstRunComplete=$true;try{[IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiSettingsPath))|Out-Null;[IO.File]::WriteAllText($script:guiSettingsPath,($script:guiSettings|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))}catch{Write-GuiLog ('Could not persist window state: '+$_.Exception.Message)}}})
-    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:targetProbeJob){Stop-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue};if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:connectionMonitorJob){Stop-Job -Job $script:connectionMonitorJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:connectionMonitorJob -Force -ErrorAction SilentlyContinue}})
+    $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$networkTimer.Stop();$networkTimer.Dispose();if($null -ne $script:trayIcon){$script:trayIcon.Visible=$false;$script:trayIcon.Dispose();$script:trayIcon=$null};if($null -ne $script:appIcon){$script:appIcon.Dispose();$script:appIcon=$null};if($null -ne $script:networkMatrixJob){Stop-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:targetProbeJob){Stop-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:targetProbeJob -Force -ErrorAction SilentlyContinue};if($script:targetProbeCancelPath -and (Test-Path -LiteralPath $script:targetProbeCancelPath)){Remove-Item -LiteralPath $script:targetProbeCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:blockcheckJob){Stop-Job -Job $script:blockcheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:blockcheckJob -Force -ErrorAction SilentlyContinue};if($script:blockcheckCancelPath -and (Test-Path -LiteralPath $script:blockcheckCancelPath)){Remove-Item -LiteralPath $script:blockcheckCancelPath -Force -ErrorAction SilentlyContinue};if($null -ne $script:tunnelCheckJob){Stop-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:releaseCheckJob){Stop-Job -Job $script:releaseCheckJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:assetVerificationJob){Stop-Job -Job $script:assetVerificationJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue};if($null -ne $script:connectionMonitorJob){Stop-Job -Job $script:connectionMonitorJob -ErrorAction SilentlyContinue;Remove-Job -Job $script:connectionMonitorJob -Force -ErrorAction SilentlyContinue}})
     Write-GuiLog 'Showing main form'
     $form.Add_Shown({Show-GuiOrphanRecoveryPrompt})
     [void]$form.ShowDialog()
