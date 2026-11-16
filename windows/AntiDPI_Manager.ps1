@@ -72,6 +72,15 @@ function Stop-OwnedWinws($Manifest) {
     }
     Remove-Item -LiteralPath $record -Force
 }
+function Write-AntiDPIUpdateLog([string]$Root,[string]$Message) {
+    try{
+        $directory=Join-Path $Root 'AntiDPI\_state'
+        [IO.Directory]::CreateDirectory($directory)|Out-Null
+        $path=Join-Path $directory 'update.log'
+        $line='[{0}] {1}{2}' -f [DateTime]::UtcNow.ToString('o'),$Message,[Environment]::NewLine
+        [IO.File]::AppendAllText($path,$line,[Text.UTF8Encoding]::new($false))
+    }catch{Write-Host ('Не удалось записать журнал обновления: '+$_.Exception.Message) -ForegroundColor Yellow}
+}
 function Save-AntiDPIManifest($Manifest,[string]$Path='') {
     $path=if($Path){[IO.Path]::GetFullPath($Path)}else{Join-Path $Manifest.InstallRoot '.antidpi-install.json'}
     $temporary=$path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
@@ -331,6 +340,8 @@ function Update-AntiDPI {
     if($script:AntiDPIInstallerNonInteractive -and -not $script:AntiDPIUpdatePreviewApproved){$script:AntiDPIUpdatePreviewRequired=$true;return}
     if(-not $script:AntiDPIInstallerNonInteractive){$approval=Read-Host 'Для продолжения введите UPDATE; любой другой ответ отменит обновление';if($approval -cne 'UPDATE'){throw [OperationCanceledException]::new('Обновление отменено после предпросмотра файлов.')}}
 
+    Write-AntiDPIUpdateLog $root ('START root='+$root+' files='+$updates.Count)
+    Write-AntiDPIUpdateLog $root ('APPROVED files='+(@($updates|ForEach-Object {[string]$_.Relative}) -join ';'))
     $stage=Join-Path $root ('.u-'+[guid]::NewGuid().ToString('N').Substring(0,8))
     $newRoot=Join-Path $stage 'new';$backupRoot=Join-Path $stage 'backup'
     [IO.Directory]::CreateDirectory($newRoot)|Out-Null;[IO.Directory]::CreateDirectory($backupRoot)|Out-Null
@@ -339,7 +350,15 @@ function Update-AntiDPI {
     try{
         foreach($item in $updates){$staged=Join-Path $newRoot $item.Relative;[IO.Directory]::CreateDirectory((Split-Path -Parent $staged))|Out-Null;Copy-Item -LiteralPath $item.Source -Destination $staged}
         Write-Host ('Найдена AntiDPI '+[string]$manifest.DisplayVersion+' в '+$root+'. Обновляю файлы программы, настройки и папку zapret-winws будут сохранены.') -ForegroundColor Cyan
-        try{Initialize-AntiDPIRuntime;$null=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)}catch{Write-Host ('Не удалось отправить команду остановки движка: '+$_.Exception.Message) -ForegroundColor Yellow}
+        try{
+            Initialize-AntiDPIRuntime
+            $driverSnapshot=[AntiDPI.Public10.NativeWinDivertBackend]::new($bundle).Read()
+            Write-AntiDPIUpdateLog $root ('WINDIVERT '+[string]$driverSnapshot)
+            if($driverSnapshot.Exists -and -not $driverSnapshot.Owned){
+                Write-Host ('Обнаружена WinDivert-служба другой установки; updater не будет менять её. Путь: '+$driverSnapshot.ImagePath) -ForegroundColor Yellow
+            }
+            $null=[AntiDPI.Public10.WinDivertLifecycle]::RequestStop($bundle)
+        }catch{Write-Host ('Не удалось проверить/запросить остановку собственного движка: '+$_.Exception.Message) -ForegroundColor Yellow;Write-AntiDPIUpdateLog $root ('WINDIVERT_CHECK_ERROR '+$_.Exception.Message)}
         Stop-OwnedWinws $manifest
         foreach($item in $updates){
             $destination=Join-Path $root $item.Relative;$staged=Join-Path $newRoot $item.Relative;$backup=Join-Path $backupRoot $item.Relative
@@ -353,6 +372,7 @@ function Update-AntiDPI {
                 [IO.File]::Move($staged,$destination)
                 $applied.Add([pscustomobject]@{Destination=$destination;Backup='';Existed=$false;UpdatedSha256=$updatedHash})
             }
+            Write-AntiDPIUpdateLog $root ('REPLACED '+[string]$item.Relative+' sha256='+$updatedHash)
         }
         $fileMap=@{}
         foreach($entry in @($manifest.Files)){$fileMap[[string]$entry.Path]=$entry}
@@ -365,9 +385,12 @@ function Update-AntiDPI {
         Save-AntiDPIManifest $manifest
         $script:AntiDPIInstalledRoot=$root
         Write-Host ('Обновление завершено: '+$manifest.DisplayVersion+'. Настройки, логи и скачанная сборка Zapret2 сохранены.') -ForegroundColor Green
+        Write-AntiDPIUpdateLog $root 'COMPLETE'
     }catch{
         $failure=$_
+        Write-AntiDPIUpdateLog $root ('ERROR '+$failure.Exception.ToString())
         $rollback=Restore-AntiDPIUpdateChanges $applied.ToArray()
+        Write-AntiDPIUpdateLog $root ('ROLLBACK success='+[string]$rollback.Success+' errors='+(@($rollback.Errors) -join ';'))
         if($rollback.Success -and $rollbackBackupPath -and (Test-Path -LiteralPath $rollbackBackupPath)){Remove-Item -LiteralPath $rollbackBackupPath -Recurse -Force -ErrorAction SilentlyContinue}
         if(-not $rollback.Success){
             $rollbackComplete=$false
@@ -1342,7 +1365,23 @@ try{
     switch($Action){'Install'{Install-AntiDPI};'Update'{Update-AntiDPI};'Rollback'{Rollback-AntiDPIUpdate};'Launch'{Launch-AntiDPI -SkipIntro:$SkipHeader};'GUI'{& (Join-Path $PSScriptRoot 'AntiDPI_GUI.ps1')};'Uninstall'{Uninstall-AntiDPI}}
 }
 catch [OperationCanceledException]{Write-Host 'Операция отменена пользователем.' -ForegroundColor Yellow;$script:AntiDPIWasCancelled=$true}
-catch{if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$_.Exception.Message) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1}
+catch{
+    $errorText=$_.Exception.Message
+    if($Action -eq 'Update' -and $InstallPath){
+        try{
+            $updateRoot=[IO.Path]::GetFullPath(([string]$InstallPath).Trim().Trim('"'))
+            $markerPath=Join-Path $updateRoot '.antidpi-install.json'
+            if($updateRoot -ne [IO.Path]::GetPathRoot($updateRoot) -and (Test-Path -LiteralPath $markerPath -PathType Leaf)){
+                $logManifest=Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8|ConvertFrom-Json
+                if($logManifest.Schema -ceq 'antidpi.zapret.install.v1' -and [IO.Path]::GetFullPath([string]$logManifest.InstallRoot) -ieq $updateRoot){
+                    Write-AntiDPIUpdateLog $updateRoot ('FATAL '+$_.Exception.ToString())
+                    $errorText+=[Environment]::NewLine+[Environment]::NewLine+'Подробный журнал обновления: '+(Join-Path $updateRoot 'AntiDPI\_state\update.log')
+                }
+            }
+        }catch{}
+    }
+    if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($errorText,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$errorText) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1
+}
 finally{Complete-AntiDPISessionLog}
 if($script:AntiDPIWasCancelled -and $Action -in @('Install','Update')){exit 2}
 if($script:AntiDPIUpdatePreviewRequired){exit 3}

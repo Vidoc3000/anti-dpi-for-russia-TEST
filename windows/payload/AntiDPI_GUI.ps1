@@ -1605,13 +1605,26 @@ try{
     $timer=New-Object System.Windows.Forms.Timer
     $timer.Interval=650
     $trayMenu=New-Object System.Windows.Forms.ContextMenuStrip
-    $trayOpen=$trayMenu.Items.Add('Открыть AntiDPI');$trayOpen.Add_Click({$form.Show();$form.WindowState='Normal';$form.Activate()})
-    $trayRunRecent=$trayMenu.Items.Add('Запустить последний профиль');$trayRunRecent.Add_Click({try{$recent=$script:guiSettings.RecentProfileConfig;if($null -eq $recent -and @($script:guiSettings.RecentProfiles).Count){$recent=[pscustomobject]@{Name='Последний использованный';ProfileNumber=[int]$script:guiSettings.RecentProfiles[0];AddressFamily=[string]$addressFamilyBox.SelectedItem.Value;Protocol=[string]$protocolBox.SelectedItem.Value;Ports=[string]$portsBox.Text;AdapterGuid='';AdapterName=''}};if($null -eq $recent){throw 'Нет ранее использованного профиля.'};$null=Set-GuiConnectionControls $recent;$form.Show();$form.WindowState='Normal';Start-GuiStrategy}catch{Show-GuiError $_.Exception.Message}})
+    $trayOpen=$trayMenu.Items.Add('Открыть AntiDPI');$trayOpen.Add_Click({if(-not $form.Visible){$form.Show()};$form.ShowInTaskbar=$true;$form.WindowState=[System.Windows.Forms.FormWindowState]::Normal;$form.Activate();Write-GuiLog 'Main form restored from tray'})
+    $trayRunRecent=$trayMenu.Items.Add('Запустить последний профиль');$trayRunRecent.Add_Click({try{$recent=$script:guiSettings.RecentProfileConfig;if($null -eq $recent -and @($script:guiSettings.RecentProfiles).Count){$recent=[pscustomobject]@{Name='Последний использованный';ProfileNumber=[int]$script:guiSettings.RecentProfiles[0];AddressFamily=[string]$addressFamilyBox.SelectedItem.Value;Protocol=[string]$protocolBox.SelectedItem.Value;Ports=[string]$portsBox.Text;AdapterGuid='';AdapterName=''}};if($null -eq $recent){throw 'Нет ранее использованного профиля.'};$null=Set-GuiConnectionControls $recent;$form.Show();$form.ShowInTaskbar=$true;$form.WindowState=[System.Windows.Forms.FormWindowState]::Normal;Start-GuiStrategy}catch{Show-GuiError $_.Exception.Message}})
     $trayStop=$trayMenu.Items.Add('Безопасно остановить');$trayStop.Add_Click({Request-GuiStop})
     $trayMenu.Items.Add('-')|Out-Null;$trayExit=$trayMenu.Items.Add('Закрыть');$trayExit.Add_Click({$form.Close()})
     $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=if($null -ne $script:appIcon){$script:appIcon}else{[System.Drawing.SystemIcons]::Application};$script:trayIcon.Text='AntiDPI — готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
-    $script:trayIcon.Add_DoubleClick({$form.Show();$form.WindowState='Normal';$form.Activate()})
-    $form.Add_Resize({if($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -and $script:guiSettings.MinimizeToTray){$form.Hide();$script:trayIcon.ShowBalloonTip(1200,'AntiDPI','Окно скрыто в системный трей. Перехват продолжает работать до безопасной остановки.','Info')}})
+    $script:trayIcon.Add_DoubleClick({if(-not $form.Visible){$form.Show()};$form.ShowInTaskbar=$true;$form.WindowState=[System.Windows.Forms.FormWindowState]::Normal;$form.Activate();Write-GuiLog 'Main form restored by tray double-click'})
+    $form.Add_Resize({
+        if($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -and $script:guiSettings.MinimizeToTray){
+            # Defer visibility changes until after WinForms finishes the minimize event.
+            # Hiding is not closing: the modal message loop and worker monitor remain alive.
+            $null=$form.BeginInvoke([Action]{
+                if($form.IsDisposed -or $form.WindowState -ne [System.Windows.Forms.FormWindowState]::Minimized -or -not $script:guiSettings.MinimizeToTray){return}
+                $script:trayIcon.Visible=$true
+                $form.ShowInTaskbar=$false
+                $form.Hide()
+                Write-GuiLog 'Main form minimized to tray; GUI message loop remains active'
+                $script:trayIcon.ShowBalloonTip(1200,'AntiDPI','Окно скрыто в системный трей. Откройте AntiDPI через значок; работа приложения продолжается.','Info')
+            })
+        }
+    })
     $script:networkSignature=Get-GuiSelectedNetworkSignature
     $networkTimer=New-Object System.Windows.Forms.Timer;$networkTimer.Interval=4000;$networkTimer.Add_Tick({
         $strategyActive=$null -ne $script:worker -and -not $script:worker.HasExited
