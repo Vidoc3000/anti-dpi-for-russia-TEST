@@ -21,10 +21,10 @@ on:
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.17'
+        default: '1.18'
         type: string
       publish_release:
-        description: 'Publish a GitHub release (requires platform=all and ref=main)'
+        description: 'Publish a combined release (platform=all) or standalone Windows release (platform=windows), from main only'
         required: true
         default: false
         type: boolean
@@ -144,7 +144,10 @@ jobs:
 
   release:
     name: Publish GitHub release
-    if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'
+    if: >-
+      always() && !cancelled() && inputs.publish_release &&
+      github.ref == 'refs/heads/main' && needs.windows.result == 'success' &&
+      (inputs.platform == 'windows' || (inputs.platform == 'all' && needs.linux.result == 'success'))
     needs: [windows, linux]
     runs-on: ubuntu-24.04
     permissions:
@@ -163,13 +166,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --dir release-artifacts
 
-      - name: Attest release packages
+      - name: Attest combined release packages
+        if: inputs.platform == 'all'
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: |
             release-artifacts/**/*.zip
             release-artifacts/**/*.exe
             release-artifacts/**/*.tar.gz
+
+      - name: Attest standalone Windows packages
+        if: inputs.platform == 'windows'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.exe
 
       - name: Verify release package attestations
         env:
@@ -179,8 +191,10 @@ jobs:
           set -euo pipefail
           mapfile -d '' packages < <(find release-artifacts -type f \
             \( -name '*.zip' -o -name '*.exe' -o -name '*.tar.gz' \) -print0 | sort -z)
-          if [[ ${#packages[@]} -ne 3 ]]; then
-            printf 'Expected three attested release packages; found %s.\n' "${#packages[@]}" >&2
+          expected_packages=3
+          if [[ '${{ inputs.platform }}' == 'windows' ]]; then expected_packages=2; fi
+          if [[ ${#packages[@]} -ne $expected_packages ]]; then
+            printf 'Expected %s attested release packages; found %s.\n' "$expected_packages" "${#packages[@]}" >&2
             exit 1
           fi
           for package in "${packages[@]}"; do
@@ -201,12 +215,35 @@ jobs:
           set -euo pipefail
           mapfile -t assets < <(find release-artifacts -type f \
             \( -name '*.zip' -o -name '*.exe' -o -name '*.tar.gz' -o -name 'SHA256SUMS_*.txt' \) | sort)
-          if [[ ${#assets[@]} -ne 5 ]]; then
-            printf 'Expected five verified release assets; found %s.\n' "${#assets[@]}" >&2
+          expected_assets=5
+          if [[ '${{ inputs.platform }}' == 'windows' ]]; then expected_assets=3; fi
+          if [[ ${#assets[@]} -ne $expected_assets ]]; then
+            printf 'Expected %s verified release assets; found %s.\n' "$expected_assets" "${#assets[@]}" >&2
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           fi
-          cat > release-notes.md <<EOF
+          if [[ '${{ inputs.platform }}' == 'windows' ]]; then
+            RELEASE_TAG="windows-v${{ inputs.windows_version }}"
+            RELEASE_TITLE="AntiDPI GUI + CLI — Windows v${{ inputs.windows_version }}"
+            cat > release-notes.md <<EOF
+          AntiDPI standalone Windows release v${{ inputs.windows_version }}.
+
+          - Windows 10/11 x64 GUI + CLI ZIP and EXE, with SHA-256 sums and GitHub build provenance attestations.
+          - Comparative strategy analysis runs five trials in a shuffled order with controls before and after the series. Results include median and range of successful response times, success-rate percentage, a 95% Wilson interval, and the percentage-point change against the control.
+          - Five trials are still a limited sample. Results are indicative, do not prove DPI bypass, and never select or apply a strategy automatically.
+          - This is a Windows-only release. It is intentionally not marked Latest so the combined v${{ inputs.linux_version }} release remains the latest target for the Linux updater.
+
+          Copyright, license notices, and the original author's attribution remain included.
+          EOF
+            gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$GITHUB_SHA" \
+              -f name="$RELEASE_TITLE" \
+              -f body="$(cat release-notes.md)" \
+              -f make_latest=false >/dev/null
+            gh release upload "$RELEASE_TAG" "${assets[@]}"
+          else
+            cat > release-notes.md <<EOF
           AntiDPI combined release v${{ inputs.linux_version }}.
 
           - Linux CLI package: v${{ inputs.linux_version }} (Ubuntu/Debian x64), with the current strategy catalogue.
@@ -221,7 +258,8 @@ jobs:
 
           Copyright, license notices, and the original author's attribution remain included.
           EOF
-          gh release create "$RELEASE_TAG" "${assets[@]}" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TITLE" \
-            --notes-file release-notes.md
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-notes.md
+          fi

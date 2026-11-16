@@ -65,8 +65,8 @@ $installerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_In
 $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setup.cs'))
 $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
 $buildWorkflowText = [IO.File]::ReadAllText((Join-Path $repoRoot '.github\workflows\build.yml'))
-Assert-True ($buildWorkflowText.Contains("if: inputs.publish_release && inputs.platform == 'all' && github.ref == 'refs/heads/main'")) 'stable release publishing is gated to the main branch'
-Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.17'") -and $managerText.Contains("Version='GUI_CLI_1.17'") -and $buildWorkflowText.Contains("default: '1.17'")) 'Windows release package version matches the manager manifest and workflow default'
+Assert-True ($buildWorkflowText.Contains("github.ref == 'refs/heads/main'") -and $buildWorkflowText.Contains("inputs.platform == 'windows'") -and $buildWorkflowText.Contains("needs.windows.result == 'success'") -and $buildWorkflowText.Contains('make_latest=false') -and $buildWorkflowText.Contains('windows-v')) 'release publishing is main-only and standalone Windows packages are attested without replacing Latest'
+Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.18'") -and $managerText.Contains("Version='GUI_CLI_1.18'") -and $buildWorkflowText.Contains("default: '1.18'")) 'Windows release package version matches the manager manifest and workflow default'
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest')) 'install rollback removes the owned firewall rule'

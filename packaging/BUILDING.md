@@ -18,7 +18,7 @@
 
 ## Версии платформ
 
-Текущие версии пакетов для следующего комбинированного выпуска: **Linux 1.18**, **Windows 1.17**. Версии платформ ведутся независимо. Windows v1.17 показывает список заменяемых файлов и запрашивает подтверждение в мастере обновления, а кнопка остановки работает без консольной подсказки Ctrl+C. Linux v1.18 переупаковывает текущий CLI и каталог стратегий без изменений CLI-кода.
+Текущая публикация: последний общий релиз **v1.19** содержит Linux **1.19** и Windows **1.17**; отдельный Windows-релиз **windows-v1.18** содержит обновлённый анализ стратегий. Версии платформ ведутся независимо. Windows v1.18 выполняет пять сравнительных проб в перемешанном порядке, повторяет контроль до и после серии и экспортирует медиану/разброс времени, долю успехов и ориентировочный интервал Уилсона. Отдельный Windows-релиз не помечается Latest, чтобы не менять целевой релиз Linux-обновлятора.
 
 ## Windows ZIP и EXE
 
@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\windows\buil
 
 Результаты:
 
-- `dist/AntiDPI_CLI_v1.17_Windows_x64.zip`
-- `dist/AntiDPI_CLI_v1.17_Windows_x64.exe`
-- `dist/SHA256SUMS_Windows_v1.17.txt`
+- `dist/AntiDPI_CLI_v1.18_Windows_x64.zip`
+- `dist/AntiDPI_CLI_v1.18_Windows_x64.exe`
+- `dist/SHA256SUMS_Windows_v1.18.txt`
 
 ZIP содержит одну корневую папку программы. EXE содержит точную копию этого ZIP; сборщик проверяет совпадение SHA-256. Каталог `packaging/` внутрь EXE не добавляется.
 
@@ -139,9 +139,9 @@ bash packaging/linux/build.sh --repo-root "$HOME/Projects/anti-dpi-for-russia" -
 Windows:
 
 ```powershell
-Get-FileHash .\dist\AntiDPI_CLI_v1.17_Windows_x64.zip -Algorithm SHA256
-Get-FileHash .\dist\AntiDPI_CLI_v1.17_Windows_x64.exe -Algorithm SHA256
-Get-Content .\dist\SHA256SUMS_Windows_v1.17.txt
+Get-FileHash .\dist\AntiDPI_CLI_v1.18_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\dist\AntiDPI_CLI_v1.18_Windows_x64.exe -Algorithm SHA256
+Get-Content .\dist\SHA256SUMS_Windows_v1.18.txt
 ```
 
 Linux:
