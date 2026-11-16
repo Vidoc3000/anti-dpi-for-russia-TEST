@@ -173,12 +173,52 @@ class TerminalTests(unittest.TestCase):
             terminal.launch('run', ['--strategy', '25'])
             return current.call_count, graphical_process.call_count
 
+    def test_session_cleanup_always_releases_lock_and_preserves_primary_error(self):
+        session=antidpi.Session.__new__(antidpi.Session)
+        session.processes={};lock=Mock();session.lock=lock
+        with patch.object(session,'recover',side_effect=OSError('cleanup fixture')):
+            with redirect_stderr(StringIO()):
+                self.assertFalse(session.__exit__(ValueError,ValueError('primary failure'),None))
+        lock.close.assert_called_once()
+        self.assertIsNone(session.lock)
+
+        lock=Mock();session.lock=lock
+        with patch.object(session,'recover',side_effect=OSError('cleanup fixture')):
+            with self.assertRaisesRegex(OSError,'cleanup fixture'):
+                session.__exit__(None,None,None)
+        lock.close.assert_called_once()
+        self.assertIsNone(session.lock)
+
+        lock=Mock();lock.close.side_effect=OSError('lock close fixture');session.lock=lock
+        with patch.object(session,'recover'):
+            with redirect_stderr(StringIO()):
+                self.assertFalse(session.__exit__(ValueError,ValueError('primary failure'),None))
+        lock.close.assert_called_once()
+        self.assertIsNone(session.lock)
+
+        lock=Mock();lock.close.side_effect=OSError('lock close fixture');session.lock=lock
+        with patch.object(session,'recover'):
+            with self.assertRaisesRegex(OSError,'lock close fixture'):
+                session.__exit__(None,None,None)
+        self.assertIsNone(session.lock)
+
     def test_kde_without_gnome_uses_existing_terminal(self):
         self.assertEqual(self.launch(True, (None, None)), (1, 0))
 
     def test_ssh_and_headless_do_not_open_windows(self):
         self.assertEqual(self.launch(False, ('gnome', 'server')), (1, 0))
         self.assertIsNone(desktop.graphical_user({'SSH_CONNECTION': 'fixture'}))
+
+    def test_read_only_commands_run_directly_without_opening_a_terminal(self):
+        for arguments in (['update','--check'],['profile','list','--json']):
+            with self.subTest(arguments=arguments), \
+                 patch.object(terminal.os,'execv',side_effect=SystemExit(0)) as execute, \
+                 patch.object(terminal,'find_terminal') as find_terminal:
+                with self.assertRaises(SystemExit):
+                    terminal.launch('run',arguments)
+                execute.assert_called_once()
+                self.assertEqual(execute.call_args.args[1][-len(arguments):],arguments)
+                find_terminal.assert_not_called()
 
     def test_diagnostics_command_runs_unprivileged_to_keep_archive_user_readable(self):
         with patch.object(terminal.os,'execv',side_effect=SystemExit(0)) as execute, \
@@ -514,6 +554,29 @@ class UpdaterTests(unittest.TestCase):
             self.assertEqual(command[-1],'--yes')
             self.assertTrue(command[1].endswith('/app/install.py'))
 
+    def test_update_check_verifies_package_without_installing_or_requiring_root(self):
+        version='1.19';root_name='AntiDPI_CLI_v1.19_Linux_x64'
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary=Path(temporary);root=temporary/'installed';(root/'data').mkdir(parents=True)
+            (root/'data/release.json').write_text('{"version":"1.18"}')
+            archive=temporary/'release.tar.gz'
+            self.make_release_archive(archive,[(root_name+'/INSTALL.sh','#!/bin/sh\n','file'),
+                (root_name+'/app/install.py','pass\n','file'),
+                (root_name+'/data/release.json','{"version":"1.19"}\n','file')])
+            package=archive.read_bytes();filename='AntiDPI_CLI_v1.19_Linux_x64.tar.gz'
+            metadata=json.dumps(self.release(version,len(package))).encode()
+            checksum=(__import__('hashlib').sha256(package).hexdigest()+'  '+filename+'\n').encode()
+            attestation=json.dumps({'attestations':[{'bundle':{'mediaType':'fixture.bundle'}}]}).encode()
+            with patch.object(updater.os,'geteuid',return_value=1000), \
+                 patch.object(updater,'read_url',side_effect=[metadata,checksum,package,attestation]), \
+                 patch.object(updater,'_trusted_gh',return_value='/usr/bin/gh'), \
+                 patch.object(updater.subprocess,'run',return_value=Mock(returncode=0)) as run, \
+                 redirect_stdout(StringIO()) as output:
+                self.assertEqual(updater.update(root,check=True),0)
+            self.assertEqual(run.call_count,1)
+            self.assertIn('Система не изменена',output.getvalue())
+            self.assertEqual(list(root.iterdir()),[root/'data'])
+
     def test_rollback_uses_flat_installed_installer(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);installer=root/'install.py';installer.write_text('')
@@ -664,6 +727,49 @@ class ResourceTests(unittest.TestCase):
         for name in app_paths.FILE_LAYOUT:
             self.assertTrue(app_paths.resource_path(REPO/'linux/app', name).is_file(), name)
 
+    def test_doctor_reports_read_only_health_as_structured_json_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'data').mkdir();(root/'engine').mkdir()
+            (root/'data/release.json').write_text('{"version":"1.18"}')
+            (root/'installation.json').write_text(json.dumps({'id':'a'*32,'prefix':str(root)}))
+            engine=root/'engine/nfqws2';engine.write_text('fixture');engine.chmod(0o755)
+            with patch.object(antidpi,'load_catalogue',return_value={'CatalogueInfo':{'ProfileCount':492}}), \
+                 patch.object(antidpi.shutil,'which',side_effect=lambda command:'/usr/bin/'+command), \
+                 patch.object(antidpi,'run',return_value=Mock(returncode=0,stdout='[{"dst":"default"}]')), \
+                 patch.object(antidpi.subprocess,'run',return_value=Mock(returncode=0)), \
+                 patch.object(antidpi.os,'geteuid',return_value=0):
+                report=antidpi.doctor_report(root)
+            self.assertEqual(report['schema'],'antidpi.doctor.v1')
+            self.assertEqual(report['version'],'1.18')
+            self.assertNotEqual(report['status'],'error')
+            self.assertIn('route_ipv4',{item['id'] for item in report['checks']})
+            json.dumps(report)
+
+    def test_network_profiles_round_trip_and_history_is_newest_first(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);state=root/'_state';state.mkdir();profiles_path=state/'profiles.json'
+            args=type('Args',(),{'profile_operation':'save','profile_name':'home-wifi',
+                'family':'ipv4','protocol':'tcp-tls','interface':'wlan0','scope':'443',
+                'strategy':25,'quic_profile':None,'json':False})()
+            with patch.object(antidpi,'_profiles_path',return_value=profiles_path), \
+                 patch.object(antidpi.os,'geteuid',return_value=0), \
+                 patch.object(antidpi,'interfaces',return_value=[{'name':'wlan0'}]), \
+                 redirect_stdout(StringIO()):
+                self.assertTrue(antidpi.handle_profile_command(args,Mock()))
+            profiles=antidpi._read_profiles(profiles_path)
+            self.assertEqual(profiles['home-wifi']['scope'],'443')
+            self.assertEqual(profiles['home-wifi']['strategy'],25)
+
+            older=root/'logs/20261109_120000';newer=root/'logs/20261110_120000'
+            older.mkdir(parents=True);newer.mkdir(parents=True)
+            for folder,target in ((older,'vpn.example:443'),(newer,'example.org:8443')):
+                (folder/'summary.json').write_text(json.dumps({'requested':5,'completed':4,'found':[25], 'ranking':[25]}))
+                (folder/'scan.json').write_text(json.dumps({'target_id':target}))
+            os.utime(older/'summary.json',ns=(100,100));os.utime(newer/'summary.json',ns=(200,200))
+            report=antidpi.history_report(root,limit=1)
+            self.assertEqual(report['runs'][0]['target_id'],'example.org:8443')
+            self.assertEqual(report['omitted'],1)
+
     def test_android_workflow_uses_node24_pinned_actions(self):
         workflow=(REPO/'.github/workflows/android-preview.yml').read_text()
         self.assertIn('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',workflow)
@@ -696,6 +802,7 @@ class ResourceTests(unittest.TestCase):
                   (REPO/'linux/app/install.py',['update','--help']),
                   (REPO/'linux/app/install.py',['rollback','--help'])]
         commands.append((REPO/'linux/START.sh',['diagnostics','--help']))
+        commands.append((REPO/'linux/START.sh',['doctor','--help']))
         for script,arguments in commands:
             command=['bash',str(script),*arguments] if script.suffix=='.sh' else [sys.executable,str(script),*arguments]
             result = subprocess.run(command,env=env,capture_output=True,text=True,timeout=20)
@@ -707,6 +814,8 @@ class ResourceTests(unittest.TestCase):
                 self.assertTrue('update' in result.stdout or 'Обновление' in result.stdout)
             if arguments == ['diagnostics','--help']:
                 self.assertIn('--output',result.stdout)
+            if arguments == ['doctor','--help']:
+                self.assertIn('--json',result.stdout)
 
     def test_traceback_is_visible_and_private_log_is_created(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:

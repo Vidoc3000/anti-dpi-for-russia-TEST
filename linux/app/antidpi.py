@@ -21,6 +21,7 @@ import shutil
 import signal
 import socket
 import statistics
+import stat
 import subprocess
 import sys
 import termios
@@ -416,22 +417,37 @@ class Session:
 
     def close(self):
         failure = None
-        for queue in list(self.processes):
-            try:
-                self.stop(queue)
-            except Exception as error:
-                failure = error
-        # Retain the journal if table removal failed: bypass prevents a dead listener
-        # blocking traffic; the next start/recover can remove the table explicitly.
-        if not failure:
-            self.recover()
-        if self.lock:
-            self.lock.close(); self.lock = None
-        if failure:
-            print('Не завершена очистка; запустите START.sh recover. ' + str(failure), file=sys.stderr)
+        try:
+            for queue in list(self.processes):
+                try:
+                    self.stop(queue)
+                except Exception as error:
+                    failure = error
+            # Retain the journal if table removal failed: bypass prevents a dead listener
+            # blocking traffic; the next start/recover can remove the table explicitly.
+            if not failure:
+                try:
+                    self.recover()
+                except Exception as error:
+                    failure = error
+        finally:
+            if self.lock:
+                try:
+                    self.lock.close()
+                except Exception as error:
+                    if failure is None:
+                        failure = error
+                finally:
+                    self.lock = None
+        return failure
 
-    def __exit__(self, *_):
-        self.close()
+    def __exit__(self, exc_type, exc, traceback_value):
+        cleanup_error = self.close()
+        if cleanup_error:
+            if exc is None:
+                raise cleanup_error
+            print('Не завершена очистка; запустите START.sh recover. ' + str(cleanup_error), file=sys.stderr)
+        return False
 
 
 def interfaces(address_family='ipv4'):
@@ -536,6 +552,203 @@ def colored(text, code='93'):
 
 def show_table(data):
     cli_ui.catalogue(data)
+
+
+def doctor_report(root=ROOT):
+    """Read-only environment report; does not alter interfaces, modules or sysctls."""
+    from diagnostics import application_root
+    root=application_root(root)
+    checks=[]
+    def add(key,status,message,hint=None):
+        item={'id':key,'status':status,'message':message}
+        if hint:item['hint']=hint
+        checks.append(item)
+
+    try:
+        metadata=json.loads((root/'data/release.json').read_text(encoding='utf-8'))
+        version=str(metadata.get('version','unknown'))
+        add('package_version','ok','Linux package v'+version)
+    except (OSError,ValueError,TypeError):
+        version='unknown';add('package_version','error','Не удалось прочитать версию пакета.')
+    try:
+        manifest=json.loads((root/'installation.json').read_text(encoding='utf-8'))
+        valid=(re.fullmatch(r'[0-9a-f]{32}',str(manifest.get('id',''))) and
+               Path(manifest.get('prefix',''))==root and not manifest.get('standard_uninstalled'))
+        add('installation_marker','ok' if valid else 'error',
+            'Маркер установки проверен.' if valid else 'Маркер установки отсутствует или некорректен.',
+            None if valid else 'Запустите INSTALL.sh или укажите корень существующей установки.')
+    except (OSError,ValueError,TypeError):
+        add('installation_marker','error','Не удалось прочитать маркер установки.',
+            'Запустите INSTALL.sh или укажите корень существующей установки.')
+    try:
+        load_catalogue()
+        add('strategy_catalogue','ok','Каталог стратегий прочитан и проверен.')
+    except Exception:
+        add('strategy_catalogue','error','Каталог стратегий повреждён или недоступен.',
+            'Переустановите пакет официальным установщиком или updater.')
+    engine=root/'engine/nfqws2'
+    add('engine_binary','ok' if engine.is_file() and os.access(engine,os.X_OK) else 'error',
+        'Исполняемый nfqws2 найден.' if engine.is_file() and os.access(engine,os.X_OK) else 'Исполняемый nfqws2 не найден.',
+        None if engine.is_file() and os.access(engine,os.X_OK) else 'Повторите установку Zapret2 через INSTALL.sh.')
+
+    for command in ('ip','nft'):
+        path=shutil.which(command)
+        add('command_'+command,'ok' if path else 'error',
+            f'Команда {command} найдена.' if path else f'Не найдена команда {command}.',
+            None if path else 'Установите системный пакет iproute2/nftables.')
+    for command in ('curl','modprobe'):
+        path=shutil.which(command)
+        add('command_'+command,'ok' if path else 'warning',
+            f'Команда {command} найдена.' if path else f'Не найдена команда {command}.',
+            None if path else 'Она нужна соответственно для загрузок или автоматической загрузки модулей ядра.')
+    gh=shutil.which('gh')
+    if not gh:
+        add('github_cli','warning','GitHub CLI gh не найден; автоматическое обновление недоступно.',
+            'Установите актуальный официальный GitHub CLI для antidpi update.')
+    else:
+        try:
+            result=subprocess.run([gh,'attestation','verify','--help'],capture_output=True,text=True,timeout=8)
+            supported=result.returncode==0
+        except (OSError,subprocess.TimeoutExpired):
+            supported=False
+        add('github_cli','ok' if supported else 'warning',
+            'GitHub CLI поддерживает проверку attestations.' if supported else 'GitHub CLI устарел или не поддерживает attestation verify.',
+            None if supported else 'Обновите gh до версии с командой `gh attestation verify`.')
+    if os.geteuid()==0:
+        add('privileges','ok','Запущено от root.')
+    else:
+        add('privileges','warning','Сейчас запущено без root; диагностика read-only.',
+            'Для применения сетевых стратегий используйте sudo antidpi start.')
+
+    for family,flag in (('ipv4','-4'),('ipv6','-6')):
+        if not shutil.which('ip'):
+            add('route_'+family,'error','Нельзя проверить маршрут: отсутствует команда ip.')
+            continue
+        try:
+            result=run(['ip',flag,'-j','route','show','default'])
+            routes=json.loads(result.stdout) if result.returncode==0 else None
+        except (OSError,ValueError,subprocess.TimeoutExpired):
+            routes=None
+        if routes:
+            add('route_'+family,'ok',f'Маршрут по умолчанию для {family.upper()} найден.')
+        else:
+            add('route_'+family,'warning',f'Маршрут по умолчанию для {family.upper()} не обнаружен.',
+                'Проверьте подключение; для IPv6 маршрут может не использоваться в этой сети.')
+    acct=Path('/proc/sys/net/netfilter/nf_conntrack_acct')
+    add('nf_conntrack_acct','ok' if acct.is_file() else 'warning',
+        'Параметр nf_conntrack_acct доступен.' if acct.is_file() else 'Параметр nf_conntrack_acct пока не виден ядру.',
+        None if acct.is_file() else 'Модуль nf_conntrack может загрузиться при первом запуске стратегии.')
+    statuses={item['status'] for item in checks}
+    overall='error' if 'error' in statuses else 'warning' if 'warning' in statuses else 'ok'
+    return {'schema':'antidpi.doctor.v1','version':version,'status':overall,'checks':checks}
+
+
+PROFILE_SCHEMA='antidpi.profiles.v1'
+PROFILE_NAME=re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,31}')
+
+def _profiles_path(root=ROOT):
+    root=Path(root).resolve()
+    if root.name=='app' and (root.parent/'INSTALL.sh').is_file():root=root.parent
+    state=root/'_state'
+    if state.is_symlink() or (state.exists() and not state.is_dir()):
+        raise RuntimeError('Каталог состояния установки небезопасен.')
+    return state/'profiles.json'
+
+def _read_profiles(path):
+    path=Path(path)
+    if path.is_symlink():raise RuntimeError('Файл профилей не может быть символической ссылкой.')
+    if not path.exists():return {}
+    if path.stat().st_size>64*1024:raise RuntimeError('Файл профилей превышает допустимый размер.')
+    try:data=json.loads(path.read_text(encoding='utf-8'))
+    except (OSError,ValueError) as error:raise RuntimeError('Не удалось прочитать файл профилей.') from error
+    profiles=data.get('profiles') if isinstance(data,dict) and data.get('schema')==PROFILE_SCHEMA else None
+    if not isinstance(profiles,dict) or len(profiles)>50:raise RuntimeError('Повреждён файл профилей сети.')
+    for name,profile in profiles.items():
+        if not PROFILE_NAME.fullmatch(name) or not isinstance(profile,dict):
+            raise RuntimeError('Повреждён файл профилей сети.')
+        if (profile.get('family') not in ('ipv4','ipv6') or profile.get('protocol') not in ('tcp-tls','udp-quic') or
+                not isinstance(profile.get('interface'),str) or not isinstance(profile.get('scope'),str)):
+            raise RuntimeError('Повреждён файл профилей сети.')
+        parse_ports(profile['scope'])
+    return profiles
+
+def handle_profile_command(args,parser):
+    operation=args.profile_operation
+    name=args.profile_name
+    path=_profiles_path()
+    if operation is None:parser.error('Используйте profile list|save|delete|run.')
+    if operation=='list':
+        if name:parser.error('Укажите только `profile list`.')
+        profiles=_read_profiles(path)
+        if args.json:print(json.dumps({'schema':PROFILE_SCHEMA,'profiles':profiles},ensure_ascii=False,indent=2))
+        elif not profiles:print('Сохранённых сетевых профилей пока нет.')
+        else:
+            for key,profile in sorted(profiles.items()):
+                mode='QUIC' if profile['protocol']=='udp-quic' else 'TLS'
+                selected=profile.get('quic_profile') or profile.get('strategy') or 'меню выбора'
+                print(f"{key}: {profile['family']} {mode}, {profile['interface']}, порты {profile['scope']}, профиль {selected}")
+        return True
+    if not name or not PROFILE_NAME.fullmatch(name):parser.error('Имя профиля: 1–32 латинских букв, цифр, `_` или `-`; первый символ — буква/цифра.')
+    profiles=_read_profiles(path)
+    if operation=='delete':
+        if any((args.family,args.protocol,args.interface,args.scope,args.strategy,args.quic_profile)):
+            parser.error('Параметры сети нельзя указывать для profile delete.')
+        if name not in profiles:parser.error('Сохранённый профиль не найден: '+name)
+        del profiles[name];atomic_json(path,{'schema':PROFILE_SCHEMA,'profiles':profiles})
+        print('Профиль удалён: '+name);return True
+    if operation=='save':
+        if os.geteuid()!=0:raise RuntimeError('Изменение профилей установки выполняйте через sudo.')
+        if not all((args.family,args.protocol,args.interface,args.scope is not None)):
+            parser.error('Для profile save нужны --family, --protocol, --interface и --scope.')
+        if args.protocol=='udp-quic' and args.strategy is not None:parser.error('--strategy не подходит для UDP/QUIC профиля.')
+        if args.protocol=='tcp-tls' and args.quic_profile is not None:parser.error('--quic-profile не подходит для TCP/TLS профиля.')
+        if args.strategy is not None:
+            rows={row['Number'] for row in load_catalogue()['ProfileRows']}
+            if args.strategy not in rows:parser.error(f'Допустимые TLS-стратегии: 1–{max(rows)}.')
+        if args.quic_profile is not None and args.quic_profile not in QUIC_PROFILES:
+            parser.error('Допустимые QUIC-профили: '+', '.join(QUIC_PROFILES))
+        if not any(item['name']==args.interface for item in interfaces(args.family)):
+            parser.error('Интерфейс сейчас не найден для выбранного IP-семейства.')
+        profile={'family':args.family,'protocol':args.protocol,'interface':args.interface,'scope':parse_ports(args.scope)}
+        if args.strategy is not None:profile['strategy']=args.strategy
+        if args.quic_profile is not None:profile['quic_profile']=args.quic_profile
+        profiles[name]=profile
+        if len(profiles)>50:parser.error('Можно хранить не более 50 профилей.')
+        atomic_json(path,{'schema':PROFILE_SCHEMA,'profiles':profiles})
+        print('Профиль сохранён: '+name);return True
+    if operation=='run':
+        if any((args.family,args.protocol,args.interface,args.scope,args.strategy,args.quic_profile)):
+            parser.error('При `profile run` не указывайте сетевые параметры повторно.')
+        if name not in profiles:parser.error('Сохранённый профиль не найден: '+name)
+        profile=profiles[name]
+        args.action='start';args.family=profile['family'];args.protocol=profile['protocol']
+        args.interface=profile['interface'];args.scope=profile['scope']
+        args.strategy=profile.get('strategy');args.quic_profile=profile.get('quic_profile')
+        print('Запускаю сетевой профиль: '+name)
+        return False
+    parser.error('Неизвестная операция profile.')
+
+
+def history_report(root=ROOT,limit=20):
+    root=Path(root).resolve()
+    if root.name=='app' and (root.parent/'INSTALL.sh').is_file():root=root.parent
+    logs=root/'logs';found=[]
+    if logs.is_dir() and not logs.is_symlink():
+        for path in logs.rglob('summary.json'):
+            try:
+                info=path.lstat()
+                if not stat.S_ISREG(info.st_mode) or path.is_symlink() or info.st_size>1024*1024:continue
+                summary=json.loads(path.read_text(encoding='utf-8'))
+                scan_path=path.with_name('scan.json')
+                scan=json.loads(scan_path.read_text(encoding='utf-8')) if scan_path.is_file() and not scan_path.is_symlink() else {}
+                found.append((info.st_mtime_ns,{'time':path.parent.name,'mode':'benchmark' if scan.get('target_id') else 'youtube',
+                    'target_id':scan.get('target_id'),'requested':summary.get('requested',0),
+                    'completed':summary.get('completed',0),'interrupted':bool(summary.get('interrupted')),
+                    'found':summary.get('found',[]),'ranking':summary.get('ranking',[])[:5]}))
+            except (OSError,ValueError,TypeError):continue
+    found.sort(key=lambda item:item[0],reverse=True)
+    return {'schema':'antidpi.history.v1','runs':[item for _,item in found[:limit]],
+            'omitted':max(0,len(found)-limit)}
 
 
 def activate(session, row):
@@ -899,10 +1112,15 @@ def choose_benchmark_target(args):
 
 def main():
     parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.9 — Linux Ubuntu/Debian')
-    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback','diagnostics'))
+    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback','diagnostics','doctor','history','profile'))
+    parser.add_argument('profile_operation',nargs='?',choices=('list','save','delete','run'))
+    parser.add_argument('profile_name',nargs='?')
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--yes',action='store_true',help='Подтвердить обновление/откат или создание архива после ознакомления с его составом')
+    parser.add_argument('--check',action='store_true',help='Проверить доступность и целостность обновления без установки; используется с update')
     parser.add_argument('--output',help='Путь к ZIP диагностическому архиву; используется с diagnostics')
+    parser.add_argument('--json',action='store_true',help='Вывести doctor/history в машиночитаемом JSON')
+    parser.add_argument('--limit',type=int,default=20,help='Число последних результатов для history (1–100)')
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
     parser.add_argument('--family', choices=('ipv4','ipv6'), help='IP-семейство для перехвата')
@@ -916,15 +1134,56 @@ def main():
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='Порты выбранного TCP/UDP протокола: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
+    if args.json and args.action not in ('doctor','history','profile'):
+        parser.error('--json используется только с doctor, history или profile list.')
+    if args.json and args.action=='profile' and args.profile_operation!='list':
+        parser.error('--json для profile доступен только с list.')
+    if args.limit!=20 and args.action!='history':
+        parser.error('--limit используется только с history.')
+    if not 1<=args.limit<=100:
+        parser.error('--limit для history должен быть от 1 до 100.')
+    if args.action!='profile' and (args.profile_operation is not None or args.profile_name is not None):
+        parser.error('Дополнительные позиционные аргументы используются только с profile.')
+    if args.check and args.action!='update':
+        parser.error('--check используется только с update.')
+    if args.check and args.yes:
+        parser.error('--check не совмещается с --yes.')
     if args.output and args.action != 'diagnostics':
         parser.error('--output используется только с diagnostics.')
+    if args.action=='profile':
+        finished=handle_profile_command(args,parser)
+        if finished:return
+    if args.action == 'doctor':
+        report=doctor_report()
+        if args.json:
+            print(json.dumps(report,ensure_ascii=False,indent=2))
+        else:
+            print('Проверка окружения AntiDPI (без изменения настроек системы):')
+            for check in report['checks']:
+                mark={'ok':'OK','warning':'WARN','error':'ERROR'}[check['status']]
+                print(f"[{mark}] {check['message']}")
+                if check.get('hint'):print('      '+check['hint'])
+            print('Итог: '+report['status'].upper())
+        if report['status']=='error':
+            raise SystemExit(1)
+        return
+    if args.action=='history':
+        report=history_report(ROOT,args.limit)
+        if args.json:print(json.dumps(report,ensure_ascii=False,indent=2))
+        elif not report['runs']:print('История проверок пока пуста.')
+        else:
+            for item in report['runs']:
+                target=('TLS '+str(item.get('target_id')) if item['mode']=='benchmark' else 'YouTube')
+                print(f"{item['time']}: {target}; завершено {item['completed']}/{item['requested']}; найдено {len(item['found'])}; прервано {'да' if item['interrupted'] else 'нет'}")
+            if report['omitted']:print(f"Не показано старых запусков: {report['omitted']}.")
+        return
     if args.action == 'diagnostics':
         from diagnostics import create_diagnostic_archive
         create_diagnostic_archive(ROOT, args.output, yes=args.yes)
         return
     if args.action in ('update', 'rollback'):
         from updater import rollback, update
-        result = update(ROOT, yes=args.yes) if args.action == 'update' else rollback(ROOT, yes=args.yes)
+        result = update(ROOT, yes=args.yes,check=args.check) if args.action == 'update' else rollback(ROOT, yes=args.yes)
         if result:
             raise SystemExit(result)
         return
