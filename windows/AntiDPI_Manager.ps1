@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
@@ -178,7 +178,7 @@ foreach($name in @('README_Установка_Windows_v1.21.txt','README_Стр�
             [IO.Path]::GetFileName($oldPath) -match '^README_(Установка|Стратегии)_Windows_v[0-9.]+\.txt$' -and
             (Test-Path -LiteralPath $oldPath -PathType Leaf) -and
             (Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq [string]$old.Sha256 -and
-            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.20.txt','README_Стратегии_Windows_v1.20.txt')){
+            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.21.txt','README_Стратегии_Windows_v1.21.txt')){
             Remove-Item -LiteralPath $oldPath -Force
         }
     }
@@ -927,7 +927,7 @@ function Install-AntiDPI {
                     Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $installed
                 }
                 $buildInfoSource=Join-Path $payload 'BuildInfo.json';if(Test-Path -LiteralPath $buildInfoSource -PathType Leaf){Copy-Item -LiteralPath $buildInfoSource -Destination $installed}
-foreach($name in @('README_Установка_Windows_v1.21.txt','README_Стратегии_Windows_v1.21.txt','LICENSE.txt'))){
+foreach($name in @('README_Установка_Windows_v1.21.txt','README_Стратегии_Windows_v1.21.txt','LICENSE.txt')) {
                     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $ready $name)
                 }
                 $engine=Join-Path $ready 'engine';[IO.Directory]::CreateDirectory($engine)|Out-Null

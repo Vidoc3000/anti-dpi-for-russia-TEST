@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
@@ -793,7 +793,7 @@ function Start-GuiBlockcheckExport {
     Export-AntiDPIBlockcheckStrategyLists -Profiles $profilesByNumber -OutputDirectory $exportDir -Domains $domains
     $blockcheckStatusLabel.Text=('Списки стратегий экспортированы: '+$exportDir)
     Add-GuiHistory 'Blockcheck Zapret2' 'ЭКСПОРТ' ('Домены: '+($domains -join ', ')+'; каталог '+$exportDir)
-    [System.Windows.Forms.MessageBox]::Show(('Списки стратегий экспортированы в '+$exportDir+'.'+[Environment]::NewLine+'Используйте их в Blockcheck Zapret2 (blockcheck2.d/custom/).','Экспорт Blockcheck',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
+    [System.Windows.Forms.MessageBox]::Show(('Списки стратегий экспортированы в '+$exportDir+'.'+[Environment]::NewLine+'Используйте их в Blockcheck Zapret2 (blockcheck2.d/custom/).','Экспорт Blockcheck',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information))|Out-Null
 }
 function Stop-GuiBlockcheckScan {
     if($null -ne $script:blockcheckJob -and $script:blockcheckJob.State -eq 'Running'){try{[IO.File]::WriteAllText($script:blockcheckCancelPath,'cancel',[Text.UTF8Encoding]::new($false))}catch{};$blockcheckStatusLabel.Text='Запрошена остановка Blockcheck…';$blockcheckCancelButton.Enabled=$false}
