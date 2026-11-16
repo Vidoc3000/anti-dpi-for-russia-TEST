@@ -1,12 +1,14 @@
 """Offline checks for Linux launch, dependency and container regressions."""
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+import io
 import json
 import os
 from pathlib import Path
 import runpy
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch, Mock
@@ -22,6 +24,8 @@ import antidpi
 import terminal_bootstrap as terminal
 import remove_installation
 import target_probe
+import install as linux_installer
+import updater
 
 
 def state(mapping='0 0 4294967295', groups='allow', caps='ffffffffffffffff'):
@@ -355,9 +359,221 @@ class EndpointProbeTests(unittest.TestCase):
         self.assertTrue(all(rows[number]['Family']==family for number in remaining))
 
 
+class UpdaterTests(unittest.TestCase):
+    def release(self, version='1.19', archive_size=123):
+        archive_name=f'AntiDPI_CLI_v{version}_Linux_x64.tar.gz'
+        sums_name=f'SHA256SUMS_Linux_v{version}.txt'
+        base=f'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v{version}/'
+        return {
+            'draft':False, 'prerelease':False, 'tag_name':'v'+version,
+            'assets':[
+                {'name':archive_name,'size':archive_size,'browser_download_url':base+archive_name},
+                {'name':sums_name,'size':100,'browser_download_url':base+sums_name},
+            ],
+        }
+
+    def test_latest_linux_asset_selection_requires_matching_repo_tag_and_checksum(self):
+        version,name,archive,sums,size=updater.latest_linux_assets(self.release())
+        self.assertEqual((version,name,size),('1.19','AntiDPI_CLI_v1.19_Linux_x64.tar.gz',123))
+        self.assertTrue(archive.endswith('/v1.19/'+name))
+        self.assertTrue(sums.endswith('/v1.19/SHA256SUMS_Linux_v1.19.txt'))
+        invalid=self.release();invalid['assets'][0]['browser_download_url']='https://example.com/file'
+        with self.assertRaisesRegex(RuntimeError,'(?i)ссылки'):
+            updater.latest_linux_assets(invalid)
+        invalid=self.release();invalid['tag_name']='v1.18'
+        with self.assertRaisesRegex(RuntimeError,'Тег'):
+            updater.latest_linux_assets(invalid)
+
+    def test_checksum_requires_one_exact_sha256_record(self):
+        filename='AntiDPI_CLI_v1.19_Linux_x64.tar.gz'
+        value='a'*64
+        self.assertEqual(updater.checksum_for(value+'  '+filename+'\n',filename),value)
+        with self.assertRaisesRegex(RuntimeError,'SHA256SUMS'):
+            updater.checksum_for(value+'  other.tar.gz\n',filename)
+        with self.assertRaisesRegex(RuntimeError,'SHA256SUMS'):
+            updater.checksum_for(value+'  '+filename+'\n'+value+'  '+filename+'\n',filename)
+
+    def test_versions_ignore_trailing_zero_components(self):
+        self.assertEqual(updater.version_key('1.18'),updater.version_key('1.18.0'))
+        self.assertGreater(updater.version_key('1.19'),updater.version_key('1.18.9'))
+        with self.assertRaises(ValueError):updater.version_key('../1.19')
+
+    def test_up_to_date_check_does_not_download_release_assets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'data').mkdir()
+            (root/'data/release.json').write_text('{"version":"1.19"}')
+            release=json.dumps(self.release()).encode()
+            with patch.object(updater.os,'geteuid',return_value=0),patch.object(updater,'read_url',return_value=release) as read:
+                self.assertEqual(updater.update(root),0)
+            read.assert_called_once_with(updater.API_URL,2*1024*1024,'application/vnd.github+json')
+
+    def test_verified_latest_archive_is_extracted_and_new_installer_is_started(self):
+        version='1.19';root_name='AntiDPI_CLI_v1.19_Linux_x64'
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary=Path(temporary);root=temporary/'installed';(root/'data').mkdir(parents=True)
+            (root/'data/release.json').write_text('{"version":"1.18"}')
+            archive=temporary/'release.tar.gz'
+            self.make_release_archive(archive,[(root_name+'/INSTALL.sh','#!/bin/sh\n','file'),
+                (root_name+'/app/install.py','pass\n','file'),
+                (root_name+'/data/release.json','{"version":"1.19"}\n','file')])
+            package=archive.read_bytes();filename='AntiDPI_CLI_v1.19_Linux_x64.tar.gz'
+            metadata=json.dumps(self.release(version,len(package))).encode()
+            checksum=(__import__('hashlib').sha256(package).hexdigest()+'  '+filename+'\n').encode()
+            with patch.object(updater.os,'geteuid',return_value=0), \
+                 patch.object(updater,'read_url',side_effect=[metadata,checksum,package]) as read, \
+                 patch.object(updater.subprocess,'run',return_value=Mock(returncode=0)) as run:
+                self.assertEqual(updater.update(root,yes=True),0)
+            self.assertEqual(read.call_count,3)
+            command=run.call_args.args[0]
+            self.assertEqual(command[2:4],['update','--prefix'])
+            self.assertEqual(command[-1],'--yes')
+            self.assertTrue(command[1].endswith('/app/install.py'))
+
+    def test_rollback_uses_flat_installed_installer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);installer=root/'install.py';installer.write_text('')
+            with patch.object(updater.os,'geteuid',return_value=0),patch.object(updater.subprocess,'run',return_value=Mock(returncode=0)) as run:
+                self.assertEqual(updater.rollback(root),0)
+            self.assertEqual(run.call_args.args[0][1:4],[str(installer),'rollback','--prefix'])
+
+    def make_release_archive(self, path, entries):
+        with tarfile.open(path,'w:gz') as archive:
+            for name,data,kind in entries:
+                info=tarfile.TarInfo(name)
+                if kind=='symlink':
+                    info.type=tarfile.SYMTYPE;info.linkname='/etc/passwd';archive.addfile(info)
+                else:
+                    payload=data.encode('utf-8');info.size=len(payload);archive.addfile(info,io.BytesIO(payload))
+
+    def test_safe_extraction_accepts_expected_package_and_rejects_traversal_and_links(self):
+        root='AntiDPI_CLI_v1.19_Linux_x64'
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary=Path(temporary);archive=temporary/'package.tar.gz'
+            entries=[(root+'/INSTALL.sh','#!/bin/sh\n','file'),
+                     (root+'/app/install.py','pass\n','file'),
+                     (root+'/data/release.json','{"version":"1.19"}\n','file')]
+            self.make_release_archive(archive,entries)
+            extracted=updater.safe_extract(archive,temporary/'ok',root)
+            self.assertEqual(json.loads((extracted/'data/release.json').read_text())['version'],'1.19')
+
+            traversal=temporary/'traversal.tar.gz'
+            self.make_release_archive(traversal,[(root+'/../escape','x','file')])
+            with self.assertRaisesRegex(RuntimeError,'путь'):
+                updater.safe_extract(traversal,temporary/'bad',root)
+
+            linked=temporary/'linked.tar.gz'
+            self.make_release_archive(linked,[(root+'/INSTALL.sh','x','symlink')])
+            with self.assertRaisesRegex(RuntimeError,'(?i)ссылки'):
+                updater.safe_extract(linked,temporary/'linked',root)
+
+    def test_installer_resolves_catalogue_from_shared_package_resource_map(self):
+        catalogue=app_paths.resource_path(linux_installer.SOURCE,'catalogue.json')
+        self.assertEqual(catalogue,REPO/'linux/data/catalogue.json')
+        self.assertEqual(linux_installer.installation_catalogue()['CatalogueInfo']['ProfileCount'],492)
+        command=terminal.program_command('install',['update','--prefix','/opt/antidpi'])
+        self.assertEqual(command[-3:],['update','--prefix','/opt/antidpi'])
+
+    def test_update_directory_swap_restores_previous_install_if_activation_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);current=root/'antidpi';stage=root/'new';backup=root/'.antidpi.rollback-test'
+            current.mkdir();(current/'version').write_text('old')
+            stage.mkdir();(stage/'version').write_text('new')
+            real_replace=os.replace;calls=[]
+            def fail_stage_move(source,destination):
+                calls.append((Path(source),Path(destination)))
+                if len(calls)==2:raise OSError('simulated stage activation failure')
+                return real_replace(source,destination)
+            with patch.object(linux_installer.os,'replace',side_effect=fail_stage_move):
+                with self.assertRaisesRegex(OSError,'simulated'):
+                    linux_installer._activate_update(current,stage,backup)
+            self.assertEqual((current/'version').read_text(),'old')
+            self.assertFalse(backup.exists())
+            self.assertTrue(stage.exists())
+
+    def test_rollback_directory_swap_restores_current_install_if_activation_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);current=root/'antidpi';backup=root/'.antidpi.rollback-test';failed=root/'.antidpi.failed-test'
+            current.mkdir();(current/'version').write_text('new')
+            backup.mkdir();(backup/'version').write_text('old')
+            real_replace=os.replace;calls=[]
+            def fail_backup_move(source,destination):
+                calls.append((Path(source),Path(destination)))
+                if len(calls)==2:raise OSError('simulated rollback activation failure')
+                return real_replace(source,destination)
+            with patch.object(linux_installer.os,'replace',side_effect=fail_backup_move):
+                with self.assertRaisesRegex(OSError,'simulated'):
+                    linux_installer._activate_rollback(current,backup,failed)
+            self.assertEqual((current/'version').read_text(),'new')
+            self.assertTrue(backup.exists())
+            self.assertFalse(failed.exists())
+
+    def test_in_place_update_preserves_settings_logs_and_supports_rollback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix=Path(temporary)/'antidpi';prefix.mkdir()
+            (prefix/'data').mkdir();(prefix/'data/release.json').write_text('{"version":"1.17"}')
+            (prefix/'_state').mkdir();(prefix/'_state/adapter.json').write_text('{"name":"eth0"}')
+            (prefix/'logs').mkdir();(prefix/'logs/previous.log').write_text('old log')
+            (prefix/'INSTALL.sh').write_text('old installer')
+            identity={'schema':'antidpi.zapret2.linux.install.v1','version':'1.9','prefix':str(prefix),
+                'id':'1'*32,'upstream_selection':'compatible','shortcuts':None,'global_command':None,'files':{}}
+            (prefix/'installation.json').write_text(json.dumps(identity))
+
+            class FakeSession:
+                def __init__(self,root):self.root=root
+                def recover(self):return None
+
+            def build_stage(command,**_kwargs):
+                stage=Path(command[command.index('--prefix')+1])
+                stage.mkdir()
+                (stage/'data').mkdir();(stage/'data/release.json').write_text((REPO/'linux/data/release.json').read_text())
+                (stage/'logs').mkdir();(stage/'logs/build.log').write_text('new build log')
+                (stage/'_state').mkdir()
+                (stage/'INSTALL.sh').write_text('new installer')
+                staged_identity={'schema':'antidpi.zapret2.linux.install.v1','version':'1.9',
+                    'prefix':str(stage),'id':'2'*32,'upstream_selection':'compatible','files':{}}
+                (stage/'installation.json').write_text(json.dumps(staged_identity))
+                return Mock(returncode=0)
+
+            lock=Mock(close=Mock())
+            args=type('Args',(),{'prefix':str(prefix),'yes':True})()
+            with patch.object(linux_installer.os,'geteuid',return_value=0), \
+                 patch.object(linux_installer,'_installation_lock',return_value=lock), \
+                 patch.object(linux_installer.subprocess,'run',side_effect=build_stage), \
+                 patch.object(antidpi,'Session',FakeSession),redirect_stdout(StringIO()):
+                linux_installer.update_install(args)
+            updated=json.loads((prefix/'installation.json').read_text())
+            backup=Path(updated['rollback_path'])
+            self.assertEqual((prefix/'data/release.json').read_text(),(REPO/'linux/data/release.json').read_text())
+            self.assertEqual((prefix/'_state/adapter.json').read_text(),'{"name":"eth0"}')
+            self.assertEqual((prefix/'logs/previous.log').read_text(),'old log')
+            self.assertTrue((prefix/'logs/updates').is_dir())
+            self.assertEqual((backup/'data/release.json').read_text(),'{"version":"1.17"}')
+
+            rollback_args=type('Args',(),{'prefix':str(prefix),'yes':True})()
+            with patch.object(linux_installer.os,'geteuid',return_value=0), \
+                 patch.object(linux_installer,'_installation_lock',return_value=Mock(close=Mock())), \
+                 patch.object(antidpi,'Session',FakeSession),redirect_stdout(StringIO()):
+                linux_installer.rollback_install(rollback_args)
+            self.assertEqual((prefix/'data/release.json').read_text(),'{"version":"1.17"}')
+            self.assertEqual((prefix/'_state/adapter.json').read_text(),'{"name":"eth0"}')
+            self.assertTrue(Path(json.loads((prefix/'installation.json').read_text())['rollback_path']).is_dir())
+
+
 class ResourceTests(unittest.TestCase):
     def test_standard_uninstall_retains_error_reporter_for_later_purge(self):
         self.assertIn('diagnostics.py', remove_installation.RETAIN)
+
+    def test_full_purge_removes_only_rollback_copies_owned_by_install_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'antidpi';root.mkdir();install_id='a'*32
+            owned=Path(temporary)/'.antidpi.rollback-owned';owned.mkdir()
+            unrelated=Path(temporary)/'.antidpi.rollback-unrelated';unrelated.mkdir()
+            for directory,identifier in ((owned,install_id),(unrelated,'b'*32)):
+                (directory/'installation.json').write_text(json.dumps({
+                    'schema':remove_installation.SCHEMA,'prefix':str(root),'id':identifier}))
+            remove_installation.purge_rollback_backups(root,install_id)
+            self.assertFalse(owned.exists())
+            self.assertTrue(unrelated.exists())
 
     def test_every_installed_resource_exists(self):
         for name in app_paths.FILE_LAYOUT:
@@ -365,13 +581,22 @@ class ResourceTests(unittest.TestCase):
 
     def test_help_and_catalogue_work_without_display(self):
         env = dict(os.environ, DISPLAY='', WAYLAND_DISPLAY='', PYTHONDONTWRITEBYTECODE='1')
-        for arguments in (['--help'], ['show', '--strategy', '25'], ['show', '--strategy', '492'], ['benchmark', '--help']):
-            result = subprocess.run(['bash', str(REPO/'linux/START.sh')]+arguments,
-                                    env=env, capture_output=True, text=True, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        commands=[(REPO/'linux/START.sh',['--help']),
+                  (REPO/'linux/START.sh',['show','--strategy','25']),
+                  (REPO/'linux/START.sh',['show','--strategy','492']),
+                  (REPO/'linux/START.sh',['benchmark','--help']),
+                  (REPO/'linux/app/antidpi.py',['update','--help']),
+                  (REPO/'linux/app/install.py',['update','--help']),
+                  (REPO/'linux/app/install.py',['rollback','--help'])]
+        for script,arguments in commands:
+            command=['bash',str(script),*arguments] if script.suffix=='.sh' else [sys.executable,str(script),*arguments]
+            result = subprocess.run(command,env=env,capture_output=True,text=True,timeout=20)
+            self.assertEqual(result.returncode,0,result.stderr)
             if arguments == ['benchmark', '--help']:
-                self.assertIn('--target', result.stdout)
-                self.assertIn('TLS-узел', result.stdout)
+                self.assertIn('--target',result.stdout)
+                self.assertIn('TLS-узел',result.stdout)
+            if arguments == ['update','--help']:
+                self.assertTrue('update' in result.stdout or 'Обновление' in result.stdout)
 
     def test_traceback_is_visible_and_private_log_is_created(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stderr(StringIO()) as output:

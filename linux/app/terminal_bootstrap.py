@@ -32,7 +32,10 @@ class TerminalUnavailable(RuntimeError):
 
 def program_command(role, arguments):
     if role == 'install':
-        return [sys.executable, str(ROOT/'install.py'), 'install']+arguments
+        action = 'install'
+        if arguments and arguments[0] in ('update', 'rollback'):
+            action, arguments = arguments[0], arguments[1:]
+        return [sys.executable, str(ROOT/'install.py'), action]+arguments
     if role == 'run':
         return [sys.executable, str(ROOT/'antidpi.py')]+arguments
     if role == 'uninstall':

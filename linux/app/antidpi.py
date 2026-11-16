@@ -899,8 +899,9 @@ def choose_benchmark_target(args):
 
 def main():
     parser = argparse.ArgumentParser(description='AntiDPI + Zapret2 CLI 1.9 — Linux Ubuntu/Debian')
-    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover'))
+    parser.add_argument('action', nargs='?', default='menu', choices=('menu','start','youtube','benchmark','list','show','check-engine','recover','update','rollback'))
     parser.add_argument('--skip-intro',action='store_true',help=argparse.SUPPRESS)
+    parser.add_argument('--yes',action='store_true',help='Подтвердить обновление/откат без дополнительного вопроса')
     parser.add_argument('--strategy', type=int)
     parser.add_argument('--interface')
     parser.add_argument('--family', choices=('ipv4','ipv6'), help='IP-семейство для перехвата')
@@ -914,6 +915,12 @@ def main():
     parser.add_argument('--exhaustive', action='store_true', help='не применять адаптивный отбор в benchmark: проверить все номера из --recipes')
     parser.add_argument('--scope',type=parse_ports,help='Порты выбранного TCP/UDP протокола: all/все, 443, 0-1023 или 53,80,443,1000-2000')
     args = parser.parse_args()
+    if args.action in ('update', 'rollback'):
+        from updater import rollback, update
+        result = update(ROOT, yes=args.yes) if args.action == 'update' else rollback(ROOT, yes=args.yes)
+        if result:
+            raise SystemExit(result)
+        return
     data = load_catalogue()
     maximum = int(data['CatalogueInfo']['ProfileCount'])
     args.recipes=args.recipes or ('1-45' if args.action=='benchmark' else f'1-{maximum}')

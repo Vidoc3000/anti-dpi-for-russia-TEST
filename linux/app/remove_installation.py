@@ -81,6 +81,26 @@ def check_purge_root(root):
             raise RuntimeError('В папке установки есть точка монтирования. Сначала размонтируйте её: '+str(mount))
 
 
+def purge_rollback_backups(root, install_id):
+    root = Path(root)
+    pattern = '.' + root.name + '.rollback-*'
+    for backup in root.parent.glob(pattern):
+        if backup.is_symlink() or not backup.is_dir():
+            continue
+        marker = backup/'installation.json'
+        if marker.is_symlink() or not marker.is_file():
+            continue
+        try:
+            identity = json.loads(marker.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if (identity.get('schema') != SCHEMA or identity.get('prefix') != str(root) or
+                identity.get('id') != install_id):
+            continue
+        check_purge_root(backup)
+        shutil.rmtree(backup)
+
+
 def purge_tree(root):
     # Keep the deletion command and identity until all other entries are gone,
     # so interrupted/failed removal can be retried. Never follow a symlink.
@@ -102,7 +122,7 @@ def uninstall(root, purge=False, yes=False):
     if purge:
         check_purge_root(root)
         print('ПОЛНОЕ УДАЛЕНИЕ: '+str(root))
-        print('Будут удалены ВСЕ файлы внутри этой папки, включая логи, изменённые и добавленные файлы.')
+        print('Будут удалены ВСЕ файлы внутри этой папки, включая логи, изменённые и добавленные файлы, а также принадлежащие установке копии для отката.')
     if not yes:
         prompt = 'Остановите Zapret2. Для '+('полного ' if purge else '')+'удаления введите УДАЛИТЬ или DELETE: '
         if input(prompt).strip().upper() not in ('УДАЛИТЬ', 'DELETE'):
@@ -128,6 +148,7 @@ def uninstall(root, purge=False, yes=False):
             # Recheck after confirmation, just before touching the tree.
             check_purge_root(root)
             purge_tree(root)
+            purge_rollback_backups(root, identity['id'])
             print('Полностью удалено: '+str(root))
             return
         for relative, expected in identity['files'].items():
