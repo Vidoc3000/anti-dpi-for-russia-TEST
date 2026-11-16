@@ -1,10 +1,16 @@
 # Changelog / История изменений
 
+## Next — Verify Linux update provenance before installation
+
+| English | Русский |
+| --- | --- |
+| Verify release package attestations with the official GitHub CLI before extraction, enforcing the expected repository, release workflow, and `main` source ref. Fail closed when the CLI is missing, untrusted, outdated, or the attestation is invalid. | Проверять attestation релизного пакета официальным GitHub CLI до распаковки, требуя ожидаемые репозиторий, release workflow и исходную ветку `main`. Отказ от обновления при отсутствии CLI, небезопасном пути к нему, неподдерживаемой версии или недействительной attestation. |
+
 ## Next — GitHub artifact attestations for release packages
 
 | English | Русский |
 | --- | --- |
-| Generate GitHub artifact provenance attestations for published ZIP/EXE/TAR.GZ packages and document manual verification with `gh attestation verify`. The Linux updater still validates the published SHA-256 only; automatic attestation verification is not included yet. | Добавить GitHub artifact attestations для публикуемых ZIP/EXE/TAR.GZ и инструкцию ручной проверки командой `gh attestation verify`. Linux-updater пока проверяет только опубликованный SHA-256; автоматическая проверка attestation ещё не включена. |
+| Generate GitHub artifact provenance attestations for published ZIP/EXE/TAR.GZ packages and document verification with `gh attestation verify`. | Добавить GitHub artifact attestations для публикуемых ZIP/EXE/TAR.GZ и инструкцию проверки командой `gh attestation verify`. |
 
 ## Next — Previewable, redacted Linux diagnostic archive
 

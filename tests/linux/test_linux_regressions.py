@@ -402,6 +402,74 @@ class UpdaterTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'SHA256SUMS'):
             updater.checksum_for(value+'  '+filename+'\n'+value+'  '+filename+'\n',filename)
 
+    def test_release_attestation_uses_bundle_and_pins_repository_workflow_and_main_ref(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            package=Path(temporary)/'release.tar.gz';package.write_bytes(b'fixture')
+            bundle={'mediaType':'application/vnd.dev.sigstore.bundle.v0.3+json','dsseEnvelope':{'fixture':True}}
+            api_result=json.dumps({'attestations':[{'bundle':bundle}]}).encode()
+            def verify_command(command,**_kwargs):
+                bundle_path=Path(command[command.index('--bundle')+1])
+                self.assertEqual(json.loads(bundle_path.read_text()),bundle)
+                self.assertEqual(command[1:3],['attestation','verify'])
+                self.assertEqual(command[3],str(package.resolve()))
+                self.assertEqual(command[command.index('--repo')+1],updater.ATTESTATION_REPOSITORY)
+                self.assertEqual(command[command.index('--signer-workflow')+1],updater.ATTESTATION_WORKFLOW)
+                self.assertEqual(command[command.index('--source-ref')+1],'refs/heads/main')
+                self.assertIn('--deny-self-hosted-runners',command)
+                return Mock(returncode=0)
+            with patch.object(updater,'_trusted_gh',return_value='/usr/bin/gh'), \
+                 patch.object(updater,'read_url',return_value=api_result) as read, \
+                 patch.object(updater.subprocess,'run',side_effect=verify_command):
+                updater.verify_release_attestation(package)
+            read.assert_called_once_with(
+                updater.ATTESTATION_API+'sha256:'+__import__('hashlib').sha256(b'fixture').hexdigest()+'?per_page=100',
+                updater.MAX_ATTESTATION_RESPONSE_BYTES,'application/vnd.github+json',updater.ATTESTATION_API_VERSION)
+
+    def test_attestation_redirects_are_checked_before_following(self):
+        host=updater.ATTESTATION_BUNDLE_HOST
+        handler=updater._SafeRedirectHandler({host})
+        request=updater.urllib.request.Request('https://'+host+'/attestations/item')
+        for target in ('http://127.0.0.1/metadata',
+                       'https://evil.example/attestations/item',
+                       'https://'+host+':444/attestations/item'):
+            with self.assertRaises(updater.urllib.error.URLError):
+                handler.redirect_request(request,None,302,'Found',{},target)
+        allowed=handler.redirect_request(request,None,302,'Found',{},'https://'+host+'/attestations/next')
+        self.assertEqual(allowed.full_url,'https://'+host+'/attestations/next')
+
+    def test_attestation_bundle_url_is_restricted_to_official_https_storage(self):
+        good='https://'+updater.ATTESTATION_BUNDLE_HOST+'/attestations/1/2.json.sn?sig=fixture'
+        self.assertEqual(updater._validated_bundle_url(good),good)
+        for bad in ('http://'+updater.ATTESTATION_BUNDLE_HOST+'/attestations/x?sig=x',
+                    'https://tmaproduction.blob.core.windows.net.evil.test/attestations/x?sig=x',
+                    'https://user@'+updater.ATTESTATION_BUNDLE_HOST+'/attestations/x?sig=x',
+                    'https://'+updater.ATTESTATION_BUNDLE_HOST+':444/attestations/x?sig=x',
+                    'https://'+updater.ATTESTATION_BUNDLE_HOST+'/elsewhere?sig=x'):
+            with self.assertRaisesRegex(RuntimeError,'недопустимую ссылку'):
+                updater._validated_bundle_url(bad)
+
+    def test_release_attestation_failure_and_missing_cli_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            package=Path(temporary)/'release.tar.gz';package.write_bytes(b'fixture')
+            api_result=json.dumps({'attestations':[{'bundle':{'fixture':True}}]}).encode()
+            with patch.object(updater,'_trusted_gh',return_value='/usr/bin/gh'), \
+                 patch.object(updater,'read_url',return_value=api_result), \
+                 patch.object(updater.subprocess,'run',return_value=Mock(returncode=1)):
+                with self.assertRaisesRegex(RuntimeError,'attestation не подтвердила'):
+                    updater.verify_release_attestation(package)
+            with patch.object(updater,'_trusted_gh',return_value='/usr/bin/gh'), \
+                 patch.object(updater,'read_url',return_value=b'{"attestations":[]}'):
+                with self.assertRaisesRegex(RuntimeError,'нет доступной Sigstore attestation'):
+                    updater.verify_release_attestation(package)
+        with patch.object(updater.shutil,'which',return_value=None):
+            with self.assertRaisesRegex(RuntimeError,'GitHub CLI'):
+                updater._trusted_gh()
+        with tempfile.TemporaryDirectory() as temporary:
+            untrusted=Path(temporary)/'gh';untrusted.write_text('#!/bin/sh\\nexit 0\\n');untrusted.chmod(0o755)
+            with patch.object(updater.shutil,'which',return_value=str(untrusted)):
+                with self.assertRaisesRegex(RuntimeError,'принадлежать root'):
+                    updater._trusted_gh()
+
     def test_versions_ignore_trailing_zero_components(self):
         self.assertEqual(updater.version_key('1.18'),updater.version_key('1.18.0'))
         self.assertGreater(updater.version_key('1.19'),updater.version_key('1.18.9'))
@@ -428,12 +496,20 @@ class UpdaterTests(unittest.TestCase):
             package=archive.read_bytes();filename='AntiDPI_CLI_v1.19_Linux_x64.tar.gz'
             metadata=json.dumps(self.release(version,len(package))).encode()
             checksum=(__import__('hashlib').sha256(package).hexdigest()+'  '+filename+'\n').encode()
+            bundle_url='https://'+updater.ATTESTATION_BUNDLE_HOST+'/attestations/fixture?sig=redacted'
+            attestation=json.dumps({'attestations':[{'bundle_url':bundle_url}]}).encode()
+            bundle=json.dumps({'mediaType':'fixture.bundle','dsseEnvelope':{}}).encode()
             with patch.object(updater.os,'geteuid',return_value=0), \
-                 patch.object(updater,'read_url',side_effect=[metadata,checksum,package]) as read, \
-                 patch.object(updater.subprocess,'run',return_value=Mock(returncode=0)) as run:
+                 patch.object(updater,'read_url',side_effect=[metadata,checksum,package,attestation,bundle]) as read, \
+                 patch.object(updater,'_trusted_gh',return_value='/usr/bin/gh'), \
+                 patch.object(updater.subprocess,'run',side_effect=[Mock(returncode=0),Mock(returncode=0)]) as run:
                 self.assertEqual(updater.update(root,yes=True),0)
-            self.assertEqual(read.call_count,3)
-            command=run.call_args.args[0]
+            self.assertEqual(read.call_count,5)
+            self.assertEqual(read.call_args_list[4].kwargs['allowed_hosts'],{updater.ATTESTATION_BUNDLE_HOST})
+            verify_command=run.call_args_list[0].args[0]
+            self.assertIn('--bundle',verify_command)
+            self.assertIn(updater.ATTESTATION_WORKFLOW,verify_command)
+            command=run.call_args_list[1].args[0]
             self.assertEqual(command[2:4],['update','--prefix'])
             self.assertEqual(command[-1],'--yes')
             self.assertTrue(command[1].endswith('/app/install.py'))
