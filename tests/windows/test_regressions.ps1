@@ -48,6 +48,10 @@ foreach ($root in $scriptRoots) {
 }
 
 $managerText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\AntiDPI_Manager.ps1'))
+$managedWindowsDocs = @([regex]::Matches($managerText, 'README_(?:Установка|Стратегии)_Windows_v[0-9.]+\.txt') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+$sourceWindowsDocs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'windows') -File -Filter 'README_*_Windows_v*.txt' | ForEach-Object { $_.Name } | Sort-Object -Unique)
+$missingManagedWindowsDocs = @($managedWindowsDocs | Where-Object { -not (Test-Path -LiteralPath (Join-Path (Join-Path $repoRoot 'windows') $_) -PathType Leaf) })
+Assert-True ($managedWindowsDocs.Count -eq 2 -and [string]::Join('|', $managedWindowsDocs) -eq [string]::Join('|', $sourceWindowsDocs) -and $missingManagedWindowsDocs.Count -eq 0) 'only the current installer and strategy manuals are kept in the recursive Windows release source tree'
 $coreText = [IO.File]::ReadAllText($corePath)
 $catalogueText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'))
 $guiText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\AntiDPI_GUI.ps1'))
