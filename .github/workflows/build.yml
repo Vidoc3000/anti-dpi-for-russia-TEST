@@ -149,7 +149,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       actions: read
+      attestations: write
       contents: write
+      id-token: write
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,6 +162,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --dir release-artifacts
+
+      - name: Attest release packages
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.tar.gz
 
       - name: Create release with verified binaries
         env:
@@ -186,7 +196,8 @@ jobs:
           - GUI stop uses the managed shutdown signal and no longer shows the console-only Ctrl+C hint; both window and tray use the shortcut icon.
           - Windows also adds network-change debounce, preflight readiness, graceful recovery prompting after GUI restart, release diff/digest inspection, and a replacement-file preview before updates.
           - Probe results report reachability only: they do not prove DPI bypass or video playback; VPN route binding is not a privacy/leak audit, and GitHub API digests are not independent signatures.
-          - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files.
+          - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files and GitHub artifact attestations. Verify a downloaded package with `gh attestation verify <file> --repo Vidoc3000/anti-dpi-for-russia-TEST` before installation.
+          - The Linux CLI updater currently checks the release SHA-256 but does not yet verify GitHub attestations automatically; use the manual verification command above for independent publisher/workflow provenance.
 
           Copyright, license notices, and the original author's attribution remain included.
           EOF
