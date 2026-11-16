@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -136,7 +136,7 @@ Assert-True ($guiText.Contains('Start-GuiUpdateManager') -and $guiText.Contains(
 Assert-True ($guiText.Contains('/compare/') -and $guiText.Contains('Start-GuiAssetVerification') -and $guiText.Contains('$InstalledCommit')) 'GUI previews a commit diff and offers bounded GitHub asset digest verification'
 Assert-True ($guiText.Contains('Start-GuiConnectivityMatrix') -and $guiText.Contains('AuthenticateAsClient') -and $guiText.Contains('--http3-only') -and $guiText.Contains('cloudflare.com')) 'GUI performs real service-targeted HTTPS and HTTP/3 checks where curl supports HTTP/3'
 Assert-True ($guiText.Contains('Проверить DNS / TCP / TLS') -and $guiText.Contains('targetProbeTimeoutBox') -and $guiText.Contains('Stop-GuiTargetProbe') -and $guiText.Contains('target-probe-cancel-')) 'custom endpoint UI includes bounded stages and cooperative cancellation'
-Assert-True ($guiText.Contains('это не проверка обхода DPI или работоспособности VPN/Tor') -and $guiText.Contains('Успешный TLS handshake сам по себе не доказывает обход DPI или работу VPN/Tor')) 'custom endpoint UI disclaims DPI and tunnel proof'
+Assert-True ($guiText.Contains('Это не проверка обхода DPI или работоспособности VPN/Tor') -and $guiText.Contains('Успешный TLS handshake сам по себе не доказывает обход DPI или работу VPN/Tor')) 'custom endpoint UI disclaims DPI and tunnel proof'
 Assert-True ($guiText.Contains('$httpStatus=if') -and $guiText.Contains('$quicStatus=if') -and $guiText.Contains('$httpResponses') -and $guiText.Contains('$quicResponses')) 'Connectivity checks distinguish an HTTP application response from transport failure'
 Assert-True ($guiText.Contains('youtube.com') -and $guiText.Contains('netflix.com') -and $guiText.Contains('twitch.tv')) 'GUI offers a distinct video-service check set, separate from general web services'
 Assert-True ($guiText.Contains('Start-GuiTorVerification') -and $guiText.Contains('check.torproject.org/api/ip') -and $guiText.Contains('IsTor -eq $true') -and $guiText.Contains('Start-GuiVpnVerification') -and $guiText.Contains('--interface')) 'GUI tests Tor through its local SOCKS proxy and VPN through a selected, route-bound interface as separate tunnel checks'
