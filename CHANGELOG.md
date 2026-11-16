@@ -36,6 +36,12 @@
 | --- | --- |
 | Add a Linux CLI updater that fetches the latest stable GitHub release, verifies the archive SHA-256, rejects unsafe archive entries, and stages a fresh build before replacing the installed tree. Settings and logs are carried forward; the previous installation remains available for rollback. Also resolve the packaged catalogue through the shared resource map in the Linux installer. | Добавить обновление Linux из CLI: загрузка последнего стабильного релиза GitHub, проверка SHA-256, безопасная распаковка и предварительная сборка до замены установленной программы. Настройки и журналы переносятся, предыдущая установка остаётся для отката. Также исправить получение каталога стратегий установщиком через общую карту ресурсов. |
 
+## 1.20 — Combined Windows matrix fix and Linux package refresh
+
+| English | Русский |
+| --- | --- |
+| Publish a coordinated Windows GUI + CLI 1.20 and Linux CLI 1.20 release. Fix the Windows baseline connectivity matrix so the selected target name/host/path are passed to the worker as evaluated values, and detach completed jobs before modal results to avoid duplicate timer cleanup. The Linux package is republished with the current catalogue and release metadata. | Выпустить согласованные Windows GUI + CLI 1.20 и Linux CLI 1.20. Исправить базовую матрицу доступности Windows: передавать в рабочий процесс вычисленные имя/хост/путь цели и отвязывать завершённую задачу до показа модального результата, чтобы исключить повторную очистку таймером. Linux-пакет перевыпущен с текущим каталогом и метаданными версии. |
+
 ## Windows 1.19 — Updater diagnostics, tray lifecycle, and refreshed manuals
 
 | English | Русский |

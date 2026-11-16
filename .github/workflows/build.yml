@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.19'
+        default: '1.20'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.19'
+        default: '1.20'
         type: string
       publish_release:
         description: 'Publish a combined release (platform=all) or standalone Windows release (platform=windows), from main only'
@@ -252,6 +252,7 @@ jobs:
           - Windows update wizard now displays the full replacement-file list and waits for explicit approval before updating.
           - GUI stop uses the managed shutdown signal and no longer shows the console-only Ctrl+C hint; both window and tray use the shortcut icon.
           - Windows also adds network-change debounce, preflight readiness, graceful recovery prompting after GUI restart, release diff/digest inspection, and a replacement-file preview before updates.
+          - Windows connectivity matrix passes the selected target fields as evaluated values and safely detaches completed background jobs before showing modal results.
           - Probe results report reachability only: they do not prove DPI bypass or video playback; VPN route binding is not a privacy/leak audit, and GitHub API digests are not independent signatures.
           - Linux CLI adds read-only doctor diagnostics (including JSON output), saved network profiles, run history, and `update --check` to verify checksums, GitHub provenance attestations, and archive structure without installing.
           - ZIP, EXE, and TAR.GZ assets are accompanied by SHA-256 checksum files and GitHub artifact attestations. The Linux updater verifies the attestation against this repository's release workflow before installing; downloaded packages can also be checked with `gh attestation verify <file> --repo Vidoc3000/anti-dpi-for-russia-TEST`.
