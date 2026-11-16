@@ -7,11 +7,11 @@
 
 ## Скачать
 
-В **[релизе v1.18](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.18)**: Windows GUI + CLI версии **1.17**, Linux CLI версии **1.18**.
+В **[релизе v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.19)**: Windows GUI + CLI версии **1.17**, Linux CLI версии **1.19**.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.18/AntiDPI_CLI_v1.17_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.18/AntiDPI_CLI_v1.17_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.18/AntiDPI_CLI_v1.18_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.18/SHA256SUMS_Windows_v1.17.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.18/SHA256SUMS_Linux_v1.18.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.17_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.17_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/AntiDPI_CLI_v1.19_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Windows_v1.17.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.19/SHA256SUMS_Linux_v1.19.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -52,8 +52,8 @@ YouTube-анализ проверяет только прямую доступн
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.18_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.18_Linux_x64
+tar -xzf AntiDPI_CLI_v1.19_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.19_Linux_x64
 bash INSTALL.sh
 ```
 
@@ -89,7 +89,7 @@ sudo antidpi profile delete home
 Релизы, опубликованные workflow сборки, снабжаются GitHub artifact attestations для ZIP/EXE/TAR.GZ; перед публикацией workflow сам проверяет подписи и источник сборки. Для отдельной ручной проверки перед установкой скачайте официальный GitHub CLI (`gh`), при необходимости выполните `gh auth login`, затем запустите в каталоге с пакетом:
 
 ```sh
-gh attestation verify ./AntiDPI_CLI_v1.18_Linux_x64.tar.gz --repo Vidoc3000/anti-dpi-for-russia-TEST --signer-workflow Vidoc3000/anti-dpi-for-russia-TEST/.github/workflows/build.yml --source-ref refs/heads/main --deny-self-hosted-runners
+gh attestation verify ./AntiDPI_CLI_v1.19_Linux_x64.tar.gz --repo Vidoc3000/anti-dpi-for-russia-TEST --signer-workflow Vidoc3000/anti-dpi-for-russia-TEST/.github/workflows/build.yml --source-ref refs/heads/main --deny-self-hosted-runners
 ```
 
 Подставьте имя скачанного файла, если версия или платформа отличаются. Команда должна завершиться успешно и подтвердить ожидаемый репозиторий, workflow и ref; при ошибке или отсутствии attestation не продолжайте установку, пока не проверите релиз. Затем дополнительно сверьте SHA-256 по `SHA256SUMS_*.txt`. Linux updater выполняет эту криптографическую проверку автоматически перед распаковкой пакета.
