@@ -1,5 +1,11 @@
 # Changelog / История изменений
 
+## Next — Move Android preview workflow actions to Node 24
+
+| English | Русский |
+| --- | --- |
+| Update the Android preview workflow's pinned checkout, Go, Java, artifact upload, and artifact download actions to Node 24-compatible releases to avoid the GitHub Actions Node 20 deprecation warning. | Обновить зафиксированные версии checkout, Go, Java, загрузки и скачивания artifacts в Android preview workflow до совместимых с Node 24, чтобы убрать предупреждения о выводе Node 20 из эксплуатации. |
+
 ## Next — Verify Linux update provenance before installation
 
 | English | Русский |
