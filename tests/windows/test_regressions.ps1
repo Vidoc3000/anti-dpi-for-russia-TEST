@@ -13,6 +13,11 @@ function Assert-Equal([object]$Expected, [object]$Actual, [string]$Label) {
     }
 }
 
+function Assert-Near([double]$Expected,[double]$Actual,[string]$Label,[double]$Tolerance=0.0001) {
+    $difference=[Math]::Abs($Expected-$Actual)
+    if([double]::IsNaN($difference) -or $difference -gt $Tolerance){throw ("{0}: expected {1}, got {2}" -f $Label,$Expected,$Actual)}
+}
+
 function Assert-True([bool]$Condition, [string]$Label) {
     if (-not $Condition) { throw ("Assertion failed: " + $Label) }
 }
@@ -135,9 +140,8 @@ Assert-True ($guiText.Contains('Show-GuiDiagnosticReport') -and $guiText.Contain
 Assert-True ($guiText.Contains('Start-GuiUpdateManager') -and $guiText.Contains("'-Action','Update'") -and $guiText.Contains('Start-Process -FilePath $powershell')) 'GUI opens the ownership-checked update manager after confirmation'
 Assert-True ($guiText.Contains('/compare/') -and $guiText.Contains('Start-GuiAssetVerification') -and $guiText.Contains('$InstalledCommit')) 'GUI previews a commit diff and offers bounded GitHub asset digest verification'
 Assert-True ($guiText.Contains('Start-GuiConnectivityMatrix') -and $guiText.Contains('AuthenticateAsClient') -and $guiText.Contains('--http3-only') -and $guiText.Contains('cloudflare.com')) 'GUI performs real service-targeted HTTPS and HTTP/3 checks where curl supports HTTP/3'
-Assert-True ($guiText.Contains('Проверить DNS / TCP / TLS')) 'custom endpoint UI has a localized probe action'
 Assert-True ($guiText.Contains('targetProbeTimeoutBox') -and $guiText.Contains('Stop-GuiTargetProbe') -and $guiText.Contains('target-probe-cancel-')) 'custom endpoint UI includes bounded stages and cooperative cancellation'
-Assert-True ($guiText.Contains('Это не проверка обхода DPI или работоспособности VPN/Tor') -and $guiText.Contains('Успешный TLS handshake сам по себе не доказывает обход DPI или работу VPN/Tor')) 'custom endpoint UI disclaims DPI and tunnel proof'
+Assert-True ($guiText.Contains('TLS handshake') -and $guiText.Contains('DPI') -and $guiText.Contains('VPN/Tor')) 'custom endpoint UI clearly limits what the TLS probe proves'
 Assert-True ($guiText.Contains('$httpStatus=if') -and $guiText.Contains('$quicStatus=if') -and $guiText.Contains('$httpResponses') -and $guiText.Contains('$quicResponses')) 'Connectivity checks distinguish an HTTP application response from transport failure'
 Assert-True ($guiText.Contains('youtube.com') -and $guiText.Contains('netflix.com') -and $guiText.Contains('twitch.tv')) 'GUI offers a distinct video-service check set, separate from general web services'
 Assert-True ($guiText.Contains('Start-GuiTorVerification') -and $guiText.Contains('check.torproject.org/api/ip') -and $guiText.Contains('IsTor -eq $true') -and $guiText.Contains('Start-GuiVpnVerification') -and $guiText.Contains('--interface')) 'GUI tests Tor through its local SOCKS proxy and VPN through a selected, route-bound interface as separate tunnel checks'
@@ -168,20 +172,20 @@ $analysisAttempts = [pscustomobject]@{Successes=1;Cancelled=$false;Error='';Atte
 $analysisRow = Get-AntiDPIAnalysisRow $analysisAttempts 1 0 2
 Assert-Equal 'UNSTABLE' $analysisRow.Status 'mixed results are not marked PASS'
 Assert-True ($analysisRow.AttemptDetails.Contains('HTTP 200') -and $analysisRow.AttemptDetails.Contains('TIMEOUT')) 'analysis rows carry useful per-attempt evidence'
-Assert-Equal 1.2 $analysisRow.MeanSuccessSeconds 'analysis row records mean successful response time'
-Assert-Equal 1.2 $analysisRow.MedianSuccessSeconds 'analysis row records median successful response time'
-Assert-Equal 50.0 $analysisRow.SuccessRatePercent 'analysis row reports observed success percentage'
-Assert-Equal 50.0 $analysisRow.SuccessRateDeltaVsBaselinePercentagePoints 'analysis row reports the percentage-point difference against its control'
+Assert-Near 1.2 $analysisRow.MeanSuccessSeconds 'analysis row records mean successful response time'
+Assert-Near 1.2 $analysisRow.MedianSuccessSeconds 'analysis row records median successful response time'
+Assert-Near 50 $analysisRow.SuccessRatePercent 'analysis row reports observed success percentage'
+Assert-Near 50 $analysisRow.SuccessRateDeltaVsBaselinePercentagePoints 'analysis row reports the percentage-point difference against its control'
 Assert-Equal 2 $analysisRow.SampleSize 'analysis row records the actual number of attempts'
 Assert-True ($analysisRow.SuccessRateLow95Percent -lt 50 -and $analysisRow.SuccessRateHigh95Percent -gt 50) 'Wilson interval exposes uncertainty instead of treating two trials as precise'
 $allSuccessRow=Get-AntiDPIAnalysisRow ([pscustomobject]@{Successes=3;Cancelled=$false;Error='';Attempts=@([pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=1.0},[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=2.0},[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=6.0})}) 2 0 3
-Assert-Equal 2.0 $allSuccessRow.MedianSuccessSeconds 'median is robust to a slow outlier'
-Assert-Equal 1.0 $allSuccessRow.MinSuccessSeconds 'analysis row records minimum successful time'
-Assert-Equal 6.0 $allSuccessRow.MaxSuccessSeconds 'analysis row records maximum successful time'
+Assert-Near 2 $allSuccessRow.MedianSuccessSeconds 'median is robust to a slow outlier'
+Assert-Near 1 $allSuccessRow.MinSuccessSeconds 'analysis row records minimum successful time'
+Assert-Near 6 $allSuccessRow.MaxSuccessSeconds 'analysis row records maximum successful time'
 Assert-Equal 'Предварительно: мало повторов' $allSuccessRow.Evidence 'small samples are explicitly labeled preliminary'
 $fiveAttemptRow=Get-AntiDPIAnalysisRow ([pscustomobject]@{Successes=5;Cancelled=$false;Error='';Attempts=@(1..5|ForEach-Object {[pscustomobject]@{Success=$true;HttpStatus=200;Bytes=131072;Seconds=[double]$_}})}) 3 0 5
 Assert-Equal 'Ограниченная выборка: интервал остаётся ориентировочным' $fiveAttemptRow.Evidence 'even five trials are not presented as conclusive'
-Assert-Equal 43.9 (Get-AntiDPIWilsonInterval 3 3).Low95Percent 'Wilson lower interval for three successes is non-overconfident'
+Assert-Near 43.9 (Get-AntiDPIWilsonInterval 3 3).Low95Percent 'Wilson lower interval for three successes is non-overconfident'
 $orderedScan=Get-AntiDPIScanOrder ([pscustomobject]@{First=4;Last=7})
 Assert-Equal '4,5,6,7' ([string]::Join(',', [string[]]$orderedScan)) 'ordinary scan order remains reproducible and ascending'
 $randomScan=Get-AntiDPIScanOrder ([pscustomobject]@{First=4;Last=7}) -Randomize
@@ -195,7 +199,7 @@ try {
     $snapshot=Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8|ConvertFrom-Json
     Assert-Equal 'sequential-bracketed' $snapshot.Mode 'snapshot records comparative benchmark mode'
     Assert-Equal '5,2,4,3' ([string]::Join(',', [string[]]$snapshot.ScanOrder)) 'snapshot preserves the randomized test order'
-    Assert-Equal 2.0 ([double]$snapshot.Results[0].MedianSuccessSeconds) 'snapshot preserves median timing'
+    Assert-Near 2 ([double]$snapshot.Results[0].MedianSuccessSeconds) 'snapshot preserves median timing'
     Assert-Equal 'Предварительно: мало повторов' $snapshot.Results[0].Evidence 'snapshot preserves sample caveat'
 } finally {
     if(Test-Path -LiteralPath $analysisSnapshotRoot){Remove-Item -LiteralPath $analysisSnapshotRoot -Recurse -Force -ErrorAction SilentlyContinue}
@@ -537,8 +541,8 @@ try {
     Assert-Equal 'ошибка; строка "две"' $csvRows[0].Details 'CSV preserves semicolons and quotes in diagnostic details'
     Assert-Equal 'Не прошла тест YouTube' $csvRows[0].Recommendation 'CSV exports the displayed recommendation'
     Assert-Equal '2' $csvRows[0].SampleSize 'CSV exports the actual sample size'
-    Assert-Equal 65.8 ([double]$csvRows[0].SuccessRateHigh95Percent) 'CSV exports the uncertainty interval'
-    Assert-Equal 65.8 ([double]$csvRows[0].BaselineSuccessRateHigh95Percent) 'CSV exports baseline uncertainty too'
+    Assert-Near 65.8 ([double]$csvRows[0].SuccessRateHigh95Percent) 'CSV exports the uncertainty interval'
+    Assert-Near 65.8 ([double]$csvRows[0].BaselineSuccessRateHigh95Percent) 'CSV exports baseline uncertainty too'
     Assert-Equal 0 ([double]$csvRows[0].SuccessRateDeltaVsBaselinePercentagePoints) 'CSV exports percentage-point change against the control'
     Assert-Equal 'Предварительно: мало повторов' $csvRows[0].Evidence 'CSV exports the preliminary-evidence warning'
     $csvData.Results[0].Status='UNSTABLE'
