@@ -293,20 +293,25 @@ def current_version(root):
         raise RuntimeError('Не удалось определить установленную версию Linux-пакета.') from error
 
 
-def update(root, yes=False):
-    if os.geteuid() != 0:
+def update(root, yes=False, check=False):
+    if os.geteuid() != 0 and not check:
         raise RuntimeError('Для обновления нужны права администратора. Запустите: sudo antidpi update')
+    if check and yes:
+        raise RuntimeError('--check не совмещается с --yes: проверка не вносит изменений.')
     root = Path(root).resolve()
     if root.name == 'app' and (root.parent / 'INSTALL.sh').is_file():
         root = root.parent
     current = current_version(root)
+    print('Проверяю сведения о стабильном GitHub-релизе…',flush=True)
     release = json.loads(read_url(API_URL, 2 * 1024 * 1024, 'application/vnd.github+json'))
     version, archive_name, archive_url, sums_url, expected_size = latest_linux_assets(release)
     if version_key(version) <= version_key(current):
         print(f'Установлена актуальная Linux-версия v{current}.')
         return 0
+    print(f'Найдена версия v{version}; загружаю контрольную сумму…',flush=True)
     sums = read_url(sums_url, 64 * 1024, 'text/plain').decode('utf-8')
     expected = checksum_for(sums, archive_name)
+    print('Загружаю Linux x64 пакет…',flush=True)
     package = read_url(archive_url, MAX_ARCHIVE_BYTES)
     if len(package) != expected_size:
         raise RuntimeError('Размер Linux-пакета не совпал с метаданными GitHub release.')
@@ -319,9 +324,14 @@ def update(root, yes=False):
         temporary = Path(temporary)
         archive_path = temporary / archive_name
         archive_path.write_bytes(package)
+        print('Проверяю подпись происхождения релиза…',flush=True)
         verify_release_attestation(archive_path)
         print('GitHub provenance attestation подтверждена ожидаемым workflow.')
+        print('Проверяю состав и структуру пакета…',flush=True)
         source = safe_extract(archive_path, temporary / 'release', package_root)
+        if check:
+            print(f'Проверка завершена: v{version} доступна; SHA-256, attestation и архив проверены. Система не изменена.')
+            return 0
         installer = source / 'app/install.py'
         command = [sys.executable, str(installer), 'update', '--prefix', str(root)]
         if yes:
