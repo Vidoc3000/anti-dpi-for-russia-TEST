@@ -178,7 +178,7 @@ foreach($name in @('README_Установка_Windows_v1.21.txt','README_Стр�
             [IO.Path]::GetFileName($oldPath) -match '^README_(Установка|Стратегии)_Windows_v[0-9.]+\.txt$' -and
             (Test-Path -LiteralPath $oldPath -PathType Leaf) -and
             (Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq [string]$old.Sha256 -and
-            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.20.txt','README_Стратегии_Windows_v1.20.txt')){
+            [IO.Path]::GetFileName($oldPath) -notin @('README_Установка_Windows_v1.21.txt','README_Стратегии_Windows_v1.21.txt')){
             Remove-Item -LiteralPath $oldPath -Force
         }
     }
