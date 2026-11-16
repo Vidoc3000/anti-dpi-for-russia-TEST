@@ -664,6 +664,17 @@ class ResourceTests(unittest.TestCase):
         for name in app_paths.FILE_LAYOUT:
             self.assertTrue(app_paths.resource_path(REPO/'linux/app', name).is_file(), name)
 
+    def test_android_workflow_uses_node24_pinned_actions(self):
+        workflow=(REPO/'.github/workflows/android-preview.yml').read_text()
+        self.assertIn('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',workflow)
+        self.assertIn('actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0',workflow)
+        self.assertIn('actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0',workflow)
+        self.assertIn('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2',workflow)
+        self.assertIn('actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2',workflow)
+        self.assertNotIn('actions/checkout@11bd7190',workflow)
+        self.assertNotIn('actions/setup-go@44694675',workflow)
+        self.assertNotIn('actions/setup-java@c5195efe',workflow)
+
     def test_release_workflow_attests_then_verifies_packages_before_publishing(self):
         workflow=(REPO/'.github/workflows/build.yml').read_text()
         self.assertLess(workflow.index('Attest release packages'),workflow.index('Verify release package attestations'))
