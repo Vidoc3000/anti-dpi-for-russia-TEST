@@ -638,9 +638,13 @@ function Start-GuiConnectivityMatrix {
         if($addresses.Count){$sources[$family]=[string]$addresses[0]}
     }
     $target=$matrixTargetBox.SelectedItem
-    $analysisStatusLabel.Text=('Проверяю '+[string]$target.Name+' по IPv4/IPv6; HTTPS/HTTP/3, до двух попыток…')
+    $targetName=[string]($target.Name)
+    $targetHost=[string]($target.Host)
+    $targetPath=[string]($target.Path)
+    $analysisStatusLabel.Text=('Проверяю '+$targetName+' по IPv4/IPv6; HTTPS/HTTP/3, до двух попыток…')
     $script:networkMatrixCancelPath=Join-Path $state ('network-matrix-cancel-'+[guid]::NewGuid().ToString('N')+'.flag')
-    $script:networkMatrixJob=Start-Job -ArgumentList (,$sources),[string]$target.Name,[string]$target.Host,[string]$target.Path,[string]$script:networkMatrixCancelPath -ScriptBlock {
+    $matrixJobArguments=@($sources,$targetName,$targetHost,$targetPath,[string]$script:networkMatrixCancelPath)
+    $script:networkMatrixJob=Start-Job -ArgumentList $matrixJobArguments -ScriptBlock {
         param($Sources,[string]$TargetName,[string]$TargetHost,[string]$TargetPath,[string]$CancelPath)
         $ErrorActionPreference='Continue';$rows=[Collections.Generic.List[string]]::new();$attempts=2
         $rows.Add(('Цель: {0} — {1}{2}' -f $TargetName,$TargetHost,$TargetPath))
@@ -1735,7 +1739,25 @@ try{
         if($null -ne $script:releaseCheckJob -and $script:releaseCheckJob.State -in @('Completed','Failed','Stopped')){try{$release=Receive-Job -Job $script:releaseCheckJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $release -or -not $release.Tag){throw 'GitHub API не вернул сведения о релизе.'};Show-GuiReleaseInfo $release}catch{[System.Windows.Forms.MessageBox]::Show(('Не удалось проверить релизы онлайн: '+$_.Exception.Message+[Environment]::NewLine+'Можно открыть страницу релизов вручную.'),'Проверка обновлений',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning)|Out-Null;try{Start-Process 'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases'}catch{}}finally{Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue;$script:releaseCheckJob=$null}}
         if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -in @('Completed','Failed','Stopped')){try{$tunnelResult=(Receive-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue|Out-String).Trim();if(-not $tunnelResult){$tunnelResult='Проверка VPN/Tor не вернула данных.'};$analysisStatusLabel.Text='Проверка VPN/Tor завершена.';Add-GuiHistory 'Проверка VPN/Tor' 'ЗАВЕРШЕНА' $tunnelResult;Show-GuiTextDialog 'Отдельный результат VPN/Tor' $tunnelResult}catch{Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue;$script:tunnelCheckJob=$null}}
         if($null -ne $script:assetVerificationJob -and $script:assetVerificationJob.State -in @('Completed','Failed','Stopped')){try{$verification=Receive-Job -Job $script:assetVerificationJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $verification -or -not $verification.Verified){throw 'Asset не прошёл проверку SHA-256.'};Add-GuiHistory 'Проверка целостности' 'УСПЕХ' ([string]$verification.Name+' — SHA-256 совпал с GitHub API');[System.Windows.Forms.MessageBox]::Show(($verification.Message+[Environment]::NewLine+[Environment]::NewLine+'SHA-256: '+$verification.Sha256),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null}catch{Add-GuiHistory 'Проверка целостности' 'ОШИБКА' $_.Exception.Message;[System.Windows.Forms.MessageBox]::Show(('Проверка asset не прошла: '+$_.Exception.Message),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null}finally{Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue;$script:assetVerificationJob=$null}}
-        if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){$matrixState=[string]$script:networkMatrixJob.State;try{$matrixText=(Receive-Job -Job $script:networkMatrixJob -ErrorAction SilentlyContinue|Out-String).Trim();$matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false;if(-not $matrixText){$matrixText='Проверка матрицы не вернула данных.'};if($matrixState -eq 'Completed' -and -not (Test-Path -LiteralPath $script:networkMatrixCancelPath)){Add-GuiHistory 'Матрица сети' 'ЗАВЕРШЕНА' 'Базовые HTTPS и HTTP/3 проверки для выбранного сервиса; без стратегии.'}else{Add-GuiHistory 'Матрица сети' 'ОТМЕНЕНА' 'Проверка завершила текущий запрос после запроса отмены.'};Show-GuiTextDialog 'Базовая матрица доступности сети' ($matrixText+[Environment]::NewLine+[Environment]::NewLine+'Это базовая проверка без стратегии. HTTPS выполняет реальный TLS/HTTP запрос; HTTP/3 считается успешным только при завершённом запросе с HTTP-версией 3.0. Если curl без поддержки HTTP/3, тест явно помечается как не выполненный. Успех не доказывает обход DPI, а отказ не доказывает блокировку: возможны DNS, маршрут, сервер или локальный firewall.')}catch{$matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false;Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:networkMatrixJob -Force -ErrorAction SilentlyContinue;if($script:networkMatrixCancelPath -and (Test-Path -LiteralPath $script:networkMatrixCancelPath)){Remove-Item -LiteralPath $script:networkMatrixCancelPath -Force -ErrorAction SilentlyContinue};$script:networkMatrixCancelPath='';$script:networkMatrixJob=$null}}
+        if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){
+            # Detach before opening dialogs: ShowDialog pumps the UI loop and can re-enter this timer.
+            $matrixJob=$script:networkMatrixJob;$script:networkMatrixJob=$null
+            $matrixCancelPath=$script:networkMatrixCancelPath;$script:networkMatrixCancelPath=''
+            $matrixState=[string]$matrixJob.State
+            try{
+                $matrixText=(Receive-Job -Job $matrixJob -ErrorAction SilentlyContinue|Out-String).Trim()
+                $matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false
+                if(-not $matrixText){$matrixText='Проверка матрицы не вернула данных.'}
+                if($matrixState -eq 'Completed' -and -not (Test-Path -LiteralPath $matrixCancelPath)){
+                    Add-GuiHistory 'Матрица сети' 'ЗАВЕРШЕНА' 'Базовые HTTPS и HTTP/3 проверки для выбранного сервиса; без стратегии.'
+                }else{Add-GuiHistory 'Матрица сети' 'ОТМЕНЕНА' 'Проверка завершила текущий запрос после запроса отмены.'}
+                Show-GuiTextDialog 'Базовая матрица доступности сети' ($matrixText+[Environment]::NewLine+[Environment]::NewLine+'Это базовая проверка без стратегии. HTTPS выполняет реальный TLS/HTTP запрос; HTTP/3 считается успешным только при завершённом запросе с HTTP-версией 3.0. Если curl без поддержки HTTP/3, тест явно помечается как не выполненный. Успех не доказывает обход DPI, а отказ не доказывает блокировку: возможны DNS, маршрут, сервер или локальный firewall.')
+            }catch{$matrixButton.Enabled=$true;$matrixCancelButton.Enabled=$false;Show-GuiError $_.Exception.Message}
+            finally{
+                if($null -ne $matrixJob){try{Remove-Job -Job $matrixJob -Force -ErrorAction SilentlyContinue}catch{}}
+                if($matrixCancelPath -and (Test-Path -LiteralPath $matrixCancelPath)){Remove-Item -LiteralPath $matrixCancelPath -Force -ErrorAction SilentlyContinue}
+            }
+        }
         if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -in @('Completed','Failed','Stopped')){
             try{
                 $probeJson=Receive-Job -Job $script:targetProbeJob -ErrorAction SilentlyContinue|Select-Object -Last 1
