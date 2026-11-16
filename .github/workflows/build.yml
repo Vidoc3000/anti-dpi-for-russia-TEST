@@ -171,6 +171,26 @@ jobs:
             release-artifacts/**/*.exe
             release-artifacts/**/*.tar.gz
 
+      - name: Verify release package attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' packages < <(find release-artifacts -type f \
+            \( -name '*.zip' -o -name '*.exe' -o -name '*.tar.gz' \) -print0 | sort -z)
+          if [[ ${#packages[@]} -ne 3 ]]; then
+            printf 'Expected three attested release packages; found %s.\n' "${#packages[@]}" >&2
+            exit 1
+          fi
+          for package in "${packages[@]}"; do
+            gh attestation verify "$package" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build.yml" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+
       - name: Create release with verified binaries
         env:
           GH_TOKEN: ${{ github.token }}

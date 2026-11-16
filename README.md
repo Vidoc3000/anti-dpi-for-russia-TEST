@@ -75,7 +75,7 @@ sudo antidpi benchmark --target example.org:443
 
 ### Проверка происхождения релизного пакета
 
-Релизы, опубликованные workflow сборки, снабжаются GitHub artifact attestations для ZIP/EXE/TAR.GZ. Для отдельной ручной проверки перед установкой скачайте официальный GitHub CLI (`gh`), при необходимости выполните `gh auth login`, затем запустите в каталоге с пакетом:
+Релизы, опубликованные workflow сборки, снабжаются GitHub artifact attestations для ZIP/EXE/TAR.GZ; перед публикацией workflow сам проверяет подписи и источник сборки. Для отдельной ручной проверки перед установкой скачайте официальный GitHub CLI (`gh`), при необходимости выполните `gh auth login`, затем запустите в каталоге с пакетом:
 
 ```sh
 gh attestation verify ./AntiDPI_CLI_v1.18_Linux_x64.tar.gz --repo Vidoc3000/anti-dpi-for-russia-TEST --signer-workflow Vidoc3000/anti-dpi-for-russia-TEST/.github/workflows/build.yml --source-ref refs/heads/main --deny-self-hosted-runners
