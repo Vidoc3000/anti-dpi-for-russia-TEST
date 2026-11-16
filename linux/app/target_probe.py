@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """TLS handshake probe for a user-selected endpoint; no application data is sent."""
 from __future__ import annotations
+import hashlib
 import ipaddress
 import json
 from pathlib import Path
@@ -60,6 +61,108 @@ def validate_target(target):
         raise ValueError('Имя цели должно быть не длиннее 64 символов и без управляющих знаков.')
     return {'name': name, 'host': host, 'port': port, 'sni': sni,
             'verify_certificate': verify}
+
+
+def diagnose_target(target,interface=None,address_family='ipv4',timeout=8,
+                    resolver=socket.getaddrinfo,socket_factory=socket.socket,
+                    context_factory=ssl.create_default_context):
+    """Read-only DNS, TCP and TLS check; sends no application payload and stores no host/IP."""
+    target=validate_target(target)
+    if address_family not in ('ipv4','ipv6'):
+        raise ValueError('IP-семейство должно быть ipv4 или ipv6.')
+    if not isinstance(timeout,(int,float)) or not 0.5<=timeout<=60:
+        raise ValueError('Таймаут проверки должен быть в диапазоне 0,5–60 секунд.')
+    if interface is not None and (not isinstance(interface,str) or
+            not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,15}',interface)):
+        raise ValueError('Некорректное имя сетевого интерфейса.')
+    started=time.monotonic()
+    family=socket.AF_INET6 if address_family=='ipv6' else socket.AF_INET
+    key='|'.join((target['host'].casefold(),str(target['port']),target['sni'].casefold()))
+    report={'schema':'antidpi.connectivity-test.v1',
+            'target_id':hashlib.sha256(key.encode('utf-8')).hexdigest()[:10],
+            'address_family':address_family,'interface_bound':bool(interface),
+            'certificate_verification':target['verify_certificate'],
+            'dns':{'status':'pending','addresses':0,'seconds':None},
+            'tcp':{'status':'skipped','seconds':None},
+            'tls':{'status':'skipped','version':None,'seconds':None},'status':'error'}
+
+    def finish():
+        report['elapsed_seconds']=round(time.monotonic()-started,3)
+        if report['tls']['status']=='ok':
+            report['status']='ok' if target['verify_certificate'] else 'warning'
+        else:
+            report['status']='error'
+        return report
+
+    dns_started=time.monotonic()
+    try:
+        addresses=resolver(target['host'],target['port'],family,socket.SOCK_STREAM)
+        if not addresses:raise socket.gaierror('No addresses for the selected family')
+    except (OSError,ValueError):
+        report['dns'].update(status='error',reason='DNS_ERROR',seconds=round(time.monotonic()-dns_started,3))
+        report['tcp'].update(status='skipped',reason='DNS_FAILED')
+        report['tls'].update(status='skipped',reason='DNS_FAILED')
+        return finish()
+    report['dns'].update(status='ok',addresses=len(addresses),seconds=round(time.monotonic()-dns_started,3))
+
+    tcp_reason='TCP_CONNECT_ERROR'
+    secure=None;raw=None
+    tcp_started=time.monotonic()
+    deadline=tcp_started+timeout
+    try:
+        for info in addresses[:8]:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:
+                tcp_reason='TIMEOUT';break
+            raw=None
+            try:
+                raw=socket_factory(info[0],socket.SOCK_STREAM)
+                raw.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,1)
+                if interface:
+                    raw.setsockopt(socket.SOL_SOCKET,socket.SO_BINDTODEVICE,interface.encode()+b'\0')
+                raw.settimeout(remaining)
+                raw.connect(info[4])
+                report['tcp'].update(status='ok',seconds=round(time.monotonic()-tcp_started,3))
+                break
+            except PermissionError:
+                tcp_reason='INTERFACE_PERMISSION_ERROR'
+                if raw is not None:raw.close();raw=None
+                break
+            except (TimeoutError,socket.timeout):
+                tcp_reason='TIMEOUT'
+                if raw is not None:raw.close();raw=None
+            except OSError:
+                tcp_reason='TCP_CONNECT_ERROR'
+                if raw is not None:raw.close();raw=None
+        if report['tcp']['status']!='ok':
+            report['tcp'].update(status='error',reason=tcp_reason,
+                                 seconds=round(time.monotonic()-tcp_started,3))
+            report['tls'].update(status='skipped',reason='TCP_FAILED')
+            return finish()
+        tls_started=time.monotonic()
+        try:
+            context=context_factory() if target['verify_certificate'] else ssl._create_unverified_context()
+            raw.settimeout(max(0.1,deadline-time.monotonic()))
+            secure=context.wrap_socket(raw,server_hostname=target['sni'])
+            raw=None
+            report['tls'].update(status='ok',version=secure.version(),
+                                 seconds=round(time.monotonic()-tls_started,3))
+        except ssl.SSLCertVerificationError:
+            report['tls'].update(status='error',reason='CERTIFICATE_VERIFY_FAILED',
+                                 seconds=round(time.monotonic()-tls_started,3))
+        except (TimeoutError,socket.timeout):
+            report['tls'].update(status='error',reason='TIMEOUT',
+                                 seconds=round(time.monotonic()-tls_started,3))
+        except (OSError,ssl.SSLError,ValueError):
+            report['tls'].update(status='error',reason='TLS_HANDSHAKE_ERROR',
+                                 seconds=round(time.monotonic()-tls_started,3))
+    finally:
+        if secure is not None:
+            try:secure.shutdown(socket.SHUT_RDWR)
+            except OSError:pass
+            secure.close()
+        if raw is not None:raw.close()
+    return finish()
 
 
 def probe(interface, ports, target, timeout=12, resolver=socket.getaddrinfo,

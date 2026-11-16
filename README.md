@@ -67,6 +67,7 @@ sudo antidpi start --family ipv6 --protocol udp-quic --quic-profile fake2 --scop
 sudo antidpi start --family ipv4 --protocol tcp-tls --strategy 1 --scope 443
 sudo antidpi youtube                 # проверка YouTube: IPv4/TCP/TLS
 sudo antidpi benchmark --target example.org:443
+antidpi test --target example.org:443 --json  # read-only DNS/TCP/TLS stages; no sudo by default
 ```
 
 Поддерживаемые параметры можно посмотреть командой `antidpi --help`. Для диагностики окружения без изменения системных настроек используйте `antidpi doctor` или `antidpi doctor --json`; историю последних проверок — `antidpi history` (`--json` и `--limit 10` поддерживаются). Сетевые настройки можно сохранить и повторно запустить:
@@ -89,7 +90,7 @@ sudo antidpi profile import --file "$HOME/home-profile.json"
 
 `sudo antidpi status --json` показывает принадлежащие установке таблицы, процессы движка и последнюю конфигурацию, не меняя систему. `sudo antidpi doctor --deep --json` дополнительно проверяет capabilities и выполняет только `nft --check` — правила не применяются. Benchmark делает два контрольных TLS-handshake без стратегии, затем сравнивает результаты тестируемых стратегий; для CSV или JSON используйте, например, `sudo antidpi benchmark --target example.org:443 --report-file "$HOME/benchmark.csv"`. В отчёте нет адреса или SNI узла, только случайный ID запуска, baseline, доля успехов и перцентили задержки.
 
-Benchmark выполняет TLS/TCP handshake с заданным узлом; он не является проверкой VPN/Tor-туннеля. YouTube и benchmark не проверяют авторизацию или передачу данных через сторонний VPN-клиент.
+Команда `test` по отдельности показывает DNS, TCP connect и TLS handshake; она не меняет правила сети и не отправляет HTTP- или прикладные данные. Привязка к интерфейсу через `--interface` может потребовать системных прав. Benchmark выполняет TLS/TCP handshake с заданным узлом; ни `test`, ни YouTube, ни benchmark не доказывают обход DPI, работу VPN/Tor-туннеля, авторизацию или передачу данных через сторонний VPN-клиент.
 
 Для предварительной проверки нового релиза без установки и без прав администратора выполните `antidpi update --check`. Обычное применение обновления по-прежнему требует `sudo`.
 
