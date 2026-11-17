@@ -1,5 +1,4 @@
-#requires -Version 5.1
-# Shared launcher for the installer catalogues.
+﻿# Shared launcher for the installer catalogues.
 # Requires the original Windows Bundle for winws2, Lua and driver files.
 $ErrorActionPreference='Stop'
 # The classic host progress pane restores stale screen cells after scrolling.

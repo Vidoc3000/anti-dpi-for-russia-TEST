@@ -1,5 +1,4 @@
-#requires -Version 5.1
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [string]$Scope='all',[ValidateSet('ipv4','ipv6')][string]$AddressFamily='ipv4',
  [ValidateSet('tls','quic')][string]$Protocol='tls',

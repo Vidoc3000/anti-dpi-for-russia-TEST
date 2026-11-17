@@ -1,5 +1,4 @@
-#requires -Version 5.1
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
  [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [switch]$ApproveUpdatePreview, [string]$CancelFile='')

@@ -1,5 +1,4 @@
-#requires -Version 5.1
-# Copyright (C) 2026 Igor Krauch (github.com/igareck). See the repository LICENSE.
+﻿# Copyright (C) 2026 Igor Krauch (github.com/igareck). See the repository LICENSE.
 [CmdletBinding()]
 param(
     [string]$RepositoryRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),

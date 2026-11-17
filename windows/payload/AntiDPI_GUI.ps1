@@ -1,5 +1,4 @@
-#requires -Version 5.1
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
 . (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
