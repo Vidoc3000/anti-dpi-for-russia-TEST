@@ -1441,12 +1441,12 @@ foreach($page in @($strategyTab,$monitoringTab,$analysisTab,$historyTab,$setting
     $page.BackColor=[System.Drawing.Color]::FromArgb(247,249,252)
     $page.Padding=[System.Windows.Forms.Padding]::new(8)
 }
-$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(900,700)
-$monitoringTab.AutoScrollMinSize=[System.Drawing.Size]::new(900,620)
-$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(900,850)
-$historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(860,520)
-$settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(900,900)
-$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,460)
+$strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)
+$monitoringTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,700)
+$analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,1050)
+$historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,520)
+$settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,910)
+$aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)
 
 $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$monitoringTab,$analysisTab,$historyTab,$settingsTab,$aboutTab))
 $form.Controls.Add($tabs)
@@ -1523,12 +1523,13 @@ $portsLabel.Text='Порты';$portsLabel.Location=[System.Drawing.Point]::new(4
 $connGroup.Controls.Add($portsLabel)
 
 $portsBox=New-Object System.Windows.Forms.TextBox
-$portsBox.Text='443';$portsBox.Location=[System.Drawing.Point]::new(440,46);$portsBox.Size=[System.Drawing.Size]::new(140,28)
+$portsBox.Text=[string]$script:guiSettings.Ports;$portsBox.Location=[System.Drawing.Point]::new(440,46);$portsBox.Size=[System.Drawing.Size]::new(140,28)
 $connGroup.Controls.Add($portsBox)
 
 $portsHint=New-Object System.Windows.Forms.Label
 $portsHint.Text='443 по умолчанию; all — все порты выбранного семейства';$portsHint.Location=[System.Drawing.Point]::new(590,48);$portsHint.Size=[System.Drawing.Size]::new(240,18);$portsHint.ForeColor=[System.Drawing.Color]::DimGray;$portsHint.Font=[System.Drawing.Font]::new('Segoe UI',8.5)
 $connGroup.Controls.Add($portsHint)
+Set-GuiProfileItems $script:guiSettings.Protocol
 
 # Row 2: Adapter | Refresh
 $adapterLabel=New-Object System.Windows.Forms.Label
