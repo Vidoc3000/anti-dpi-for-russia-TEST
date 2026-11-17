@@ -7,11 +7,11 @@
 
 ## Скачать
 
-Последний общий выпуск — **[v1.24](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.24)** (Linux CLI **1.24**, Windows GUI + CLI **1.24**). Предыдущий отдельный Windows-выпуск **[windows-v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/windows-v1.19)** также доступен на странице Releases.
+Последний общий выпуск — **[v1.25](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/v1.25)** (Linux CLI **1.25**, Windows GUI + CLI **1.25**). Предыдущий отдельный Windows-выпуск **[windows-v1.19](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/tag/windows-v1.19)** также доступен на странице Releases.
 
-- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.24/AntiDPI_CLI_v1.24_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.24/AntiDPI_CLI_v1.24_Windows_x64.zip).
-- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.24/AntiDPI_CLI_v1.24_Linux_x64.tar.gz).
-- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.24/SHA256SUMS_Windows_v1.24.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.24/SHA256SUMS_Linux_v1.24.txt).
+- **Windows 10/11 x64:** [установщик EXE](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.25/AntiDPI_CLI_v1.25_Windows_x64.exe) или [архив ZIP](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.25/AntiDPI_CLI_v1.25_Windows_x64.zip).
+- **Ubuntu/Debian x64:** [архив TAR.GZ](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.25/AntiDPI_CLI_v1.25_Linux_x64.tar.gz).
+- Контрольные суммы: [Windows](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.25/SHA256SUMS_Windows_v1.25.txt) и [Linux](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases/download/v1.25/SHA256SUMS_Linux_v1.25.txt).
 
 Все файлы, исходный код и предыдущие версии доступны на странице [Releases](https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases).
 
@@ -53,8 +53,8 @@ YouTube-анализ проверяет только прямую доступн
 Для установки распакуйте Linux TAR.GZ, перейдите в появившуюся папку и запустите установщик:
 
 ```bash
-tar -xzf AntiDPI_CLI_v1.24_Linux_x64.tar.gz
-cd AntiDPI_CLI_v1.24_Linux_x64
+tar -xzf AntiDPI_CLI_v1.25_Linux_x64.tar.gz
+cd AntiDPI_CLI_v1.25_Linux_x64
 bash INSTALL.sh
 ```
 
@@ -102,7 +102,7 @@ sudo antidpi profile import --file "$HOME/home-profile.json"
 Релизы, опубликованные workflow сборки, снабжаются GitHub artifact attestations для ZIP/EXE/TAR.GZ; перед публикацией workflow сам проверяет подписи и источник сборки. Для отдельной ручной проверки перед установкой скачайте официальный GitHub CLI (`gh`), при необходимости выполните `gh auth login`, затем запустите в каталоге с пакетом:
 
 ```sh
-gh attestation verify ./AntiDPI_CLI_v1.24_Linux_x64.tar.gz --repo Vidoc3000/anti-dpi-for-russia-TEST --signer-workflow Vidoc3000/anti-dpi-for-russia-TEST/.github/workflows/build.yml --source-ref refs/heads/main --deny-self-hosted-runners
+gh attestation verify ./AntiDPI_CLI_v1.25_Linux_x64.tar.gz --repo Vidoc3000/anti-dpi-for-russia-TEST --signer-workflow Vidoc3000/anti-dpi-for-russia-TEST/.github/workflows/build.yml --source-ref refs/heads/main --deny-self-hosted-runners
 ```
 
 Подставьте имя скачанного файла, если версия или платформа отличаются. Команда должна завершиться успешно и подтвердить ожидаемый репозиторий, workflow и ref; при ошибке или отсутствии attestation не продолжайте установку, пока не проверите релиз. Затем дополнительно сверьте SHA-256 по `SHA256SUMS_*.txt`. Linux updater выполняет эту криптографическую проверку автоматически перед распаковкой пакета.
