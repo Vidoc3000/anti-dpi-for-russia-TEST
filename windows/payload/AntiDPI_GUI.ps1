@@ -2568,8 +2568,7 @@ $timer.Add_Tick({
     }
 
     if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){
-        $matrixJob=$script:networkMatrixJob
-        $script:networkMatrixJob=$null
+        $matrixJob=$script:networkMatrixJob;$script:networkMatrixJob=$null
         $matrixCancelPath=$script:networkMatrixCancelPath
         $script:networkMatrixCancelPath=''
         $matrixState=[string]$matrixJob.State
