@@ -1284,7 +1284,7 @@ function Refresh-GuiConnectionMonitoringGrid {
         $idx=$script:monitorConnectionGrid.Rows.Add(@([string]$c.LocalAddress,[string]$c.RemoteAddress,[string]$c.LocalPort,[string]$c.RemotePort,[string]$c.State,[string]$c.Process))
         $script:monitorConnectionGrid.Rows[$idx].Cells['State'].Style.ForeColor=$stateColor
     }
-    $script:monitorConnectionLabel.Text=('Соединений: {0}' -f $all.Count)
+    $script:monitorConnectionLabel.Text=('Соединений: {0}' -f (@($all)).Count)
     $script:monitorStatusLabel2.Text=('Снимок taken '+([DateTime]::Now.ToString('HH:mm:ss'))+'; фильтр: '+$(if($filter){$filter}else{'(нет)'}))
 }
 
@@ -1302,7 +1302,7 @@ function Export-GuiConnectionMonitoringCsv {
             $lines.Add(('{0},{1},{2},{3},{4},{5}' -f [string]$c.LocalAddress,[string]$c.LocalPort,[string]$c.RemoteAddress,[string]$c.RemotePort,[string]$c.State,[string]$c.Process))
         }
         [IO.File]::WriteAllText($dialog.FileName,($lines -join [Environment]::NewLine),[Text.UTF8Encoding]::new($true))
-        $script:monitorStatusLabel2.Text=('Экспортировано {0} соединений в {1}' -f $all.Count,$dialog.FileName)
+        $script:monitorStatusLabel2.Text=('Экспортировано {0} соединений в {1}' -f (@($all)).Count,$dialog.FileName)
         Add-GuiHistory 'Монитор соединения' 'ЭКСПОРТ' ('CSV: '+$dialog.FileName)
     }catch{throw ('Не удалось экспортировать CSV: '+$_.Exception.Message)}
     finally{$dialog.Dispose()}
