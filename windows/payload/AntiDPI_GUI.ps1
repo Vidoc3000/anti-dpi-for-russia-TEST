@@ -1842,7 +1842,7 @@ $monitoringTab.Controls.Add($httpMonGroup)
 # =========================================================
 
 $analysisInfo=New-Object System.Windows.Forms.Label
-$analysisInfo.Text='Обычный анализ измеряет только YouTube IPv4/TCP/TLS. Сравнительный режим перемешивает порядок стратегий, делает 5 попыток, повторяет контроль после серии и показывает ориентировочный 95% интервал успешности и медианную задержку.'
+$analysisInfo.Text='Обычный анализ измеряет только YouTube IPv4/TCP/TLS. Сравнительный режим перемешивает порядок стратегий, делает 5 попыток, повторяет контроль после серии и показывает ориентировочный 95% интервал успешности и медианную задержку (выбираете вы вручную, какие стратегии проверять).'
 $analysisInfo.Location=[System.Drawing.Point]::new(16,16);$analysisInfo.Size=[System.Drawing.Size]::new(860,44);$analysisInfo.Anchor='Top,Left,Right'
 $analysisTab.Controls.Add($analysisInfo)
 
