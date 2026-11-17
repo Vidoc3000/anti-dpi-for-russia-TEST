@@ -2749,4 +2749,5 @@ $form.Add_FormClosed({
 Write-GuiLog 'Showing main form'
 $form.Add_Shown({Show-GuiOrphanRecoveryPrompt})
 [void]$form.ShowDialog()
+}catch{Write-GuiLog ('GUI startup error: '+$_.Exception.Message)}
 Write-GuiLog 'Main form closed normally'
