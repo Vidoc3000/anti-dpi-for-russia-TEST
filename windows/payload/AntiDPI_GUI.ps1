@@ -2439,7 +2439,7 @@ $timer.Add_Tick({
         $script:worker.Dispose();$script:worker=$null
         $script:workerHealthMissCount=0;$script:workerHealthWarningShown=$false
         $script:stopPending=$false
-        $startButton.Enabled=$true;$stopButton.Enabled=$false;$restartButton.Enabled=$false;$checkButton.Enabled=$true;$recipeButton.Enabled=$true;$argumentsButton.Enabled=$true;$profileListBox.Enabled=$true;$profileSearchBox.Enabled=$true;$adapterBox.Enabled=$true;$refreshButton.Enabled=true;$portsBox.Enabled=true;$addressFamilyBox.Enabled=true;$protocolBox.Enabled=true
+        $startButton.Enabled=$true;$stopButton.Enabled=$false;$restartButton.Enabled=$false;$checkButton.Enabled=$true;$recipeButton.Enabled=$true;$argumentsButton.Enabled=$true;$profileListBox.Enabled=$true;$profileSearchBox.Enabled=$true;$adapterBox.Enabled=$true;$refreshButton.Enabled=$true;$portsBox.Enabled=$true;$addressFamilyBox.Enabled=$true;$protocolBox.Enabled=$true
         if($code -eq 0 -and $script:workerMode -eq 'check'){
             $output=Get-GuiProcessOutput $script:workerStdoutPath $script:workerStderrPath
             $checkLine=Get-GuiFailureLine $script:workerStdoutPath ''
