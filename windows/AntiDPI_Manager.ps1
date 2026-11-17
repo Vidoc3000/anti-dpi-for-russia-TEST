@@ -1358,6 +1358,8 @@ if($needsElevation -or $needsSta){
 
 try{
     Start-AntiDPISessionLog
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
     if(-not $SkipHeader -and $Action -ne 'GUI'){
         Show-AntiDPIHeader
     }
