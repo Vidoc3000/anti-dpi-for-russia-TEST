@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+﻿﻿#requires -Version 5.1
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
@@ -1234,6 +1234,77 @@ function Apply-GuiConnectionMonitorSettings {
     Add-GuiHistory 'Монитор соединения' $(if($script:guiSettings.MonitorEnabled){'ВКЛЮЧЁН'}else{'ВЫКЛЮЧЕН'}) ('Цель: {0}; интервал: {1} мин.' -f [string]$script:guiSettings.MonitorTargetHost,[int]$script:guiSettings.MonitorIntervalMinutes)
 }
 
+
+function Get-GuiCurrentConnections {
+    $connections=@()
+    try{
+        $raw=@(Get-NetTCPConnection -ErrorAction SilentlyContinue|Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess)
+        foreach($c in $raw){
+            $procName=''
+            if($c.OwningProcess -gt 0){
+                try{
+                    $p=Get-Process -Id ([int]$c.OwningProcess) -ErrorAction Stop
+                    $procName=$p.ProcessName
+                }catch{$procName='PID '+([string]$c.OwningProcess)}
+            }
+            $connections+=([pscustomobject]@{
+                LocalAddress=[string]$c.LocalAddress
+                LocalPort=[string]$c.LocalPort
+                RemoteAddress=[string]$c.RemoteAddress
+                RemotePort=[string]$c.RemotePort
+                State=[string]$c.State
+                Process=$procName
+            })
+        }
+    }catch{Write-GuiLog ('Get-NetTCPConnection failed: '+$_.Exception.Message)}
+    return @($connections|Sort-Object State,RemoteAddress,RemotePort)
+}
+
+function Refresh-GuiConnectionMonitoringGrid {
+    $filter=[string]($script:monitorFilterBox.Text).ToLowerInvariant()
+    $all=Get-GuiCurrentConnections
+    if($filter){
+        $all=@($all|Where-Object {([string]$_.Process -or '').ToLowerInvariant().Contains($filter) -or ([string]$_.RemoteAddress -or '').ToLowerInvariant().Contains($filter) -or ([string]$_.LocalAddress -or '').ToLowerInvariant().Contains($filter)})
+    }
+    $script:monitorConnectionGrid.Rows.Clear()
+    foreach($c in $all){
+        $stateColor=[System.Drawing.Color]::Black
+        switch([string]$c.State){
+            'Established' {$stateColor=[System.Drawing.Color]::DarkGreen}
+            'TimeWait' {$stateColor=[System.Drawing.Color]::DarkOrange}
+            'CloseWait' {$stateColor=[System.Drawing.Color]::Firebrick}
+            'SynSent' {$stateColor=[System.Drawing.Color]::DarkOrange}
+            'SynReceived' {$stateColor=[System.Drawing.Color]::DarkOrange}
+            'Close' {$stateColor=[System.Drawing.Color]::Gray}
+            'Listen' {$stateColor=[System.Drawing.Color]::Blue}
+        }
+        $idx=$script:monitorConnectionGrid.Rows.Add(@([string]$c.LocalAddress,[string]$c.RemoteAddress,[string]$c.LocalPort,[string]$c.RemotePort,[string]$c.State,[string]$c.Process))
+        $script:monitorConnectionGrid.Rows[$idx].Cells['State'].Style.ForeColor=$stateColor
+    }
+    $script:monitorConnectionLabel.Text=('Соединений: {0}' -f $all.Count)
+    $script:monitorStatusLabel2.Text=('Снимок taken '+([DateTime]::Now.ToString('HH:mm:ss'))+'; фильтр: '+$(if($filter){$filter}else{'(нет)'}))
+}
+
+function Export-GuiConnectionMonitoringCsv {
+    $dialog=New-Object System.Windows.Forms.SaveFileDialog
+    $dialog.Filter='CSV files (*.csv)|*.csv|All files (*.*)|*.*'
+    $dialog.FileName=('AntiDPI_connections_'+([DateTime]::Now.ToString('yyyyMMdd_HHmmss'))+'.csv')
+    if($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK){return}
+    try{
+        $lines=@('LocalAddress,LocalPort,RemoteAddress,RemotePort,State,Process')
+        $all=Get-GuiCurrentConnections
+        $filter=[string]($script:monitorFilterBox.Text).ToLowerInvariant()
+        if($filter){$all=@($all|Where-Object {([string]$_.Process -or '').ToLowerInvariant().Contains($filter) -or ([string]$_.RemoteAddress -or '').ToLowerInvariant().Contains($filter) -or ([string]$_.LocalAddress -or '').ToLowerInvariant().Contains($filter)})}
+        foreach($c in $all){
+            $lines.Add(('{0},{1},{2},{3},{4},{5}' -f [string]$c.LocalAddress,[string]$c.LocalPort,[string]$c.RemoteAddress,[string]$c.RemotePort,[string]$c.State,[string]$c.Process))
+        }
+        [IO.File]::WriteAllText($dialog.FileName,($lines -join [Environment]::NewLine),[Text.UTF8Encoding]::new($true))
+        $script:monitorStatusLabel2.Text=('Экспортировано {0} соединений в {1}' -f $all.Count,$dialog.FileName)
+        Add-GuiHistory 'Монитор соединения' 'ЭКСПОРТ' ('CSV: '+$dialog.FileName)
+    }catch{throw ('Не удалось экспортировать CSV: '+$_.Exception.Message)}
+    finally{$dialog.Dispose()}
+}
+
 function Save-GuiSettings {
     $family=[string]$settingsFamilyBox.SelectedItem.Value
     $protocol=[string]$settingsProtocolBox.SelectedItem.Value
@@ -1311,13 +1382,15 @@ try{
     $historyTab=[System.Windows.Forms.TabPage]::new('История')
     $settingsTab=[System.Windows.Forms.TabPage]::new('Настройки')
     $aboutTab=[System.Windows.Forms.TabPage]::new('О программе')
-    foreach($page in @($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
+    $monitoringTab=[System.Windows.Forms.TabPage]::new('Мониторинг')
+    foreach($page in @($strategyTab,$analysisTab,$historyTab,$monitoringTab,$settingsTab,$aboutTab)){$page.AutoScroll=$true;$page.BackColor=[System.Drawing.Color]::White}
     $strategyTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,680)
     $analysisTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,1050)
     $historyTab.AutoScrollMinSize=[System.Drawing.Size]::new(720,520)
     $settingsTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,910)
     $aboutTab.AutoScrollMinSize=[System.Drawing.Size]::new(700,440)
-    $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$historyTab,$settingsTab,$aboutTab))
+    $monitoringTab.AutoScrollMinSize=[System.Drawing.Size]::new(740,700)
+    $tabs.TabPages.AddRange([System.Windows.Forms.TabPage[]]@($strategyTab,$analysisTab,$historyTab,$monitoringTab,$settingsTab,$aboutTab))
     $form.Controls.Add($tabs)
 
     $header=New-Object System.Windows.Forms.Label
@@ -1519,6 +1592,20 @@ try{
     $monitorApplyButton=New-Object System.Windows.Forms.Button;$monitorApplyButton.Text='Применить монитор';$monitorApplyButton.Location=[System.Drawing.Point]::new(244,942);$monitorApplyButton.Size=[System.Drawing.Size]::new(190,36);$monitorApplyButton.Add_Click({try{Apply-GuiConnectionMonitorSettings}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($monitorApplyButton)
     $script:monitorStatusLabel=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel.Text='Монитор выключен.';$script:monitorStatusLabel.Location=[System.Drawing.Point]::new(22,987);$script:monitorStatusLabel.Size=[System.Drawing.Size]::new(690,40);$script:monitorStatusLabel.Anchor='Top,Left,Right';$analysisTab.Controls.Add($script:monitorStatusLabel)
 
+    $monitorInfoLabel=New-Object System.Windows.Forms.Label;$monitorInfoLabel.Text='Активные сетевые соединения. Показывает состояние соединений (ESTABLISHED, TIME_WAIT, CLOSE_WAIT и т.д.), помогает диагностировать случаи, когда видео на YouTube загружается сначала, а затем перестаёт грузиться.';$monitorInfoLabel.Location=[System.Drawing.Point]::new(22,18);$monitorInfoLabel.Size=[System.Drawing.Size]::new(700,42);$monitorInfoLabel.Anchor='Top,Left,Right';$monitorInfoLabel.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($monitorInfoLabel)
+    $monitorRefreshLabel=New-Object System.Windows.Forms.Label;$monitorRefreshLabel.Text='Автообновление (сек.):';$monitorRefreshLabel.Location=[System.Drawing.Point]::new(22,72);$monitorRefreshLabel.Size=[System.Drawing.Size]::new(150,24);$monitoringTab.Controls.Add($monitorRefreshLabel)
+    $script:monitorRefreshBox=New-Object System.Windows.Forms.NumericUpDown;$script:monitorRefreshBox.Minimum=1;$script:monitorRefreshBox.Maximum=300;$script:monitorRefreshBox.Value=5;$script:monitorRefreshBox.Location=[System.Drawing.Point]::new(175,68);$script:monitorRefreshBox.Size=[System.Drawing.Size]::new(72,28);$monitoringTab.Controls.Add($script:monitorRefreshBox)
+    $script:monitorAutoCheck=New-Object System.Windows.Forms.CheckBox;$script:monitorAutoCheck.Text='Автообновление соединений';$script:monitorAutoCheck.Checked=$false;$script:monitorAutoCheck.Location=[System.Drawing.Point]::new(260,72);$script:monitorAutoCheck.Size=[System.Drawing.Size]::new(200,28);$monitoringTab.Controls.Add($script:monitorAutoCheck)
+    $monitorRefreshButton=New-Object System.Windows.Forms.Button;$monitorRefreshButton.Text='Обновить соединения';$monitorRefreshButton.Location=[System.Drawing.Point]::new(470,65);$monitorRefreshButton.Size=[System.Drawing.Size]::new(170,36);$monitorRefreshButton.BackColor=[System.Drawing.Color]::FromArgb(31,111,235);$monitorRefreshButton.ForeColor=[System.Drawing.Color]::White;$monitorRefreshButton.Add_Click({try{Refresh-GuiConnectionMonitoringGrid}catch{Show-GuiError $_.Exception.Message}});$monitoringTab.Controls.Add($monitorRefreshButton)
+    $monitorExportButton=New-Object System.Windows.Forms.Button;$monitorExportButton.Text='Экспорт CSV';$monitorExportButton.Location=[System.Drawing.Point]::new(650,65);$monitorExportButton.Size=[System.Drawing.Size]::new(90,36);$monitorExportButton.Add_Click({try{Export-GuiConnectionMonitoringCsv}catch{Show-GuiError $_.Exception.Message}});$monitoringTab.Controls.Add($monitorExportButton)
+    $script:monitorConnectionGrid=New-Object System.Windows.Forms.DataGridView;$script:monitorConnectionGrid.Location=[System.Drawing.Point]::new(22,112);$script:monitorConnectionGrid.Size=[System.Drawing.Size]::new(700,430);$script:monitorConnectionGrid.Anchor='Top,Bottom,Left,Right';$script:monitorConnectionGrid.ReadOnly=$true;$script:monitorConnectionGrid.AllowUserToAddRows=$false;$script:monitorConnectionGrid.AllowUserToDeleteRows=$false;$script:monitorConnectionGrid.RowHeadersVisible=$false;$script:monitorConnectionGrid.AutoSizeColumnsMode='Fill';$script:monitorConnectionGrid.SelectionMode='FullRowSelect';$script:monitorConnectionGrid.MultiSelect=$false
+    foreach($col in @(@{Name='LocalAddress';Header='Локальный адрес';Fill=170},@{Name='RemoteAddress';Header='Удалённый адрес';Fill=170},@{Name='LocalPort';Header='Лок. порт';Fill=70},@{Name='RemotePort';Header='Удал. порт';Fill=70},@{Name='State';Header='Состояние';Fill=120},@{Name='Process';Header='Процесс';Fill=120})){$c=New-Object System.Windows.Forms.DataGridViewTextBoxColumn;$c.Name=$col.Name;$c.HeaderText=$col.Header;$c.FillWeight=[single]$col.Fill;$null=$script:monitorConnectionGrid.Columns.Add($c)}
+    $monitoringTab.Controls.Add($script:monitorConnectionGrid)
+    $script:monitorConnectionLabel=New-Object System.Windows.Forms.Label;$script:monitorConnectionLabel.Text='Соединений: 0';$script:monitorConnectionLabel.Location=[System.Drawing.Point]::new(22,550);$script:monitorConnectionLabel.Size=[System.Drawing.Size]::new(200,24);$monitoringTab.Controls.Add($script:monitorConnectionLabel)
+    $script:monitorStatusLabel2=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel2.Text='Нажмите «Обновить соединения» для текущего снимка.';$script:monitorStatusLabel2.Location=[System.Drawing.Point]::new(230,550);$script:monitorStatusLabel2.Size=[System.Drawing.Size]::new(500,24);$script:monitorStatusLabel2.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($script:monitorStatusLabel2)
+    $monitorFilterLabel=New-Object System.Windows.Forms.Label;$monitorFilterLabel.Text='Фильтр по процессу или адресу:';$monitorFilterLabel.Location=[System.Drawing.Point]::new(22,582);$monitorFilterLabel.Size=[System.Drawing.Size]::new(220,24);$monitoringTab.Controls.Add($monitorFilterLabel)
+    $script:monitorFilterBox=New-Object System.Windows.Forms.TextBox;$script:monitorFilterBox.Location=[System.Drawing.Point]::new(245,578);$script:monitorFilterBox.Size=[System.Drawing.Size]::new(350,28);$script:monitorFilterBox.Add_TextChanged({Refresh-GuiConnectionMonitoringGrid});$monitoringTab.Controls.Add($script:monitorFilterBox)
+
     $historySearchLabel=New-Object System.Windows.Forms.Label;$historySearchLabel.Text='Поиск истории';$historySearchLabel.Location=[System.Drawing.Point]::new(22,24);$historySearchLabel.Size=[System.Drawing.Size]::new(105,24);$historyTab.Controls.Add($historySearchLabel)
     $historySearchBox=New-Object System.Windows.Forms.TextBox;$script:historySearchBox=$historySearchBox;$historySearchBox.Location=[System.Drawing.Point]::new(130,20);$historySearchBox.Size=[System.Drawing.Size]::new(352,30);$historySearchBox.Anchor='Top,Left,Right';$historySearchBox.Add_TextChanged({Update-GuiHistory});$historyTab.Controls.Add($historySearchBox)
     $historyExportButton=New-Object System.Windows.Forms.Button;$historyExportButton.Text='Экспорт CSV';$historyExportButton.Location=[System.Drawing.Point]::new(500,18);$historyExportButton.Size=[System.Drawing.Size]::new(130,34);$historyExportButton.Anchor='Top,Right';$historyExportButton.Add_Click({Export-GuiHistory});$historyTab.Controls.Add($historyExportButton)
@@ -1717,6 +1804,14 @@ try{
         try{Update-GuiConnectionMonitor}catch{Write-GuiLog ('Connection monitor: '+$_.Exception.Message)}
     })
     $timer.Add_Tick({
+        # Monitoring tab auto-refresh
+        if($null -ne $script:monitorAutoCheck -and [bool]$script:monitorAutoCheck.Checked -and $tabs.SelectedTab -eq $monitoringTab){
+            $now=[DateTime]::UtcNow
+            if($null -eq $script:monitorNextRefreshUtc -or $now -ge $script:monitorNextRefreshUtc){
+                $script:monitorNextRefreshUtc=$now.AddSeconds([double]$script:monitorRefreshBox.Value)
+                try{Refresh-GuiConnectionMonitoringGrid}catch{Write-GuiLog ('Monitoring tab refresh: '+$_.Exception.Message)}
+            }
+        }
         if($script:orphanRecoveryPending){
             $stillOwned=Get-GuiVerifiedOwnedEngine
             if($null -eq $stillOwned){$script:orphanRecoveryPending=$false;$script:orphanedOwnedEngine=$null;Set-GuiStatus 'Штатная остановка движка после перезапуска GUI подтверждена.' ([System.Drawing.Color]::DarkGreen);Add-GuiHistory 'Восстановление' 'ГОТОВО' 'Подтверждённый движок завершился; GUI не применял принудительное завершение.'}
@@ -1837,6 +1932,7 @@ try{
         if($script:closeWhenStopped -and $null -eq $script:worker -and $null -eq $script:analysisWorker){$form.Close()}
     })
     $script:monitorNextRunUtc=if($script:guiSettings.MonitorEnabled){[DateTime]::UtcNow.AddSeconds(2)}else{[DateTime]::MaxValue}
+    $script:monitorNextRefreshUtc=$null
     if($script:guiSettings.MonitorEnabled){$script:monitorStatusLabel.Text='Монитор включён; выполняется первая проверка.'}
     $timer.Start();$networkTimer.Start()
     $form.KeyPreview=$true
