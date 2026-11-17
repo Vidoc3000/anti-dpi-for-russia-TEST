@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 # Shared launcher for the installer catalogues.
 # Requires the original Windows Bundle for winws2, Lua and driver files.
 $ErrorActionPreference='Stop'
@@ -82,7 +82,7 @@ function ConvertTo-AntiDPIPortScope([string]$Value) {
         $match=[regex]::Match($part,'^\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?$')
         $first=0;$last=0
         if(-not $match.Success -or -not [int]::TryParse($match.Groups[1].Value,[ref]$first)){
-            throw 'Введите TCP-порт 0–65535, диапазон, комбинацию через запятую либо все/all.'
+            throw 'Введите TCP-порт 0-65535, диапазон, комбинацию через запятую либо все/all.'
         }
         $last=$first
         if($match.Groups[2].Success -and -not [int]::TryParse($match.Groups[2].Value,[ref]$last)){
@@ -260,7 +260,7 @@ function Show-AntiDPIFamilies {
     Write-Host ('КАТАЛОГ (Октябрь 2026): {0}; {1} уникальных AntiDPI стратегии, подобранные специально для российских сетей.' -f $set,$ProfileRows.Count) -ForegroundColor Cyan
     if($CatalogueInfo.Slug -eq 'Golden_Silver'){$golden=45;$silver=[int]$ProfileRows.Count-$golden;Write-Host ('Golden: 1-{0} ({0}). Silver: {1}-{2} ({3}).' -f $golden,($golden+1),$ProfileRows.Count,$silver)}
     Write-Host '----------------------'
-    Write-Host 'Вводите номер стратегии из колонки «Номера».'
+    Write-Host 'Вводите номер стратегии из колонки <<Номера>>.'
     $table=@(Get-AntiDPIFamilyTable -Width ((Get-AntiDPIConsoleWidth)-1))
     for($i=0;$i -lt $table.Count;$i++){
         if($i -eq 1){Write-Host $table[$i] -ForegroundColor Cyan}else{Write-Host $table[$i]}
@@ -298,7 +298,7 @@ function Read-AntiDPIStrategyNumber([hashtable]$Profiles,[int]$Count,[int]$Stopp
     }
     while($true){
         Write-Host 'Выберите один из двух вариантов.' -ForegroundColor Cyan
-        Write-Host '1. Либо введите номер AntiDPI-стратегии из таблицы (0 — выход из программы)'
+        Write-Host '1. Либо введите номер AntiDPI-стратегии из таблицы (0 - выход из программы)'
         Write-Host '2. Либо, чтобы проверить диапазон стратегий на доступ к Youtube, наберите слово "Youtube" (без учета регистра) и далее следуйте указаниям'
         Write-Host '----------------------'
         $answer=Read-AntiDPIChoice;$number=0
@@ -344,7 +344,7 @@ function Initialize-AntiDPIDriverControl([string]$Bundle) {
     if($snapshot.Error -eq 0 -and $snapshot.Exists -and $snapshot.Owned -and
         ($snapshot.StartType -eq 4 -or -not (Test-Path -LiteralPath $snapshot.ImagePath -PathType Leaf))){
         if(-not (Invoke-AntiDPIAutomaticRecovery $Bundle 'STARTUP_CONFIGURATION')){
-            throw 'Автоматическое восстановление WinDivert не выполнено. Подробности — в WinDivert_recovery.log.'
+            throw 'Автоматическое восстановление WinDivert не выполнено. Подробности - в WinDivert_recovery.log.'
         }
     }
 }

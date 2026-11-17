@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 [CmdletBinding()]
 param([int]$ProfileNumber=0,[int]$InterfaceIndex=0,
  [string]$Scope='all',[ValidateSet('ipv4','ipv6')][string]$AddressFamily='ipv4',

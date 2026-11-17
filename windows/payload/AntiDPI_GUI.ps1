@@ -1,4 +1,4 @@
-﻿﻿#requires -Version 5.1
+#requires -Version 5.1
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $AntiDPILibraryOnly=$true
@@ -191,7 +191,7 @@ function Get-GuiAnalysisRecommendation([string]$Status) {
         'PASS' {'Сработала только при провале контроля'}
         'BASELINE_PASS' {'YouTube доступен и без выбранной стратегии'}
         'INCONCLUSIVE' {'Неоднозначно: контроль уже успешен'}
-        'UNSTABLE' {'Нестабильно — повторите тест'}
+        'UNSTABLE' {'Нестабильно - повторите тест'}
         'FAIL' {'Не прошла тест YouTube'}
         'ERROR' {'Ошибка проверки'}
         'CANCELLED' {'Остановлено до завершения'}
@@ -337,7 +337,7 @@ function Update-GuiDashboard {
     $script:dashboardLabel.Text=('{0}  |  {1}  |  {2}  |  {3}  |  порты {4}  |  {5}' -f $stateText,$profileText,$familyText,$protocolText,$portText,$adapterText)
 }
 function Get-GuiTrayTooltipText([string]$Text) {
-    $prefix='AntiDPI — '
+    $prefix='AntiDPI - '
     $safeText=([string]$Text -replace '[\r\n]+',' ').Trim()
     $available=63-$prefix.Length
     if($safeText.Length -gt $available){$safeText=$safeText.Substring(0,$available-1)+'…'}
@@ -396,7 +396,7 @@ function Save-GuiConnectionProfile {
     if($null -eq $adapter){throw 'Выберите физический адаптер перед сохранением профиля подключения.'}
     $entry=ConvertTo-GuiConnectionProfile ([pscustomobject]@{Name=$name;ProfileNumber=$selected.Number;AddressFamily=$addressFamilyBox.SelectedItem.Value;Protocol=$protocolBox.SelectedItem.Value;Ports=$portsBox.Text;MonitorTargetHost=$(if($null -ne $matrixTargetBox.SelectedItem){$matrixTargetBox.SelectedItem.Host}else{'cloudflare.com'});MonitorIntervalMinutes=[int]$monitorIntervalBox.Value;AdapterGuid=$(if($null -ne $adapter){$adapter.InterfaceGuid}else{''});AdapterName=$(if($null -ne $adapter){$adapter.Name}else{''})})
     if(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name}).Count -ge 100){throw 'Можно сохранить не более 100 профилей подключений.'};$script:connectionProfiles=@(@($script:connectionProfiles|Where-Object {$_.Name -ine $entry.Name})+@($entry)|Sort-Object Name)
-    Save-GuiConnectionProfiles;Update-GuiConnectionProfileItems;$settingsStatusLabel.Text=('Профиль подключения «{0}» сохранён.' -f $entry.Name)
+    Save-GuiConnectionProfiles;Update-GuiConnectionProfileItems;$settingsStatusLabel.Text=('Профиль подключения <<{0}>> сохранён.' -f $entry.Name)
 }
 function Set-GuiConnectionControls($Profile) {
     $entry=ConvertTo-GuiConnectionProfile $Profile
@@ -404,7 +404,7 @@ function Set-GuiConnectionControls($Profile) {
     $protocolBox.SelectedIndex=if($entry.Protocol -eq 'quic'){1}else{0}
     $portsBox.Text=$entry.Ports
     Refresh-GuiAdapters
-    if($entry.AdapterGuid){$adapterFound=$false;for($i=0;$i -lt $adapterBox.Items.Count;$i++){if([string]$adapterBox.Items[$i].InterfaceGuid -eq $entry.AdapterGuid){$adapterBox.SelectedIndex=$i;$adapterFound=$true;break}};if(-not $adapterFound){throw ('Сохранённый адаптер профиля «{0}» не подключён. Подключите его или выберите актуальный адаптер вручную; запуск не выполнялся.' -f $entry.AdapterName)}}
+    if($entry.AdapterGuid){$adapterFound=$false;for($i=0;$i -lt $adapterBox.Items.Count;$i++){if([string]$adapterBox.Items[$i].InterfaceGuid -eq $entry.AdapterGuid){$adapterBox.SelectedIndex=$i;$adapterFound=$true;break}};if(-not $adapterFound){throw ('Сохранённый адаптер профиля <<{0}>> не подключён. Подключите его или выберите актуальный адаптер вручную; запуск не выполнялся.' -f $entry.AdapterName)}}
     for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq $entry.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}}
     $monitorIntervalBox.Value=[decimal]$entry.MonitorIntervalMinutes
     if($favoritesCheck.Checked){$favoritesCheck.Checked=$false}
@@ -416,7 +416,7 @@ function Set-GuiConnectionControls($Profile) {
 function Apply-GuiConnectionProfile {
     if($null -eq $script:profilesCombo.SelectedItem){throw 'Выберите сохранённый профиль подключения.'}
     $entry=Set-GuiConnectionControls $script:profilesCombo.SelectedItem
-    Set-GuiStatus ('Применён профиль «{0}». Проверьте адаптер и нажмите «Проверить готовность» перед запуском.' -f $entry.Name) ([System.Drawing.Color]::DarkGreen)
+    Set-GuiStatus ('Применён профиль <<{0}>>. Проверьте адаптер и нажмите <<Проверить готовность>> перед запуском.' -f $entry.Name) ([System.Drawing.Color]::DarkGreen)
 }
 function Remove-GuiConnectionProfile {
     if($null -eq $script:profilesCombo.SelectedItem){throw 'Выберите профиль подключения для удаления.'}
@@ -459,7 +459,7 @@ function Get-GuiReadiness {
     if(Test-Path -LiteralPath (Join-Path $bundle 'winws2.exe') -PathType Leaf){$rows.Add([pscustomobject]@{Level='OK';Check='Движок';Details='winws2.exe найден.'})}else{$rows.Add([pscustomobject]@{Level='ERROR';Check='Движок';Details='Не найден zapret-winws\winws2.exe.'})}
     if($null -eq $adapterBox.SelectedItem){$rows.Add([pscustomobject]@{Level='ERROR';Check='Адаптер';Details='Выберите активный физический адаптер.'})}else{
         $adapter=$adapterBox.SelectedItem;$family=if($null -ne $addressFamilyBox.SelectedItem){[string]$addressFamilyBox.SelectedItem.Value}else{'ipv4'};$net=Get-NetAdapter -InterfaceIndex ([int]$adapter.ifIndex) -ErrorAction SilentlyContinue|Select-Object -First 1
-        if($null -eq $net -or $net.Status -ne 'Up'){$rows.Add([pscustomobject]@{Level='ERROR';Check='Адаптер';Details='Выбранный сетевой адаптер не находится в состоянии Up.'})}else{$rows.Add([pscustomobject]@{Level='OK';Check='Адаптер';Details=('Адаптер «{0}» активен.' -f $adapter.Name)})}
+        if($null -eq $net -or $net.Status -ne 'Up'){$rows.Add([pscustomobject]@{Level='ERROR';Check='Адаптер';Details='Выбранный сетевой адаптер не находится в состоянии Up.'})}else{$rows.Add([pscustomobject]@{Level='OK';Check='Адаптер';Details=('Адаптер <<{0}>> активен.' -f $adapter.Name)})}
         $netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'};$addresses=@(Get-NetIPAddress -InterfaceIndex ([int]$adapter.ifIndex) -AddressFamily $netFamily -ErrorAction SilentlyContinue|Where-Object {$_.AddressState -eq 'Preferred' -and -not $_.SkipAsSource -and $(if($family -eq 'ipv6'){$_.IPAddress -notmatch '^(fe80:|ff|::1$|::$)'}else{$_.IPAddress -notlike '169.254.*'})})
         if($addresses.Count){$rows.Add([pscustomobject]@{Level='OK';Check=$family.ToUpperInvariant();Details='На выбранном адаптере есть подходящий адрес.'})}else{$rows.Add([pscustomobject]@{Level='ERROR';Check=$family.ToUpperInvariant();Details=('На выбранном адаптере нет пригодного адреса '+$family+'.')})}
         $prefix=if($family -eq 'ipv6'){'::/0'}else{'0.0.0.0/0'};$netFamily=if($family -eq 'ipv6'){'IPv6'}else{'IPv4'};$routes=@(Get-NetRoute -AddressFamily $netFamily -DestinationPrefix $prefix -ErrorAction SilentlyContinue|Where-Object {$_.InterfaceIndex -eq [int]$adapter.ifIndex});if($routes.Count){$rows.Add([pscustomobject]@{Level='OK';Check='Маршрут';Details='Для адаптера найден маршрут по умолчанию.'})}else{$rows.Add([pscustomobject]@{Level='WARNING';Check='Маршрут';Details='На выбранном адаптере не найден маршрут по умолчанию.'})}
@@ -482,7 +482,7 @@ function Assert-GuiReadiness {
 function New-GuiDiagnosticReport([switch]$IncludeLogs) {
     $lines=[Collections.Generic.List[string]]::new()
     $admin=Test-AntiDPIAdmin
-    $lines.Add('AntiDPI — диагностический отчёт')
+    $lines.Add('AntiDPI - диагностический отчёт')
     $lines.Add(('Создан: '+(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')))
     $lines.Add(('Версия: '+$script:programVersion))
     $lines.Add(('Windows: '+[Environment]::OSVersion.VersionString))
@@ -517,7 +517,7 @@ function New-GuiDiagnosticReport([switch]$IncludeLogs) {
     return ($lines -join [Environment]::NewLine)
 }
 function Show-GuiDiagnosticReport {
-    $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Диагностика — просмотр и экспорт';$dialog.StartPosition='CenterParent';$dialog.Size=[System.Drawing.Size]::new(820,620);$dialog.MinimumSize=[System.Drawing.Size]::new(620,440)
+    $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Диагностика - просмотр и экспорт';$dialog.StartPosition='CenterParent';$dialog.Size=[System.Drawing.Size]::new(820,620);$dialog.MinimumSize=[System.Drawing.Size]::new(620,440)
     $include=[System.Windows.Forms.CheckBox]::new();$include.Text='Включить последние журналы (IP и пути будут замаскированы)';$include.Location=[System.Drawing.Point]::new(12,12);$include.Size=[System.Drawing.Size]::new(760,28)
     $box=[System.Windows.Forms.TextBox]::new();$box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars='Both';$box.WordWrap=$false;$box.Font=[System.Drawing.Font]::new('Consolas',9);$box.Location=[System.Drawing.Point]::new(12,48);$box.Size=[System.Drawing.Size]::new(780,470);$box.Anchor='Top,Bottom,Left,Right';$box.Text=New-GuiDiagnosticReport
     $buttons=[System.Windows.Forms.FlowLayoutPanel]::new();$buttons.Dock='Bottom';$buttons.Height=48;$buttons.FlowDirection='RightToLeft'
@@ -582,11 +582,11 @@ function Show-GuiReleaseInfo($Release) {
     if($Release.Comparison){$lines.Add(('Состояние сравнения: {0}; коммитов вперёд: {1}; изменено файлов: до {2} показанных.' -f $Release.Comparison.Status,$Release.Comparison.AheadBy,@($Release.Comparison.Files).Count));foreach($file in @($Release.Comparison.Files)){$lines.Add(('--- {0} ({1}, +{2}/-{3})' -f $file.Name,$file.Status,$file.Additions,$file.Deletions));if($file.Patch){$patch=[string]$file.Patch;if($patch.Length -gt 800){$patch=$patch.Substring(0,800)+'…'};$lines.Add($patch)}};$lines.Add(('Полный diff: '+$Release.Comparison.Url))}
     elseif(-not $Release.InstalledCommit){$lines.Add('Для этой установки нет SourceCommit; точный diff не доступен. Установите пакет с BuildInfo.json.')}
     else{$lines.Add(('Не удалось получить diff через GitHub API: '+[string]$Release.CompareError))}
-    $lines.Add('Diff — текстовое сравнение коммитов, это не аудит и не подпись кода.')
-    $lines.Add('');$lines.Add('Файлы релиза:');foreach($asset in @($Release.Assets)){$line=('• {0} ({1} байт)' -f $asset.Name,$asset.Size);if($asset.Digest){$line+=' — '+$asset.Digest};$lines.Add($line);if($asset.Name -match '(?i)SHA256SUMS|checksums|checksum'){$lines.Add(('  Файл контрольных сумм: '+$asset.Url))}}
+    $lines.Add('Diff - текстовое сравнение коммитов, это не аудит и не подпись кода.')
+    $lines.Add('');$lines.Add('Файлы релиза:');foreach($asset in @($Release.Assets)){$line=('• {0} ({1} байт)' -f $asset.Name,$asset.Size);if($asset.Digest){$line+=' - '+$asset.Digest};$lines.Add($line);if($asset.Name -match '(?i)SHA256SUMS|checksums|checksum'){$lines.Add(('  Файл контрольных сумм: '+$asset.Url))}}
     $lines.Add('Выберите asset ниже, чтобы проверить скачанный поток по опубликованным GitHub API размеру и SHA-256. Это проверка целостности передачи, а не независимая криптографическая подпись.')
     $lines.Add('Штатный установщик отдельно проверяет SHA-256 закреплённого архива движка перед распаковкой.')
-    $releaseDialog=[System.Windows.Forms.Form]::new();$releaseDialog.Text=('Релиз AntiDPI — '+[string]$Release.Tag);$releaseDialog.StartPosition='CenterParent';$releaseDialog.Size=[System.Drawing.Size]::new(820,690);$releaseDialog.MinimumSize=[System.Drawing.Size]::new(640,540)
+    $releaseDialog=[System.Windows.Forms.Form]::new();$releaseDialog.Text=('Релиз AntiDPI - '+[string]$Release.Tag);$releaseDialog.StartPosition='CenterParent';$releaseDialog.Size=[System.Drawing.Size]::new(820,690);$releaseDialog.MinimumSize=[System.Drawing.Size]::new(640,540)
     $box=[System.Windows.Forms.TextBox]::new();$box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars='Vertical';$box.Location=[System.Drawing.Point]::new(12,12);$box.Size=[System.Drawing.Size]::new(780,470);$box.Anchor='Top,Bottom,Left,Right';$box.Text=$lines -join [Environment]::NewLine
     $assetLabel=[System.Windows.Forms.Label]::new();$assetLabel.Text='Проверить asset:';$assetLabel.Location=[System.Drawing.Point]::new(12,493);$assetLabel.Size=[System.Drawing.Size]::new(120,24);$assetLabel.Anchor='Bottom,Left'
     $assetBox=[System.Windows.Forms.ComboBox]::new();$assetBox.DropDownStyle='DropDownList';$assetBox.Location=[System.Drawing.Point]::new(132,489);$assetBox.Size=[System.Drawing.Size]::new(430,28);$assetBox.Anchor='Bottom,Left,Right';$assetBox.DisplayMember='Name'
@@ -650,15 +650,15 @@ function Start-GuiConnectivityMatrix {
     $script:networkMatrixJob=Start-Job -ArgumentList $matrixJobArguments -ScriptBlock {
         param($Sources,[string]$TargetName,[string]$TargetHost,[string]$TargetPath,[string]$CancelPath)
         $ErrorActionPreference='Continue';$rows=[Collections.Generic.List[string]]::new();$attempts=2
-        $rows.Add(('Цель: {0} — {1}{2}' -f $TargetName,$TargetHost,$TargetPath))
+        $rows.Add(('Цель: {0} - {1}{2}' -f $TargetName,$TargetHost,$TargetPath))
         $rows.Add('TCP/TLS проверка выполняет HTTPS GET и учитывает HTTP-код и время ответа; по две попытки.')
         foreach($family in @('ipv4','ipv6')){
             if(Test-Path -LiteralPath $CancelPath){$rows.Add('ПРОВЕРКА ОТМЕНЕНА пользователем.');break}
-            if(-not $Sources.ContainsKey($family)){$rows.Add(('{0}: ПРОПУСК — на адаптере нет пригодного адреса.' -f $family.ToUpperInvariant()));continue}
+            if(-not $Sources.ContainsKey($family)){$rows.Add(('{0}: ПРОПУСК - на адаптере нет пригодного адреса.' -f $family.ToUpperInvariant()));continue}
             $source=[string]$Sources[$family];$addr=[Net.IPAddress]::Parse($source)
             $socketFamily=if($family -eq 'ipv6'){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork}
             $dns=@([Net.Dns]::GetHostAddresses($TargetHost)|Where-Object {$_.AddressFamily -eq $socketFamily}|Select-Object -First 1)
-            if(-not $dns.Count){$rows.Add(('{0} HTTPS: ОШИБКА DNS — нет адреса нужного семейства.' -f $family.ToUpperInvariant()));continue}
+            if(-not $dns.Count){$rows.Add(('{0} HTTPS: ОШИБКА DNS - нет адреса нужного семейства.' -f $family.ToUpperInvariant()));continue}
             $httpSuccess=0;$httpResponses=0;$httpTimes=[Collections.Generic.List[double]]::new();$httpDetails=[Collections.Generic.List[string]]::new()
             for($attempt=1;$attempt -le $attempts;$attempt++){
                 if(Test-Path -LiteralPath $CancelPath){$rows.Add(('IPv{0} HTTPS: отменено пользователем.' -f $(if($family -eq 'ipv6'){6}else{4})));break}
@@ -672,7 +672,7 @@ function Start-GuiConnectivityMatrix {
                     $writer=[IO.StreamWriter]::new($ssl,[Text.Encoding]::ASCII,1024,$true);$writer.NewLine="`r`n";$writer.Write(('GET {0} HTTP/1.1`r`nHost: {1}`r`nUser-Agent: AntiDPI-connectivity-check`r`nAccept: */*`r`nConnection: close`r`n`r`n' -f $TargetPath,$TargetHost));$writer.Flush()
                     $reader=[IO.StreamReader]::new($ssl,[Text.Encoding]::ASCII,$false,1024,$true);$statusLine=$reader.ReadLine();$watch.Stop()
                     if($statusLine -match '^HTTP/1\.[01]\s+([0-9]{3})'){$status=[int]$Matches[1];if($status -ge 100 -and $status -le 599){$httpResponses++};if($status -ge 200 -and $status -lt 400){$httpSuccess++;$httpTimes.Add($watch.Elapsed.TotalSeconds)};$httpDetails.Add(('попытка {0}: HTTP {1}{2}, {3:N2} с' -f $attempt,$status,$(if($status -ge 200 -and $status -lt 400){''}else{' (сервер ответил, код вне 2xx/3xx)'}),$watch.Elapsed.TotalSeconds))}else{$httpDetails.Add(('попытка {0}: неожиданный ответ сервера' -f $attempt))}
-                }catch{$watch.Stop();$httpDetails.Add(('попытка {0}: ошибка — {1}' -f $attempt,$_.Exception.Message))}
+                }catch{$watch.Stop();$httpDetails.Add(('попытка {0}: ошибка - {1}' -f $attempt,$_.Exception.Message))}
                 finally{if($null -ne $reader){$reader.Dispose()};if($null -ne $writer){$writer.Dispose()};if($null -ne $ssl){$ssl.Dispose()};if($null -ne $tcp){$tcp.Close()}}
             }
             if(Test-Path -LiteralPath $CancelPath){$rows.Add('Проверка отменена после завершения текущего HTTPS запроса.');return ($rows -join [Environment]::NewLine)}
@@ -681,14 +681,14 @@ function Start-GuiConnectivityMatrix {
             $rows.Add(('{0} IPv{1} TCP/TLS + HTTPS: {2} ({3}/{4}); среднее успешных ответов: {5}; {6}' -f $TargetName,$(if($family -eq 'ipv6'){6}else{4}),$httpStatus,$httpSuccess,$attempts,$(if($null -ne $httpMean){'{0:N2} с' -f $httpMean}else{'нет'}),($httpDetails -join ' | ')))
 
             $curlPath=Join-Path $env:SystemRoot 'System32\curl.exe'
-            if(-not (Test-Path -LiteralPath $curlPath -PathType Leaf)){$rows.Add(('{0} IPv{1} HTTP/3: НЕ ПРОВЕРЕНО — системный curl.exe не найден.' -f $TargetName,$(if($family -eq 'ipv6'){6}else{4})));continue}
+            if(-not (Test-Path -LiteralPath $curlPath -PathType Leaf)){$rows.Add(('{0} IPv{1} HTTP/3: НЕ ПРОВЕРЕНО - системный curl.exe не найден.' -f $TargetName,$(if($family -eq 'ipv6'){6}else{4})));continue}
             $curlVersion=(& $curlPath --version 2>$null|Out-String)
-            if($curlVersion -notmatch '(?im)^Features:.*\bHTTP3\b'){$rows.Add(('{0} IPv{1} HTTP/3: НЕ ПРОВЕРЕНО — в установленном curl.exe нет поддержки HTTP/3.' -f $TargetName,$(if($family -eq 'ipv6'){6}else{4})));continue}
+            if($curlVersion -notmatch '(?im)^Features:.*\bHTTP3\b'){$rows.Add(('{0} IPv{1} HTTP/3: НЕ ПРОВЕРЕНО - в установленном curl.exe нет поддержки HTTP/3.' -f $TargetName,$(if($family -eq 'ipv6'){6}else{4})));continue}
             $quicSuccess=0;$quicResponses=0;$quicTimes=[Collections.Generic.List[double]]::new();$quicDetails=[Collections.Generic.List[string]]::new();$ipSwitch=if($family -eq 'ipv6'){'--ipv6'}else{'--ipv4'}
             for($attempt=1;$attempt -le $attempts;$attempt++){
                 if(Test-Path -LiteralPath $CancelPath){$rows.Add(('IPv{0} HTTP/3: отменено пользователем.' -f $(if($family -eq 'ipv6'){6}else{4})));break}
                 $curlOutput=@(& $curlPath '--silent' '--show-error' '--http3-only' '--connect-timeout' '5' '--max-time' '12' '--interface' $source '--noproxy' '*' $ipSwitch '--output' 'NUL' '--write-out' '%{http_code}|%{time_total}|%{http_version}' ('https://'+$TargetHost+$TargetPath) 2>&1);$curlCode=$LASTEXITCODE;$last=[string]($curlOutput|Select-Object -Last 1)
-                if($curlCode -eq 0 -and $last -match '^([0-9]{3})\|([0-9.]+)\|(.+)$'){$code=[int]$Matches[1];$seconds=[double]::Parse($Matches[2],[Globalization.CultureInfo]::InvariantCulture);$version=[string]$Matches[3];if($version -match '^3(?:\.|$)' -and $code -ge 100 -and $code -le 599){$quicResponses++};if($code -ge 200 -and $code -lt 400 -and $version -match '^3(?:\.|$)'){$quicSuccess++;$quicTimes.Add($seconds)};$quicDetails.Add(('попытка {0}: HTTP {1}, {2}{3}, {4:N2} с' -f $attempt,$code,$version,$(if($code -ge 200 -and $code -lt 400){''}else{' (HTTP/3 отвечает, код вне 2xx/3xx)'}),$seconds))}else{$quicDetails.Add(('попытка {0}: HTTP/3 не подтверждён — {1}' -f $attempt,($curlOutput -join ' ')))}
+                if($curlCode -eq 0 -and $last -match '^([0-9]{3})\|([0-9.]+)\|(.+)$'){$code=[int]$Matches[1];$seconds=[double]::Parse($Matches[2],[Globalization.CultureInfo]::InvariantCulture);$version=[string]$Matches[3];if($version -match '^3(?:\.|$)' -and $code -ge 100 -and $code -le 599){$quicResponses++};if($code -ge 200 -and $code -lt 400 -and $version -match '^3(?:\.|$)'){$quicSuccess++;$quicTimes.Add($seconds)};$quicDetails.Add(('попытка {0}: HTTP {1}, {2}{3}, {4:N2} с' -f $attempt,$code,$version,$(if($code -ge 200 -and $code -lt 400){''}else{' (HTTP/3 отвечает, код вне 2xx/3xx)'}),$seconds))}else{$quicDetails.Add(('попытка {0}: HTTP/3 не подтверждён - {1}' -f $attempt,($curlOutput -join ' ')))}
             }
             if(Test-Path -LiteralPath $CancelPath){$rows.Add('Проверка отменена после текущего HTTP/3 запроса.');return ($rows -join [Environment]::NewLine)}
             $quicMean=if($quicTimes.Count){($quicTimes|Measure-Object -Average).Average}else{$null};$quicStatus=if($quicSuccess -eq $attempts){'УСПЕХ'}elseif($quicSuccess -gt 0){'НЕСТАБИЛЬНО'}elseif($quicResponses -eq $attempts){'HTTP/3 ОТВЕТ, КОД НЕ 2xx/3xx'}elseif($quicResponses -gt 0){'ЧАСТИЧНЫЙ HTTP/3 ОТВЕТ'}else{'ОШИБКА'}
@@ -834,12 +834,12 @@ function Start-GuiTorVerification {
     if($null -ne $script:targetProbeJob -and $script:targetProbeJob.State -eq 'Running'){throw 'Дождитесь завершения проверки собственного узла.'}
     if(($null -ne $script:worker -and -not $script:worker.HasExited) -or ($null -ne $script:analysisWorker -and -not $script:analysisWorker.HasExited)){throw 'Для отдельной проверки Tor сначала безопасно остановите движок/анализ.'}
     $script:tunnelCheckJob=Start-Job -ScriptBlock {
-        $curl=Join-Path $env:SystemRoot 'System32\curl.exe';if(-not (Test-Path -LiteralPath $curl)){return 'Tor: НЕ ПРОВЕРЕНО — curl.exe не найден.'}
+        $curl=Join-Path $env:SystemRoot 'System32\curl.exe';if(-not (Test-Path -LiteralPath $curl)){return 'Tor: НЕ ПРОВЕРЕНО - curl.exe не найден.'}
         foreach($port in @(9050,9150)){
             $output=@(& $curl '--silent' '--show-error' '--socks5-hostname' ('127.0.0.1:'+ $port) '--connect-timeout' '4' '--max-time' '15' '--noproxy' '' '--output' '-' '--write-out' "`n%{http_code}|%{time_total}" 'https://check.torproject.org/api/ip' 2>&1);$code=$LASTEXITCODE
             if($code -eq 0 -and $output.Count -ge 2){$marker=[string]$output[-1];$body=($output[0..($output.Count-2)] -join "`n");$json=$null;try{$json=$body|ConvertFrom-Json -ErrorAction Stop}catch{};if($marker -match '^200\|([0-9.]+)$' -and $null -ne $json -and $json.IsTor -eq $true){return ('Tor через SOCKS5 localhost:{0}: ПОДТВЕРЖДЁН ответ check.torproject.org (IsTor=true), {1} с. Это проверяет Tor-маршрут отдельно от прямых HTTPS тестов.' -f $port,$Matches[1])};if($marker -match '^200\|' -and $null -ne $json -and $json.IsTor -eq $false){return ('SOCKS5 localhost:{0} ответил, но сервис сообщил IsTor=false; Tor не подтверждён.' -f $port)}}
         }
-        return 'Tor: НЕ ПОДТВЕРЖДЁН — локальные SOCKS5 порты 9050/9150 не дали успешный IsTor=true. Проверьте, что Tor Browser/служба запущены. VPN этим тестом не проверяется.'
+        return 'Tor: НЕ ПОДТВЕРЖДЁН - локальные SOCKS5 порты 9050/9150 не дали успешный IsTor=true. Проверьте, что Tor Browser/служба запущены. VPN этим тестом не проверяется.'
     }
     $analysisStatusLabel.Text='Проверяю Tor отдельно через локальный SOCKS5 и API check.torproject.org…'
 }
@@ -871,7 +871,7 @@ function Show-GuiProfileDetails([string]$Mode) {
             $title='Рецепт стратегии'
         }
         $dialog=[System.Windows.Forms.Form]::new()
-        $dialog.Text=$title+' — №'+$selectedProfile.Number
+        $dialog.Text=$title+' - №'+$selectedProfile.Number
         $dialog.StartPosition='CenterParent';$dialog.Size=[System.Drawing.Size]::new(760,520);$dialog.MinimumSize=[System.Drawing.Size]::new(540,360)
         $box=[System.Windows.Forms.TextBox]::new();$box.Multiline=$true;$box.ReadOnly=$true;$box.ScrollBars='Both';$box.WordWrap=$false;$box.Font=[System.Drawing.Font]::new('Consolas',9);$box.Dock='Fill';$box.Text=$content
         $dialog.Controls.Add($box)
@@ -923,7 +923,7 @@ $launchArguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-WindowSt
         $adapterBox.Enabled=$false;$refreshButton.Enabled=$false;$addressFamilyBox.Enabled=$false;$protocolBox.Enabled=$false
         $portsBox.Enabled=$false
         Set-GuiStatus $(if($CheckOnly){'Проверка параметров стратегии '+$selectedProfileNumber+'…'}else{'Запуск стратегии '+$selectedProfileNumber+'…'}) ([System.Drawing.Color]::DarkOrange)
-    }catch{$message=$_.Exception.Message;Set-GuiStatus ('Ошибка запуска: '+$message+' Проверьте адаптер и права администратора; откройте логи.') ([System.Drawing.Color]::Firebrick);Add-GuiHistory 'Стратегия' 'ОШИБКА' $message;Show-GuiError ($message+[Environment]::NewLine+[Environment]::NewLine+'Дальше: проверьте выбранный физический адаптер, права администратора и журналы AntiDPI. Остановка активного процесса остаётся управляемой кнопкой «Остановить».')}
+    }catch{$message=$_.Exception.Message;Set-GuiStatus ('Ошибка запуска: '+$message+' Проверьте адаптер и права администратора; откройте логи.') ([System.Drawing.Color]::Firebrick);Add-GuiHistory 'Стратегия' 'ОШИБКА' $message;Show-GuiError ($message+[Environment]::NewLine+[Environment]::NewLine+'Дальше: проверьте выбранный физический адаптер, права администратора и журналы AntiDPI. Остановка активного процесса остаётся управляемой кнопкой <<Остановить>>.')}
 }
 function Get-GuiVerifiedOwnedEngine {
     $record=Join-Path $state 'owned_process.json'
@@ -1033,7 +1033,7 @@ function Set-GuiProfileItems([string]$Protocol) {
     $transport=if($Protocol -eq 'quic'){'UDP'}else{'TCP'}
     $portsLabel.Text=($transport+'-порты назначения')
     $portsBox.Text='443'
-    $portsHint.Text=if($Protocol -eq 'quic'){'443 по умолчанию; all охватывает весь UDP — осторожно'}else{'443 по умолчанию; all — любые TCP-порты, выше нагрузка'}
+    $portsHint.Text=if($Protocol -eq 'quic'){'443 по умолчанию; all охватывает весь UDP - осторожно'}else{'443 по умолчанию; all - любые TCP-порты, выше нагрузка'}
 }
 
 function Get-GuiBaselineSummary($Baseline,[string]$Label) {
@@ -1041,7 +1041,7 @@ function Get-GuiBaselineSummary($Baseline,[string]$Label) {
     $successes=[int](Get-GuiObjectProperty $Baseline 'Successes' 0)
     $attempts=[int](Get-GuiObjectProperty $Baseline 'Attempts' 0)
     $summary=('{0}: {1}/{2}' -f $Label,$successes,$attempts)
-    if($null -ne $Baseline.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $Baseline.SuccessRateLow95Percent -and $null -ne $Baseline.SuccessRateHigh95Percent){$summary+=(' (95% {0:N0}–{1:N0}%)' -f [double]$Baseline.SuccessRateLow95Percent,[double]$Baseline.SuccessRateHigh95Percent)}
+    if($null -ne $Baseline.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $Baseline.SuccessRateLow95Percent -and $null -ne $Baseline.SuccessRateHigh95Percent){$summary+=(' (95% {0:N0}-{1:N0}%)' -f [double]$Baseline.SuccessRateLow95Percent,[double]$Baseline.SuccessRateHigh95Percent)}
     return $summary
 }
 function Set-GuiAnalysisResults([string]$Path) {
@@ -1073,9 +1073,9 @@ function Set-GuiAnalysisResults([string]$Path) {
         $status=[string]$result.Status
         $recommendation=Get-GuiAnalysisRecommendation $status
         if($null -ne $result.PSObject.Properties['MedianSuccessSeconds'] -and $null -ne $result.MedianSuccessSeconds){$recommendation+=(' · медиана {0:N2} с' -f [double]$result.MedianSuccessSeconds)}
-        if($null -ne $result.PSObject.Properties['MinSuccessSeconds'] -and $null -ne $result.MinSuccessSeconds -and $null -ne $result.MaxSuccessSeconds){$recommendation+=(' · разброс {0:N2}–{1:N2} с' -f [double]$result.MinSuccessSeconds,[double]$result.MaxSuccessSeconds)}
+        if($null -ne $result.PSObject.Properties['MinSuccessSeconds'] -and $null -ne $result.MinSuccessSeconds -and $null -ne $result.MaxSuccessSeconds){$recommendation+=(' · разброс {0:N2}-{1:N2} с' -f [double]$result.MinSuccessSeconds,[double]$result.MaxSuccessSeconds)}
         elseif($null -ne $result.PSObject.Properties['MeanSuccessSeconds'] -and $null -ne $result.MeanSuccessSeconds){$recommendation+=(' · ср. {0:N2} с' -f [double]$result.MeanSuccessSeconds)}
-        if($null -ne $result.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $result.SuccessRateLow95Percent -and $null -ne $result.SuccessRateHigh95Percent){$recommendation+=(' · 95% {0:N0}–{1:N0}%' -f [double]$result.SuccessRateLow95Percent,[double]$result.SuccessRateHigh95Percent)}
+        if($null -ne $result.PSObject.Properties['SuccessRateLow95Percent'] -and $null -ne $result.SuccessRateLow95Percent -and $null -ne $result.SuccessRateHigh95Percent){$recommendation+=(' · 95% {0:N0}-{1:N0}%' -f [double]$result.SuccessRateLow95Percent,[double]$result.SuccessRateHigh95Percent)}
         if($null -ne $result.PSObject.Properties['SuccessRateDeltaVsBaselinePercentagePoints'] -and $null -ne $result.SuccessRateDeltaVsBaselinePercentagePoints){$recommendation+=(' · к контролю {0:N1} п.п.' -f [double]$result.SuccessRateDeltaVsBaselinePercentagePoints)}
         if($null -ne $result.PSObject.Properties['Evidence'] -and [string]$result.Evidence){$recommendation+=(' · '+[string]$result.Evidence)}
         $row.Cells['Status'].Value=$status
@@ -1102,7 +1102,7 @@ function Set-GuiAnalysisResults([string]$Path) {
     $inconclusive=@($results|Where-Object {$_.Status -eq 'INCONCLUSIVE'}).Count
     $baselineText=Get-GuiBaselineSummary $baseline 'контроль без стратегии'
     if($null -ne $baselineAfter){$baselineText+='; '+(Get-GuiBaselineSummary $baselineAfter 'контроль после серии')}
-    $when=if($data.CreatedUtc){([DateTime]::Parse([string]$data.CreatedUtc).ToLocalTime().ToString('g'))}else{'—'}
+    $when=if($data.CreatedUtc){([DateTime]::Parse([string]$data.CreatedUtc).ToLocalTime().ToString('g'))}else{'-'}
     $total=[int]$data.LastProfile-[int]$data.FirstProfile+1
     $current=0;if($data.PSObject.Properties['CurrentProfile']){$current=[int]$data.CurrentProfile}
     if($current -gt 0){$analysisStatusLabel.Text=('YouTube: {0}/{1}; сейчас №{2} | {3} | PASS: {4}; уже доступно: {5}; неоднозначно: {6}; нестабильно: {7}; FAIL: {8}; ошибки: {9}' -f $results.Count,$total,$current,$baselineText,$passed,$baselinePass,$inconclusive,$unstable,$failed,$errors)}
@@ -1201,7 +1201,7 @@ function Start-GuiConnectionMonitorCheck {
         $url='https://'+$HostName+$Path
         $curlArguments=@('--silent','--show-error','--connect-timeout','5','--max-time','12','--output','NUL','--write-out','%{http_code}|%{time_total}','--noproxy','*',$familyArg,'--interface',$Source,$url)
         $output=@(& $curlPath @curlArguments 2>&1);$exitCode=$LASTEXITCODE;$marker='';if($output.Count){$marker=[string]$output[-1]};$match=[regex]::Match($marker,'^([0-9]{3})\|([0-9]+(?:\.[0-9]+)?)$')
-        if($exitCode -eq 0 -and $match.Success -and [int]$match.Groups[1].Value -ge 100 -and [int]$match.Groups[1].Value -le 599){$code=[int]$match.Groups[1].Value;$seconds=[double]::Parse($match.Groups[2].Value,[Globalization.CultureInfo]::InvariantCulture);$state='up';$summary=('Монитор: соединение есть — {0}, HTTP {1}, {2:N0} мс (IPv{3}).' -f $TargetName,$code,($seconds*1000),$(if($Family -eq 'ipv6'){6}else{4}))}
+        if($exitCode -eq 0 -and $match.Success -and [int]$match.Groups[1].Value -ge 100 -and [int]$match.Groups[1].Value -le 599){$code=[int]$match.Groups[1].Value;$seconds=[double]::Parse($match.Groups[2].Value,[Globalization.CultureInfo]::InvariantCulture);$state='up';$summary=('Монитор: соединение есть - {0}, HTTP {1}, {2:N0} мс (IPv{3}).' -f $TargetName,$code,($seconds*1000),$(if($Family -eq 'ipv6'){6}else{4}))}
         else{$state='down';$summary=('Монитор: нет HTTPS-соединения с {0} по IPv{1} (curl, код {2}).' -f $TargetName,$(if($Family -eq 'ipv6'){6}else{4}),$exitCode)}
         [pscustomobject]@{State=$state;Summary=$summary;CheckedUtc=[DateTime]::UtcNow.ToString('o');Target=$TargetName}
     }
@@ -1363,7 +1363,7 @@ try{
     $form=New-Object System.Windows.Forms.Form
     $appIconPath=Join-Path $PSScriptRoot 'AntiDPI_Zapret2.ico'
     if(Test-Path -LiteralPath $appIconPath -PathType Leaf){try{$script:appIcon=[System.Drawing.Icon]::new($appIconPath);$form.Icon=$script:appIcon}catch{Write-GuiLog ('Could not load application icon: '+$_.Exception.Message)}}
-    $form.Text=('AntiDPI — управление стратегиями ('+$script:programVersion+')')
+    $form.Text=('AntiDPI - управление стратегиями ('+$script:programVersion+')')
     $form.StartPosition='CenterScreen'
     $workingArea=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $form.Size=[System.Drawing.Size]::new([Math]::Min(980,[Math]::Max(640,$workingArea.Width-32)),[Math]::Min(840,[Math]::Max(520,$workingArea.Height-24)))
@@ -1430,7 +1430,7 @@ try{
     $familyFilterBox.Add_SelectedIndexChanged({if($null -ne $familyFilterBox.SelectedItem){Update-GuiProfileFilter}})
     $strategyTab.Controls.Add($familyFilterBox)
     $profileLabel=New-Object System.Windows.Forms.Label
-    $profileLabel.Text='Стратегии — поиск по номеру или названию';$profileLabel.Location=[System.Drawing.Point]::new(30,144);$profileLabel.Size=[System.Drawing.Size]::new(490,24)
+    $profileLabel.Text='Стратегии - поиск по номеру или названию';$profileLabel.Location=[System.Drawing.Point]::new(30,144);$profileLabel.Size=[System.Drawing.Size]::new(490,24)
     $strategyTab.Controls.Add($profileLabel)
     $profileSearchBox=New-Object System.Windows.Forms.TextBox
     $profileSearchBox.Location=[System.Drawing.Point]::new(30,172);$profileSearchBox.Size=[System.Drawing.Size]::new(390,30);$profileSearchBox.Anchor='Top,Left,Right'
@@ -1520,7 +1520,7 @@ try{
     $analysisRangeBox.Text=[string]$script:guiSettings.AnalysisRange;$analysisRangeBox.Location=[System.Drawing.Point]::new(22,120);$analysisRangeBox.Size=[System.Drawing.Size]::new(180,30)
     $analysisTab.Controls.Add($analysisRangeBox)
     $analysisParallelLabel=New-Object System.Windows.Forms.Label
-    $analysisParallelLabel.Text='Параллельность (1–5)';$analysisParallelLabel.Location=[System.Drawing.Point]::new(218,92);$analysisParallelLabel.Size=[System.Drawing.Size]::new(150,24)
+    $analysisParallelLabel.Text='Параллельность (1-5)';$analysisParallelLabel.Location=[System.Drawing.Point]::new(218,92);$analysisParallelLabel.Size=[System.Drawing.Size]::new(150,24)
     $analysisTab.Controls.Add($analysisParallelLabel)
     $analysisParallelismBox=New-Object System.Windows.Forms.NumericUpDown
     $analysisParallelismBox.Minimum=1;$analysisParallelismBox.Maximum=5;$analysisParallelismBox.Value=[decimal]$script:guiSettings.AnalysisParallelism
@@ -1559,7 +1559,7 @@ try{
     $analysisTab.Controls.Add($analysisStatusLabel)
     $matrixTargetLabel=New-Object System.Windows.Forms.Label;$matrixTargetLabel.Text='Сервис:';$matrixTargetLabel.Location=[System.Drawing.Point]::new(22,585);$matrixTargetLabel.Size=[System.Drawing.Size]::new(65,26);$analysisTab.Controls.Add($matrixTargetLabel)
     $matrixTargetBox=New-Object System.Windows.Forms.ComboBox;$matrixTargetBox.DropDownStyle='DropDownList';$matrixTargetBox.Location=[System.Drawing.Point]::new(88,582);$matrixTargetBox.Size=[System.Drawing.Size]::new(210,32)
-    foreach($target in @([pscustomobject]@{Name='Веб — Google';Host='www.google.com';Path='/generate_204'},[pscustomobject]@{Name='Веб — Cloudflare';Host='cloudflare.com';Path='/cdn-cgi/trace'},[pscustomobject]@{Name='Видео — YouTube';Host='www.youtube.com';Path='/generate_204'},[pscustomobject]@{Name='Видео — Netflix';Host='www.netflix.com';Path='/'},[pscustomobject]@{Name='Видео — Twitch';Host='www.twitch.tv';Path='/'})){$null=$matrixTargetBox.Items.Add($target)};$matrixTargetBox.DisplayMember='Name';$matrixTargetBox.SelectedIndex=0;for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq [string]$script:guiSettings.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}};$analysisTab.Controls.Add($matrixTargetBox)
+    foreach($target in @([pscustomobject]@{Name='Веб - Google';Host='www.google.com';Path='/generate_204'},[pscustomobject]@{Name='Веб - Cloudflare';Host='cloudflare.com';Path='/cdn-cgi/trace'},[pscustomobject]@{Name='Видео - YouTube';Host='www.youtube.com';Path='/generate_204'},[pscustomobject]@{Name='Видео - Netflix';Host='www.netflix.com';Path='/'},[pscustomobject]@{Name='Видео - Twitch';Host='www.twitch.tv';Path='/'})){$null=$matrixTargetBox.Items.Add($target)};$matrixTargetBox.DisplayMember='Name';$matrixTargetBox.SelectedIndex=0;for($targetIndex=0;$targetIndex -lt $matrixTargetBox.Items.Count;$targetIndex++){if([string]$matrixTargetBox.Items[$targetIndex].Host -ceq [string]$script:guiSettings.MonitorTargetHost){$matrixTargetBox.SelectedIndex=$targetIndex;break}};$analysisTab.Controls.Add($matrixTargetBox)
     $matrixButton=New-Object System.Windows.Forms.Button;$matrixButton.Text='Проверить HTTPS + HTTP/3';$matrixButton.Location=[System.Drawing.Point]::new(310,580);$matrixButton.Size=[System.Drawing.Size]::new(250,38);$matrixButton.Add_Click({try{if($null -eq $adapterBox.SelectedItem){throw 'Сначала выберите физический сетевой адаптер.'};Start-GuiConnectivityMatrix}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($matrixButton)
     $matrixCancelButton=New-Object System.Windows.Forms.Button;$matrixCancelButton.Text='Отменить';$matrixCancelButton.Location=[System.Drawing.Point]::new(570,580);$matrixCancelButton.Size=[System.Drawing.Size]::new(120,38);$matrixCancelButton.Enabled=$false;$matrixCancelButton.Add_Click({Stop-GuiConnectivityMatrix});$analysisTab.Controls.Add($matrixCancelButton)
     $vpnTestButton=New-Object System.Windows.Forms.Button;$vpnTestButton.Text='VPN: отдельный тест';$vpnTestButton.Location=[System.Drawing.Point]::new(310,625);$vpnTestButton.Size=[System.Drawing.Size]::new(190,38);$vpnTestButton.Add_Click({try{Start-GuiVpnVerification}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($vpnTestButton)
@@ -1576,7 +1576,7 @@ try{
     $targetProbeTimeoutBox=New-Object System.Windows.Forms.NumericUpDown;$targetProbeTimeoutBox.Minimum=1;$targetProbeTimeoutBox.Maximum=30;$targetProbeTimeoutBox.Value=8;$targetProbeTimeoutBox.Location=[System.Drawing.Point]::new(215,786);$targetProbeTimeoutBox.Size=[System.Drawing.Size]::new(62,28);$analysisTab.Controls.Add($targetProbeTimeoutBox)
     $targetProbeButton=New-Object System.Windows.Forms.Button;$targetProbeButton.Text='Проверить DNS / TCP / TLS';$targetProbeButton.Location=[System.Drawing.Point]::new(290,783);$targetProbeButton.Size=[System.Drawing.Size]::new(220,36);$targetProbeButton.Add_Click({try{Start-GuiTargetProbe}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($targetProbeButton)
     $targetProbeCancelButton=New-Object System.Windows.Forms.Button;$targetProbeCancelButton.Text='Отменить';$targetProbeCancelButton.Location=[System.Drawing.Point]::new(520,783);$targetProbeCancelButton.Size=[System.Drawing.Size]::new(110,36);$targetProbeCancelButton.Enabled=$false;$targetProbeCancelButton.Add_Click({Stop-GuiTargetProbe});$analysisTab.Controls.Add($targetProbeCancelButton)
-    $blockcheckHeading=New-Object System.Windows.Forms.Label;$blockcheckHeading.Text='Blockcheck Zapret2 — тест стратегий по списку доменов';$blockcheckHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$blockcheckHeading.Location=[System.Drawing.Point]::new(22,834);$blockcheckHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($blockcheckHeading)
+    $blockcheckHeading=New-Object System.Windows.Forms.Label;$blockcheckHeading.Text='Blockcheck Zapret2 - тест стратегий по списку доменов';$blockcheckHeading.Font=[System.Drawing.Font]::new('Segoe UI',10,[System.Drawing.FontStyle]::Bold);$blockcheckHeading.Location=[System.Drawing.Point]::new(22,834);$blockcheckHeading.Size=[System.Drawing.Size]::new(680,26);$analysisTab.Controls.Add($blockcheckHeading)
     $blockcheckInfo=New-Object System.Windows.Forms.Label;$blockcheckInfo.Text='Запускает встроенный блокчек Zapret2 (требует админи­стратора, отдельное окно консоли). Не модифицирует службы WinDivert и не останавливает чужой софт.';$blockcheckInfo.Location=[System.Drawing.Point]::new(22,861);$blockcheckInfo.Size=[System.Drawing.Size]::new(690,38);$blockcheckInfo.ForeColor=[System.Drawing.Color]::DarkOrange;$analysisTab.Controls.Add($blockcheckInfo)
     $blockcheckDomainLabel=New-Object System.Windows.Forms.Label;$blockcheckDomainLabel.Text='Домены:';$blockcheckDomainLabel.Location=[System.Drawing.Point]::new(22,910);$blockcheckDomainLabel.Size=[System.Drawing.Size]::new(80,24);$analysisTab.Controls.Add($blockcheckDomainLabel)
     $blockcheckDomainBox=New-Object System.Windows.Forms.TextBox;$blockcheckDomainBox.Text='www.youtube.com, rutracker.org';$blockcheckDomainBox.Location=[System.Drawing.Point]::new(105,906);$blockcheckDomainBox.Size=[System.Drawing.Size]::new(300,28);$analysisTab.Controls.Add($blockcheckDomainBox)
@@ -1602,7 +1602,7 @@ try{
     foreach($col in @(@{Name='LocalAddress';Header='Локальный адрес';Fill=170},@{Name='RemoteAddress';Header='Удалённый адрес';Fill=170},@{Name='LocalPort';Header='Лок. порт';Fill=70},@{Name='RemotePort';Header='Удал. порт';Fill=70},@{Name='State';Header='Состояние';Fill=120},@{Name='Process';Header='Процесс';Fill=120})){$c=New-Object System.Windows.Forms.DataGridViewTextBoxColumn;$c.Name=$col.Name;$c.HeaderText=$col.Header;$c.FillWeight=[single]$col.Fill;$null=$script:monitorConnectionGrid.Columns.Add($c)}
     $monitoringTab.Controls.Add($script:monitorConnectionGrid)
     $script:monitorConnectionLabel=New-Object System.Windows.Forms.Label;$script:monitorConnectionLabel.Text='Соединений: 0';$script:monitorConnectionLabel.Location=[System.Drawing.Point]::new(22,550);$script:monitorConnectionLabel.Size=[System.Drawing.Size]::new(200,24);$monitoringTab.Controls.Add($script:monitorConnectionLabel)
-    $script:monitorStatusLabel2=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel2.Text='Нажмите «Обновить соединения» для текущего снимка.';$script:monitorStatusLabel2.Location=[System.Drawing.Point]::new(230,550);$script:monitorStatusLabel2.Size=[System.Drawing.Size]::new(500,24);$script:monitorStatusLabel2.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($script:monitorStatusLabel2)
+    $script:monitorStatusLabel2=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel2.Text='Нажмите <<Обновить соединения>> для текущего снимка.';$script:monitorStatusLabel2.Location=[System.Drawing.Point]::new(230,550);$script:monitorStatusLabel2.Size=[System.Drawing.Size]::new(500,24);$script:monitorStatusLabel2.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($script:monitorStatusLabel2)
     $monitorFilterLabel=New-Object System.Windows.Forms.Label;$monitorFilterLabel.Text='Фильтр по процессу или адресу:';$monitorFilterLabel.Location=[System.Drawing.Point]::new(22,582);$monitorFilterLabel.Size=[System.Drawing.Size]::new(220,24);$monitoringTab.Controls.Add($monitorFilterLabel)
     $script:monitorFilterBox=New-Object System.Windows.Forms.TextBox;$script:monitorFilterBox.Location=[System.Drawing.Point]::new(245,578);$script:monitorFilterBox.Size=[System.Drawing.Size]::new(350,28);$script:monitorFilterBox.Add_TextChanged({Refresh-GuiConnectionMonitoringGrid});$monitoringTab.Controls.Add($script:monitorFilterBox)
 
@@ -1621,11 +1621,11 @@ try{
     $aboutVersionLabel.Text=('Установленная версия: '+$script:programVersion);$aboutVersionLabel.Font=[System.Drawing.Font]::new('Segoe UI',12,[System.Drawing.FontStyle]::Bold);$aboutVersionLabel.Location=[System.Drawing.Point]::new(30,82);$aboutVersionLabel.Size=[System.Drawing.Size]::new(650,30)
     $aboutTab.Controls.Add($aboutVersionLabel)
     $aboutText=New-Object System.Windows.Forms.Label
-    $aboutText.Text='Графический интерфейс и CLI для выбора и проверки стратегий Zapret2. Поддерживаются Windows 10/11 x64. Ctrl+F — поиск, Ctrl+Enter — запуск, Ctrl+L — журналы, F2 — безопасный перезапуск, Ctrl+C — безопасная остановка. Проверка YouTube оценивает только IPv4/TCP/TLS и не является проверкой VPN/Tor-туннеля или гарантией обхода DPI.'
+    $aboutText.Text='Графический интерфейс и CLI для выбора и проверки стратегий Zapret2. Поддерживаются Windows 10/11 x64. Ctrl+F - поиск, Ctrl+Enter - запуск, Ctrl+L - журналы, F2 - безопасный перезапуск, Ctrl+C - безопасная остановка. Проверка YouTube оценивает только IPv4/TCP/TLS и не является проверкой VPN/Tor-туннеля или гарантией обхода DPI.'
     $aboutText.Location=[System.Drawing.Point]::new(30,128);$aboutText.Size=[System.Drawing.Size]::new(660,105);$aboutText.Anchor='Top,Left,Right';$aboutText.AutoSize=$false
     $aboutTab.Controls.Add($aboutText)
     $aboutLicense=New-Object System.Windows.Forms.Label
-    $aboutLicense.Text='Источник: github.com/Vidoc3000/anti-dpi-for-russia-TEST. Движок Zapret2 — проект bol-van; лицензии и уведомления включены в комплект.'
+    $aboutLicense.Text='Источник: github.com/Vidoc3000/anti-dpi-for-russia-TEST. Движок Zapret2 - проект bol-van; лицензии и уведомления включены в комплект.'
     $aboutLicense.Location=[System.Drawing.Point]::new(30,250);$aboutLicense.Size=[System.Drawing.Size]::new(660,60);$aboutLicense.Anchor='Top,Left,Right'
     $aboutTab.Controls.Add($aboutLicense)
     $aboutReleaseButton=New-Object System.Windows.Forms.Button
@@ -1673,28 +1673,28 @@ try{
     $settingsAnalysisRangeBox.Location=[System.Drawing.Point]::new(28,326);$settingsAnalysisRangeBox.Size=[System.Drawing.Size]::new(220,30)
     $settingsTab.Controls.Add($settingsAnalysisRangeBox)
     $settingsParallelLabel=New-Object System.Windows.Forms.Label
-    $settingsParallelLabel.Text='Параллельность анализа (1–5)';$settingsParallelLabel.Location=[System.Drawing.Point]::new(280,298);$settingsParallelLabel.Size=[System.Drawing.Size]::new(260,24)
+    $settingsParallelLabel.Text='Параллельность анализа (1-5)';$settingsParallelLabel.Location=[System.Drawing.Point]::new(280,298);$settingsParallelLabel.Size=[System.Drawing.Size]::new(260,24)
     $settingsTab.Controls.Add($settingsParallelLabel)
     $settingsAnalysisParallelismBox=New-Object System.Windows.Forms.NumericUpDown
     $settingsAnalysisParallelismBox.Minimum=1;$settingsAnalysisParallelismBox.Maximum=5;$settingsAnalysisParallelismBox.Value=[decimal]$script:guiSettings.AnalysisParallelism
     $settingsAnalysisParallelismBox.Location=[System.Drawing.Point]::new(280,326);$settingsAnalysisParallelismBox.Size=[System.Drawing.Size]::new(100,30)
     $settingsTab.Controls.Add($settingsAnalysisParallelismBox)
     $settingsAttemptsLabel=New-Object System.Windows.Forms.Label
-    $settingsAttemptsLabel.Text='Попыток на стратегию (1–5)';$settingsAttemptsLabel.Location=[System.Drawing.Point]::new(28,370);$settingsAttemptsLabel.Size=[System.Drawing.Size]::new(215,24)
+    $settingsAttemptsLabel.Text='Попыток на стратегию (1-5)';$settingsAttemptsLabel.Location=[System.Drawing.Point]::new(28,370);$settingsAttemptsLabel.Size=[System.Drawing.Size]::new(215,24)
     $settingsTab.Controls.Add($settingsAttemptsLabel)
     $settingsAnalysisAttemptsBox=New-Object System.Windows.Forms.NumericUpDown
     $settingsAnalysisAttemptsBox.Minimum=1;$settingsAnalysisAttemptsBox.Maximum=5;$settingsAnalysisAttemptsBox.Value=[decimal]$script:guiSettings.AnalysisAttempts
     $settingsAnalysisAttemptsBox.Location=[System.Drawing.Point]::new(28,398);$settingsAnalysisAttemptsBox.Size=[System.Drawing.Size]::new(100,30)
     $settingsTab.Controls.Add($settingsAnalysisAttemptsBox)
     $settingsTimeoutLabel=New-Object System.Windows.Forms.Label
-    $settingsTimeoutLabel.Text='Таймаут HTTPS (сек, 5–120)';$settingsTimeoutLabel.Location=[System.Drawing.Point]::new(260,370);$settingsTimeoutLabel.Size=[System.Drawing.Size]::new(220,24)
+    $settingsTimeoutLabel.Text='Таймаут HTTPS (сек, 5-120)';$settingsTimeoutLabel.Location=[System.Drawing.Point]::new(260,370);$settingsTimeoutLabel.Size=[System.Drawing.Size]::new(220,24)
     $settingsTab.Controls.Add($settingsTimeoutLabel)
     $settingsAnalysisTimeoutBox=New-Object System.Windows.Forms.NumericUpDown
     $settingsAnalysisTimeoutBox.Minimum=5;$settingsAnalysisTimeoutBox.Maximum=120;$settingsAnalysisTimeoutBox.Value=[decimal]$script:guiSettings.AnalysisTimeoutSeconds
     $settingsAnalysisTimeoutBox.Location=[System.Drawing.Point]::new(260,398);$settingsAnalysisTimeoutBox.Size=[System.Drawing.Size]::new(100,30)
     $settingsTab.Controls.Add($settingsAnalysisTimeoutBox)
     $settingsThresholdLabel=New-Object System.Windows.Forms.Label
-    $settingsThresholdLabel.Text='Порог ответа, КиБ (16–1024)';$settingsThresholdLabel.Location=[System.Drawing.Point]::new(492,370);$settingsThresholdLabel.Size=[System.Drawing.Size]::new(220,24)
+    $settingsThresholdLabel.Text='Порог ответа, КиБ (16-1024)';$settingsThresholdLabel.Location=[System.Drawing.Point]::new(492,370);$settingsThresholdLabel.Size=[System.Drawing.Size]::new(220,24)
     $settingsTab.Controls.Add($settingsThresholdLabel)
     $settingsAnalysisThresholdBox=New-Object System.Windows.Forms.NumericUpDown
     $settingsAnalysisThresholdBox.Minimum=16;$settingsAnalysisThresholdBox.Maximum=1024;$settingsAnalysisThresholdBox.Value=[decimal]$script:guiSettings.AnalysisThresholdKB
@@ -1752,7 +1752,7 @@ try{
     Refresh-GuiAdapters
     Load-GuiAnalysisHistory
     Update-GuiHistory
-    if(-not $script:guiSettings.FirstRunComplete){$welcome='Добро пожаловать в AntiDPI.'+[Environment]::NewLine+[Environment]::NewLine+'1. Выберите IP-семейство, транспорт и физический сетевой адаптер.'+[Environment]::NewLine+'2. Найдите стратегию; её описание показано под списком. Сначала нажмите «Проверить, не запускать».'+[Environment]::NewLine+'3. Запуск меняет обработку трафика; останавливайте кнопкой «Остановить», чтобы корректно восстановить состояние.'+[Environment]::NewLine+[Environment]::NewLine+'Анализ проверяет только доступность YouTube IPv4/TCP/TLS и не доказывает работу VPN/Tor или обход DPI.';[System.Windows.Forms.MessageBox]::Show($welcome,'Первый запуск AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null;$script:guiSettings.FirstRunComplete=$true}
+    if(-not $script:guiSettings.FirstRunComplete){$welcome='Добро пожаловать в AntiDPI.'+[Environment]::NewLine+[Environment]::NewLine+'1. Выберите IP-семейство, транспорт и физический сетевой адаптер.'+[Environment]::NewLine+'2. Найдите стратегию; её описание показано под списком. Сначала нажмите <<Проверить, не запускать>>.'+[Environment]::NewLine+'3. Запуск меняет обработку трафика; останавливайте кнопкой <<Остановить>>, чтобы корректно восстановить состояние.'+[Environment]::NewLine+[Environment]::NewLine+'Анализ проверяет только доступность YouTube IPv4/TCP/TLS и не доказывает работу VPN/Tor или обход DPI.';[System.Windows.Forms.MessageBox]::Show($welcome,'Первый запуск AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null;$script:guiSettings.FirstRunComplete=$true}
     $timer=New-Object System.Windows.Forms.Timer
     $timer.Interval=650
     $trayMenu=New-Object System.Windows.Forms.ContextMenuStrip
@@ -1760,7 +1760,7 @@ try{
     $trayRunRecent=$trayMenu.Items.Add('Запустить последний профиль');$trayRunRecent.Add_Click({try{$recent=$script:guiSettings.RecentProfileConfig;if($null -eq $recent -and @($script:guiSettings.RecentProfiles).Count){$recent=[pscustomobject]@{Name='Последний использованный';ProfileNumber=[int]$script:guiSettings.RecentProfiles[0];AddressFamily=[string]$addressFamilyBox.SelectedItem.Value;Protocol=[string]$protocolBox.SelectedItem.Value;Ports=[string]$portsBox.Text;AdapterGuid='';AdapterName=''}};if($null -eq $recent){throw 'Нет ранее использованного профиля.'};$null=Set-GuiConnectionControls $recent;$form.Show();$form.ShowInTaskbar=$true;$form.WindowState=[System.Windows.Forms.FormWindowState]::Normal;Start-GuiStrategy}catch{Show-GuiError $_.Exception.Message}})
     $trayStop=$trayMenu.Items.Add('Безопасно остановить');$trayStop.Add_Click({Request-GuiStop})
     $trayMenu.Items.Add('-')|Out-Null;$trayExit=$trayMenu.Items.Add('Закрыть');$trayExit.Add_Click({$form.Close()})
-    $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=if($null -ne $script:appIcon){$script:appIcon}else{[System.Drawing.SystemIcons]::Application};$script:trayIcon.Text='AntiDPI — готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
+    $script:trayIcon=New-Object System.Windows.Forms.NotifyIcon;$script:trayIcon.Icon=if($null -ne $script:appIcon){$script:appIcon}else{[System.Drawing.SystemIcons]::Application};$script:trayIcon.Text='AntiDPI - готово';$script:trayIcon.ContextMenuStrip=$trayMenu;$script:trayIcon.Visible=$true
     $script:trayIcon.Add_DoubleClick({if(-not $form.Visible){$form.Show()};$form.ShowInTaskbar=$true;$form.WindowState=[System.Windows.Forms.FormWindowState]::Normal;$form.Activate();Write-GuiLog 'Main form restored by tray double-click'})
     $form.Add_Resize({
         if($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized -and $script:guiSettings.MinimizeToTray){
@@ -1876,7 +1876,7 @@ try{
             if(Test-Path -LiteralPath $script:analysisResultPath -PathType Leaf){
                 try{
                     $shown=Set-GuiAnalysisResults $script:analysisResultPath
-                    if($code -eq 0){$analysisStatusLabel.Text+=' — анализ завершён; результаты выше';Add-GuiHistory 'Анализ YouTube' 'ЗАВЕРШЁН' ('Стратегии {0}; результаты: {1}' -f $script:guiSettings.AnalysisRange,$shown)}
+                    if($code -eq 0){$analysisStatusLabel.Text+=' - анализ завершён; результаты выше';Add-GuiHistory 'Анализ YouTube' 'ЗАВЕРШЁН' ('Стратегии {0}; результаты: {1}' -f $script:guiSettings.AnalysisRange,$shown)}
                     else{
                         Add-GuiHistory 'Анализ YouTube' 'ОШИБКА' ('Стратегии {0}; код {1}' -f $script:guiSettings.AnalysisRange,$code)
                         $failure=Get-GuiFailureLine $script:analysisStdoutPath $script:analysisStderrPath
@@ -1893,7 +1893,7 @@ try{
         }
         if($null -ne $script:releaseCheckJob -and $script:releaseCheckJob.State -in @('Completed','Failed','Stopped')){try{$release=Receive-Job -Job $script:releaseCheckJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $release -or -not $release.Tag){throw 'GitHub API не вернул сведения о релизе.'};Show-GuiReleaseInfo $release}catch{[System.Windows.Forms.MessageBox]::Show(('Не удалось проверить релизы онлайн: '+$_.Exception.Message+[Environment]::NewLine+'Можно открыть страницу релизов вручную.'),'Проверка обновлений',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning)|Out-Null;try{Start-Process 'https://github.com/Vidoc3000/anti-dpi-for-russia-TEST/releases'}catch{}}finally{Remove-Job -Job $script:releaseCheckJob -Force -ErrorAction SilentlyContinue;$script:releaseCheckJob=$null}}
         if($null -ne $script:tunnelCheckJob -and $script:tunnelCheckJob.State -in @('Completed','Failed','Stopped')){try{$tunnelResult=(Receive-Job -Job $script:tunnelCheckJob -ErrorAction SilentlyContinue|Out-String).Trim();if(-not $tunnelResult){$tunnelResult='Проверка VPN/Tor не вернула данных.'};$analysisStatusLabel.Text='Проверка VPN/Tor завершена.';Add-GuiHistory 'Проверка VPN/Tor' 'ЗАВЕРШЕНА' $tunnelResult;Show-GuiTextDialog 'Отдельный результат VPN/Tor' $tunnelResult}catch{Show-GuiError $_.Exception.Message}finally{Remove-Job -Job $script:tunnelCheckJob -Force -ErrorAction SilentlyContinue;$script:tunnelCheckJob=$null}}
-        if($null -ne $script:assetVerificationJob -and $script:assetVerificationJob.State -in @('Completed','Failed','Stopped')){try{$verification=Receive-Job -Job $script:assetVerificationJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $verification -or -not $verification.Verified){throw 'Asset не прошёл проверку SHA-256.'};Add-GuiHistory 'Проверка целостности' 'УСПЕХ' ([string]$verification.Name+' — SHA-256 совпал с GitHub API');[System.Windows.Forms.MessageBox]::Show(($verification.Message+[Environment]::NewLine+[Environment]::NewLine+'SHA-256: '+$verification.Sha256),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null}catch{Add-GuiHistory 'Проверка целостности' 'ОШИБКА' $_.Exception.Message;[System.Windows.Forms.MessageBox]::Show(('Проверка asset не прошла: '+$_.Exception.Message),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null}finally{Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue;$script:assetVerificationJob=$null}}
+        if($null -ne $script:assetVerificationJob -and $script:assetVerificationJob.State -in @('Completed','Failed','Stopped')){try{$verification=Receive-Job -Job $script:assetVerificationJob -ErrorAction Stop|Select-Object -Last 1;if($null -eq $verification -or -not $verification.Verified){throw 'Asset не прошёл проверку SHA-256.'};Add-GuiHistory 'Проверка целостности' 'УСПЕХ' ([string]$verification.Name+' - SHA-256 совпал с GitHub API');[System.Windows.Forms.MessageBox]::Show(($verification.Message+[Environment]::NewLine+[Environment]::NewLine+'SHA-256: '+$verification.Sha256),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null}catch{Add-GuiHistory 'Проверка целостности' 'ОШИБКА' $_.Exception.Message;[System.Windows.Forms.MessageBox]::Show(('Проверка asset не прошла: '+$_.Exception.Message),'Проверка целостности',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null}finally{Remove-Job -Job $script:assetVerificationJob -Force -ErrorAction SilentlyContinue;$script:assetVerificationJob=$null}}
         if($null -ne $script:networkMatrixJob -and $script:networkMatrixJob.State -in @('Completed','Failed','Stopped')){
             # Detach before opening dialogs: ShowDialog pumps the UI loop and can re-enter this timer.
             $matrixJob=$script:networkMatrixJob;$script:networkMatrixJob=$null
