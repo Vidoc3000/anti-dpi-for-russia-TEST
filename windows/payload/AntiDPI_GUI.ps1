@@ -1240,12 +1240,16 @@ function Get-GuiCurrentConnections {
         $raw=@(Get-NetTCPConnection -ErrorAction SilentlyContinue|Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess)
         foreach($c in $raw){
             $procName=''
+            $isAntiDPI=$false
             if($c.OwningProcess -gt 0){
                 try{
                     $p=Get-Process -Id ([int]$c.OwningProcess) -ErrorAction Stop
                     $procName=$p.ProcessName
+                    if([string]$procName -eq 'winws2'){$isAntiDPI=$true}
                 }catch{$procName='PID '+([string]$c.OwningProcess)}
             }
+            # Показывать только соединения через AntiDPI (процесс winws2.exe)
+            if(-not $isAntiDPI){continue}
             $connections+=([pscustomobject]@{
                 LocalAddress=[string]$c.LocalAddress
                 LocalPort=[string]$c.LocalPort
@@ -1591,7 +1595,7 @@ try{
     $monitorApplyButton=New-Object System.Windows.Forms.Button;$monitorApplyButton.Text='Применить монитор';$monitorApplyButton.Location=[System.Drawing.Point]::new(244,942);$monitorApplyButton.Size=[System.Drawing.Size]::new(190,36);$monitorApplyButton.Add_Click({try{Apply-GuiConnectionMonitorSettings}catch{Show-GuiError $_.Exception.Message}});$analysisTab.Controls.Add($monitorApplyButton)
     $script:monitorStatusLabel=New-Object System.Windows.Forms.Label;$script:monitorStatusLabel.Text='Монитор выключен.';$script:monitorStatusLabel.Location=[System.Drawing.Point]::new(22,987);$script:monitorStatusLabel.Size=[System.Drawing.Size]::new(690,40);$script:monitorStatusLabel.Anchor='Top,Left,Right';$analysisTab.Controls.Add($script:monitorStatusLabel)
 
-    $monitorInfoLabel=New-Object System.Windows.Forms.Label;$monitorInfoLabel.Text='Активные сетевые соединения. Показывает состояние соединений (ESTABLISHED, TIME_WAIT, CLOSE_WAIT и т.д.), помогает диагностировать случаи, когда видео на YouTube загружается сначала, а затем перестаёт грузиться.';$monitorInfoLabel.Location=[System.Drawing.Point]::new(22,18);$monitorInfoLabel.Size=[System.Drawing.Size]::new(700,42);$monitorInfoLabel.Anchor='Top,Left,Right';$monitorInfoLabel.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($monitorInfoLabel)
+    $monitorInfoLabel=New-Object System.Windows.Forms.Label;$monitorInfoLabel.Text='Соединения через AntiDPI (процесс winws2.exe). Показывает состояние соединений (ESTABLISHED, TIME_WAIT, CLOSE_WAIT и т.д.), помогает диагностировать случаи, когда видео на YouTube загружается сначала, а затем перестаёт грузиться.';$monitorInfoLabel.Location=[System.Drawing.Point]::new(22,18);$monitorInfoLabel.Size=[System.Drawing.Size]::new(700,56);$monitorInfoLabel.Anchor='Top,Left,Right';$monitorInfoLabel.ForeColor=[System.Drawing.Color]::DimGray;$monitoringTab.Controls.Add($monitorInfoLabel)
     $monitorRefreshLabel=New-Object System.Windows.Forms.Label;$monitorRefreshLabel.Text='Автообновление (сек.):';$monitorRefreshLabel.Location=[System.Drawing.Point]::new(22,72);$monitorRefreshLabel.Size=[System.Drawing.Size]::new(150,24);$monitoringTab.Controls.Add($monitorRefreshLabel)
     $script:monitorRefreshBox=New-Object System.Windows.Forms.NumericUpDown;$script:monitorRefreshBox.Minimum=1;$script:monitorRefreshBox.Maximum=300;$script:monitorRefreshBox.Value=5;$script:monitorRefreshBox.Location=[System.Drawing.Point]::new(175,68);$script:monitorRefreshBox.Size=[System.Drawing.Size]::new(72,28);$monitoringTab.Controls.Add($script:monitorRefreshBox)
     $script:monitorAutoCheck=New-Object System.Windows.Forms.CheckBox;$script:monitorAutoCheck.Text='Автообновление соединений';$script:monitorAutoCheck.Checked=$false;$script:monitorAutoCheck.Location=[System.Drawing.Point]::new(260,72);$script:monitorAutoCheck.Size=[System.Drawing.Size]::new(200,28);$monitoringTab.Controls.Add($script:monitorAutoCheck)
