@@ -2371,7 +2371,7 @@ $form.Add_Resize({
             $script:trayIcon.ShowBalloonTip(1200,'AntiDPI','Окно скрыто в системный трей. Откройте AntiDPI через значок; работа приложения продолжается.','Info')
         })
     }
-})
+    })
 
 $script:networkSignature=Get-GuiSelectedNetworkSignature
 
