@@ -36,11 +36,11 @@
 | --- | --- |
 | Add a Linux CLI updater that fetches the latest stable GitHub release, verifies the archive SHA-256, rejects unsafe archive entries, and stages a fresh build before replacing the installed tree. Settings and logs are carried forward; the previous installation remains available for rollback. Also resolve the packaged catalogue through the shared resource map in the Linux installer. | Добавить обновление Linux из CLI: загрузка последнего стабильного релиза GitHub, проверка SHA-256, безопасная распаковка и предварительная сборка до замены установленной программы. Настройки и журналы переносятся, предыдущая установка остаётся для отката. Также исправить получение каталога стратегий установщиком через общую карту ресурсов. |
 
-## 1.23 — Coordinated Windows and Linux release
+## 1.24 — Coordinated Windows and Linux release
 
 | English | Русский |
 | --- | --- |
-| Publish a coordinated Windows GUI + CLI 1.23 and Linux CLI 1.23 release. Integrate Zapret2 Blockcheck strategy testing into the Windows client GUI: export strategy lists for blockcheck, launch blockcheck2.cmd from the analysis tab, and document blockcheck usage in the Windows manual. Bump all platform versions, regression tests, workflow defaults, and documentation to 1.23. | Выпустить согласованные Windows GUI + CLI 1.23 и Linux CLI 1.23. Интегрировать тестирование стратегий Zapret2 Blockcheck в клиент Windows: экспорт списков стратегий для blockcheck, запуск blockcheck2.cmd со вкладки анализа и документирование использования blockcheck в руководстве Windows. Повысить версии платформ, регрессионные тесты, значения по умолчанию workflow и документацию до 1.23. |
+| Publish a coordinated Windows GUI + CLI 1.24 and Linux CLI 1.24 release. Integrate Zapret2 Blockcheck strategy testing into the Windows client GUI: export strategy lists for blockcheck, launch blockcheck2.cmd from the analysis tab, and document blockcheck usage in the Windows manual. Bump all platform versions, regression tests, workflow defaults, and documentation to 1.24. | Выпустить согласованные Windows GUI + CLI 1.24 и Linux CLI 1.24. Интегрировать тестирование стратегий Zapret2 Blockcheck в клиент Windows: экспорт списков стратегий для blockcheck, запуск blockcheck2.cmd со вкладки анализа и документирование использования blockcheck в руководстве Windows. Повысить версии платформ, регрессионные тесты, значения по умолчанию workflow и документацию до 1.24. |
 
 ## 1.20 — Combined Windows matrix fix and Linux package refresh
 
