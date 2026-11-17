@@ -1,5 +1,4 @@
-﻿#requires -Version 5.1
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -10,7 +9,7 @@ function ConvertTo-InstallerArgument([string]$Value) {
     return '"'+[regex]::Replace([regex]::Replace($Value,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"'
 }
 function Show-InstallerError([string]$Message) {
-    [System.Windows.Forms.MessageBox]::Show($Message,'AntiDPI — установка',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null
+    [System.Windows.Forms.MessageBox]::Show($Message,'AntiDPI - установка',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)|Out-Null
 }
 
 $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -73,7 +72,7 @@ $manager=Join-Path $PSScriptRoot 'AntiDPI_Manager.ps1'
 if(-not (Test-Path -LiteralPath $manager -PathType Leaf)){Show-InstallerError 'Не найден AntiDPI_Manager.ps1 рядом с установщиком.';exit 1}
 
 $form=New-Object System.Windows.Forms.Form
-$form.Text='AntiDPI — мастер установки'
+$form.Text='AntiDPI - мастер установки'
 $form.StartPosition='CenterScreen'
 $form.ClientSize=[System.Drawing.Size]::new(720,650)
 $form.MinimumSize=[System.Drawing.Size]::new(660,690)
@@ -120,11 +119,11 @@ $bundleGroup=New-Object System.Windows.Forms.GroupBox
 $bundleGroup.Text='Источник Zapret2';$bundleGroup.Location=[System.Drawing.Point]::new(30,232);$bundleGroup.Size=[System.Drawing.Size]::new(660,116);$bundleGroup.Anchor='Top,Left,Right'
 $form.Controls.Add($bundleGroup)
 $compatibleRadio=New-Object System.Windows.Forms.RadioButton
-$compatibleRadio.Text='Закреплённая версия — SHA-256 сверяется с манифестом (рекомендуется)'
+$compatibleRadio.Text='Закреплённая версия - SHA-256 сверяется с манифестом (рекомендуется)'
 $compatibleRadio.Checked=$true;$compatibleRadio.Location=[System.Drawing.Point]::new(18,28);$compatibleRadio.Size=[System.Drawing.Size]::new(610,26)
 $bundleGroup.Controls.Add($compatibleRadio)
 $latestRadio=New-Object System.Windows.Forms.RadioButton
-$latestRadio.Text='Текущая master — SHA-256 заранее не закреплён'
+$latestRadio.Text='Текущая master - SHA-256 заранее не закреплён'
 $latestRadio.Location=[System.Drawing.Point]::new(18,64);$latestRadio.Size=[System.Drawing.Size]::new(610,26)
 $bundleGroup.Controls.Add($latestRadio)
 $shortcutCheck=New-Object System.Windows.Forms.CheckBox
@@ -204,7 +203,7 @@ $installButton.Add_Click({
         if($updateCheck.Checked){
             if(-not (Test-InstallerExistingInstall $target)){throw 'В выбранной папке не найдена целая установка AntiDPI. Проверьте путь или отключите режим обновления для чистой установки.'}
         }elseif(Test-Path -LiteralPath $target){
-            if(-not (Test-Path -LiteralPath $target -PathType Container) -or @(Get-ChildItem -LiteralPath $target -Force -ErrorAction Stop).Count){throw 'Выбранная папка не пуста. Включите «Обновить установленную AntiDPI» или укажите новую пустую папку.'}
+            if(-not (Test-Path -LiteralPath $target -PathType Container) -or @(Get-ChildItem -LiteralPath $target -Force -ErrorAction Stop).Count){throw 'Выбранная папка не пуста. Включите <<Обновить установленную AntiDPI>> или укажите новую пустую папку.'}
         }
         $pathBox.Text=$target
         $logDirectory=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'AntiDPI_Install_Logs'
@@ -273,7 +272,7 @@ $timer.Add_Tick({
                 return
             }
         }
-        if($code -eq 0){$logBox.Text='Успешно. Подробные журналы доступны по кнопке «Открыть логи».'}
+        if($code -eq 0){$logBox.Text='Успешно. Подробные журналы доступны по кнопке <<Открыть логи>>.'}
         if($code -eq 2){
             $status.Text='Установка отменена. Временные файлы очищены; можно повторить.';$status.ForeColor=[System.Drawing.Color]::DarkOrange
             $installButton.Text='Повторить установку';$installButton.Enabled=$true;$pathBox.Enabled=$true;$browseButton.Enabled=$true;$updateCheck.Enabled=$true
@@ -283,7 +282,7 @@ $timer.Add_Tick({
             $status.Text=('✓ '+$verb+' завершено: '+$pathBox.Text);$status.ForeColor=[System.Drawing.Color]::DarkGreen
             $installButton.Text='Готово';$installButton.Enabled=$false
         }elseif($verifiedInstall){
-            $status.Text=('Установка выполнена: файлы программы и движок на месте. Код завершения помощника: '+$code+'. Подробности — в логах.');$status.ForeColor=[System.Drawing.Color]::FromArgb(150,95,0)
+            $status.Text=('Установка выполнена: файлы программы и движок на месте. Код завершения помощника: '+$code+'. Подробности - в логах.');$status.ForeColor=[System.Drawing.Color]::FromArgb(150,95,0)
             $logBox.Text='Основные файлы и движок найдены. Для диагностики откройте сохранённые логи.'
             $installButton.Text='Готово';$installButton.Enabled=$false
         }else{
@@ -299,7 +298,7 @@ $timer.Start()
 $form.Add_FormClosing({
     param($sender,$eventArgs)
     if($null -ne $script:installProcess -and -not $script:installProcess.HasExited){
-        [System.Windows.Forms.MessageBox]::Show('Дождитесь завершения или отмените загрузку кнопкой «Отменить загрузку». Закрытие окна не прервёт системные изменения.','AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
+        [System.Windows.Forms.MessageBox]::Show('Дождитесь завершения или отмените загрузку кнопкой <<Отменить загрузку>>. Закрытие окна не прервёт системные изменения.','AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)|Out-Null
         $eventArgs.Cancel=$true
     }
 })

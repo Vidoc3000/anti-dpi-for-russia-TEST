@@ -74,7 +74,7 @@ foreach ($network in $ipv4Networks) {
     if ($ipv4Seen.ContainsKey($network)) { throw ('Duplicate IPv4 network: ' + $network) }; $ipv4Seen[$network] = $true
 }
 Assert-Equal 8 $ipv4Networks.Count 'shipped IPv4 exclusion network count'
-$documentedProfiles = @([regex]::Matches($strategyGuideText, '(?m)^ПРОФИЛЬ ([0-9]+) — (Golden|Silver)'))
+$documentedProfiles = @([regex]::Matches($strategyGuideText, '(?m)^ПРОФИЛЬ ([0-9]+) - (Golden|Silver)'))
 Assert-Equal 492 $documentedProfiles.Count 'strategy guide includes every catalogue profile'
 Assert-True ($installGuideText.Contains([string]$bundleManifest.commit) -and $installGuideText.Contains([string]$bundleManifest.sha256) -and $installGuideText.Contains('AntiDPI\_state\update.log')) 'installation manual matches the pinned bundle and documents updater diagnostics'
 Assert-True ($installGuideText.Contains('owned=False') -and $installGuideText.Contains('доказывает причину ошибки updater') -and $installGuideText.Contains('C:\Zapret')) 'installation manual explains the foreign WinDivert diagnostic without asserting causation'

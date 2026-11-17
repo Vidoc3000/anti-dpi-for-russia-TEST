@@ -1,5 +1,4 @@
-﻿#requires -Version 5.1
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
  [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [switch]$ApproveUpdatePreview, [string]$CancelFile='')
@@ -538,7 +537,7 @@ function Show-AntiDPIAntivirusNotice([switch]$Installing) {
         '3. Для работы с YouTube следуйте инструкциям ниже и запустите автоматическую проверку стратегий на доступ к YouTube.',
         '   VPN для доступа к YouTube не требуется. YouTube работает напрямую из вашей сети вместе с AntiDPI стратегиями.',
         '4. Успешный тест на доступ к YouTube не всегда означает, что стратегия идеально работает с VPN-конфигурациями.',
-        '   В свою очередь — отрицательный тест на YouTube абсолютно не значит, что стратегия не работает с VPN, часто наоборот.',
+        '   В свою очередь - отрицательный тест на YouTube абсолютно не значит, что стратегия не работает с VPN, часто наоборот.',
         '   Бывает, что стратегия не дает прямой доступ на YouTube, но при этом пингует самое максимальное число VPN-конфигураций.',
         '5. Стратегии Golden для VPN/Tor/YouTube могут работать лучше, чем Silver.',
         '6. Набор стратегий протестирован на российских кабельных/мобильных сетях.'
@@ -710,7 +709,7 @@ function Write-AntiDPIDownloadProgress([string]$Source,[long]$Received,[long]$To
     $filled=[int][Math]::Floor($Percent/5.0)
     $bar=('#'*$filled)+('-'*(20-$filled))
     $approx=if($Estimated -and $Percent -lt 100){'~'}else{''}
-    Write-Host ('{0}: [{1}] {2}{3}% — {4:N1} / {2}{5:N1} МиБ' -f $Source,$bar,$approx,$Percent,($Received/1MB),($Total/1MB))
+    Write-Host ('{0}: [{1}] {2}{3}% - {4:N1} / {2}{5:N1} МиБ' -f $Source,$bar,$approx,$Percent,($Received/1MB),($Total/1MB))
 }
 function Invoke-AntiDPIBundleDownload([string]$Url,[string]$Destination,[long]$ExpectedBytes=0,[string[]]$AlternativeUrls=@()) {
     Initialize-AntiDPIRuntime
@@ -1203,7 +1202,7 @@ function New-AntiDPIDesktopShortcut([string]$InstallRoot) {
             Name='DELETE_AntiDPI.lnk'
             Target=(Join-Path $InstallRoot 'УДАЛИТЬ_AntiDPI_Zapret2.cmd')
             Icon=(Join-Path $InstallRoot 'AntiDPI\AntiDPI_Zapret2_delete.ico')
-            Description='Удаление AntiDPI Strategies + Bol-Van Zapret2 — GUI + CLI Version 1.23'
+            Description='Удаление AntiDPI Strategies + Bol-Van Zapret2 - GUI + CLI Version 1.23'
         }
     )
     foreach($spec in $specs){
@@ -1380,7 +1379,7 @@ catch{
             }
         }catch{}
     }
-    if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($errorText,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$errorText) -ForegroundColor Red;Read-Host 'Enter — закрыть'|Out-Null};exit 1
+    if($Action -eq 'GUI'){Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show($errorText,'AntiDPI')|Out-Null}else{Write-Host ("ОШИБКА: "+$errorText) -ForegroundColor Red;Read-Host 'Enter - закрыть'|Out-Null};exit 1
 }
 finally{Complete-AntiDPISessionLog}
 if($script:AntiDPIWasCancelled -and $Action -in @('Install','Update')){exit 2}
