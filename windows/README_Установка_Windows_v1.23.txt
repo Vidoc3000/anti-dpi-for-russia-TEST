@@ -1,6 +1,6 @@
 AntiDPI Strategies + Bol-Van Zapret2
 РУКОВОДСТВО ДЛЯ WINDOWS — УСТАНОВКА, ОБНОВЛЕНИЕ И ДИАГНОСТИКА
-Версия приложения: GUI + CLI 1.22 | Windows 10/11 x64
+Версия приложения: GUI + CLI 1.23 | Windows 10/11 x64
 ====================================================================
 
 1. НАЗНАЧЕНИЕ И ГРАНИЦЫ
@@ -166,4 +166,4 @@ blockcheck — ориентировочные измерения, не гара�
 
 Официальный репозиторий Zapret2: https://github.com/bol-van/zapret-win-bundle
 Исходный проект: https://github.com/Vidoc3000/anti-dpi-for-russia-TEST
-Подробное описание всех 492 профилей: README_Стратегии_Windows_v1.22.txt
+Подробное описание всех 492 профилей: README_Стратегии_Windows_v1.23.txt
