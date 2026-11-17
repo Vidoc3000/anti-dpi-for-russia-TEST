@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
  [ValidateSet('Install','Update','Rollback','Launch','GUI','Uninstall')][string]$Action='Install',[switch]$SkipHeader,
  [string]$InstallPath='', [string]$BundleSelection='', [string]$CreateShortcutChoice='', [switch]$NonInteractiveInstaller, [switch]$ApproveUpdatePreview, [string]$CancelFile='')
@@ -1358,6 +1358,8 @@ if($needsElevation -or $needsSta){
 
 try{
     Start-AntiDPISessionLog
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
     if(-not $SkipHeader -and $Action -ne 'GUI'){
         Show-AntiDPIHeader
     }
