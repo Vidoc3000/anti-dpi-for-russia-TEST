@@ -57,8 +57,8 @@ $managedWindowsDocs = @([regex]::Matches($managerText, 'README_.+?_Windows_v[0-9
 $sourceWindowsDocs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'windows') -File -Filter 'README_*_Windows_v*.txt' | ForEach-Object { $_.Name } | Sort-Object -Unique)
 $missingManagedWindowsDocs = @($managedWindowsDocs | Where-Object { -not (Test-Path -LiteralPath (Join-Path (Join-Path $repoRoot 'windows') $_) -PathType Leaf) })
 Assert-True ($managedWindowsDocs.Count -eq 2 -and [string]::Join('|', $managedWindowsDocs) -eq [string]::Join('|', $sourceWindowsDocs) -and $missingManagedWindowsDocs.Count -eq 0) 'only the current installer and strategy manuals are kept in the recursive Windows release source tree'
-$installGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Установка_Windows_v1.23.txt'))
-$strategyGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Стратегии_Windows_v1.23.txt'))
+$installGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Установка_Windows_v1.24.txt'))
+$strategyGuideText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\README_Стратегии_Windows_v1.24.txt'))
 $bundleManifestText = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\payload\Official_Bundle_20261023_public_v1.json'))
 $bundleManifest = $bundleManifestText | ConvertFrom-Json
 Assert-True ($bundleManifest.repo -eq 'bol-van/zapret-win-bundle' -and $bundleManifest.commit -match '^[0-9a-f]{40}$' -and $bundleManifest.url.EndsWith([string]$bundleManifest.commit) -and $bundleManifest.sha256 -match '^[0-9a-f]{64}$' -and [long]$bundleManifest.bytes -gt 1000000) 'pinned official Zapret2 manifest has a full commit, commit-specific URL, archive digest, and size'
@@ -87,7 +87,7 @@ $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'packaging\windows\Setu
 $installerCommand = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\УСТАНОВКА.cmd'))
 $buildWorkflowText = [IO.File]::ReadAllText((Join-Path $repoRoot '.github\workflows\build.yml'))
 Assert-True ($buildWorkflowText.Contains("github.ref == 'refs/heads/main'") -and $buildWorkflowText.Contains("inputs.platform == 'windows'") -and $buildWorkflowText.Contains("needs.windows.result == 'success'") -and $buildWorkflowText.Contains('make_latest=false') -and $buildWorkflowText.Contains('windows-v')) 'release publishing is main-only and standalone Windows packages are attested without replacing Latest'
-Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.23'") -and $managerText.Contains("Version='GUI_CLI_1.23'") -and $buildWorkflowText.Contains("default: '1.23'")) 'Windows release package version matches the manager manifest and workflow default'
+Assert-True ($managerText.Contains("DisplayVersion='GUI + CLI Version 1.24'") -and $managerText.Contains("Version='GUI_CLI_1.24'") -and $buildWorkflowText.Contains("default: '1.24'")) 'Windows release package version matches the manager manifest and workflow default'
 Assert-True ($managerText.Contains("'AntiDPI_GUI.ps1'")) 'installer packages the Windows GUI'
 Assert-True ($managerText.Contains('function Remove-AntiDPIPartialInstallation') -and $managerText.Contains('Remove-AntiDPIPartialInstallation $installedManifest') -and $managerText.Contains('Save-AntiDPIManifest ([pscustomobject]$manifest)')) 'late installation failures roll back the owned install files and write the staged manifest atomically'
 Assert-True ($managerText.Contains('Remove-AntiDPIFirewallRule $installedManifest')) 'install rollback removes the owned firewall rule'
