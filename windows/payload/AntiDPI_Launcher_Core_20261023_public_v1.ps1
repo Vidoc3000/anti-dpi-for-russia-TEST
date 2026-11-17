@@ -382,6 +382,14 @@ function Invoke-AntiDPIAutomaticRecovery([string]$Bundle,[string]$Reason) {
         }
         $script:AntiDPIRecoveryAwaitingStart=$true
         return $true
+    }catch{
+        $errMsg=$_.Exception.Message
+        if($errMsg -like '*marked for deletion*' -or $errMsg -like '*помещена на удаление*' -or $_.Exception.ErrorCode -eq 1072){
+            [AntiDPI.Public10.WinDivertRecovery]::Log($log,('SKIP reason='+$Reason+'; service marked for deletion'))
+            Write-Host ('Служба WinDivert помещена на удаление; восстановление не требуется. Лог: '+$log) -ForegroundColor Yellow
+            return $true
+        }
+        throw
     }finally{if($null -ne $inputState){Close-AntiDPIConsoleInput $inputState}}
 }
 function Wait-AntiDPIStrategyControl($Session,[string]$Bundle) {
