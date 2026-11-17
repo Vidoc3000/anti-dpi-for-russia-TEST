@@ -485,7 +485,7 @@ function Expand-VerifiedBundle([string]$Zip,[string]$Destination,[string]$Archiv
     }finally{$z.Dispose()}
 }
 function New-UserCommand([string]$Path,[string]$Mode) {
-    $text='@echo off'+"`r`n"+'start "" "%SystemRoot%\System32\conhost.exe" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0AntiDPI\AntiDPI_Manager.ps1" -Action '+$Mode+"`r`n"+'if errorlevel 1 pause'+"`r`n"
+    $text='@echo off'+"`r`n"+'start "" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0AntiDPI\AntiDPI_Manager.ps1" -Action '+$Mode+"`r`n"+'if errorlevel 1 pause'+"`r`n"
     [IO.File]::WriteAllText($Path,$text,[Text.Encoding]::ASCII)
 }
 function Write-AntiDPIBusyDirectory([string]$Reason='') {
@@ -1351,7 +1351,7 @@ if($needsElevation -or $needsSta){
         if($needsElevation){$startParameters.Verb='RunAs'}
         $null=Start-Process @startParameters
     }else{
-        $null=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $joined -Verb RunAs -PassThru
+        $null=Start-Process -FilePath $powershell -ArgumentList (@($arguments|ForEach-Object {ConvertTo-WindowsArgument $_}) -join ' ') -Verb RunAs -PassThru
     }
     exit 0
 }
