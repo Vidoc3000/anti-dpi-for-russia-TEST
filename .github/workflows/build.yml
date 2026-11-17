@@ -16,12 +16,12 @@ on:
       linux_version:
         description: 'Linux version (must match linux/data/release.json)'
         required: true
-        default: '1.22'
+        default: '1.23'
         type: string
       windows_version:
         description: 'Windows version (must match the Windows application sources)'
         required: true
-        default: '1.22'
+        default: '1.23'
         type: string
       publish_release:
         description: 'Publish a combined release (platform=all) or standalone Windows release (platform=windows), from main only'
