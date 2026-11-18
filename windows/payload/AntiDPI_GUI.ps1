@@ -1,7 +1,19 @@
 ﻿$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+$script:guiLog=''
+$script:guiLogFailed=$false
+function Write-GuiLog([string]$Message) {
+    try {
+        if([string]::IsNullOrWhiteSpace($script:guiLog)){$script:guiLog=Join-Path (Join-Path $PSScriptRoot '_state') 'gui\\startup.log'}
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiLog))|Out-Null
+        [IO.File]::AppendAllText($script:guiLog,((Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')+' '+$Message+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+    } catch {
+        $script:guiLogFailed=$true
+        try{Write-Host ('[AntiDPI GUI] '+$Message) -ForegroundColor Yellow}catch{}
+    }
+}
 $AntiDPILibraryOnly=$true
-. (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
+try{. (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')}catch{Write-GuiLog ('CRITICAL: failed to load AntiDPI_Launcher_Core: '+$_.Exception.Message);throw}
 $AntiDPILibraryOnly=$false
 $installRoot=Split-Path -Parent $PSScriptRoot
 $bundle=Join-Path $installRoot 'zapret-winws'
@@ -53,6 +65,8 @@ $script:programVersion='Версия не определена'
 $script:analysisSnapshotIdentity=''
 $script:workerStdoutPath='';$script:workerStderrPath=''
 $script:analysisStdoutPath='';$script:analysisStderrPath=''
+Write-GuiLog ('AntiDPI GUI starting; PSScriptRoot='+$PSScriptRoot+'; installRoot='+$installRoot)
+Write-GuiLog ('Bundle path: '+$bundle+'; state path: '+$state)
 $script:guiSettings=@{AddressFamily='ipv4';Protocol='tls';Ports='443';AnalysisRange='1-45';AnalysisParallelism=3;AnalysisAttempts=2;AnalysisTimeoutSeconds=15;AnalysisThresholdKB=100;RememberAdapter=$true;SkipTimestampSetup=$false;ShowErrorDetails=$true;MonitorEnabled=$false;MonitorIntervalMinutes=5;MonitorTargetHost='cloudflare.com';Favorites=@();RecentProfiles=@();RecentProfileConfig=$null;FirstRunComplete=$false;WindowBounds=$null;WindowMaximized=$false;MinimizeToTray=$false}
 $guiLog=Join-Path $state 'gui\startup.log'
 function Write-GuiLog([string]$Message) {
