@@ -1,8 +1,14 @@
 ﻿$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+# Immediate diagnostic logging to temp dir - works even if install path is broken
+$script:guiLogTemp=Join-Path $env:TEMP 'AntiDPI_GUI_startup.log'
+function Write-GuiLogTemp([string]$Message) {
+    try {[IO.File]::AppendAllText($script:guiLogTemp,((Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')+' '+$Message+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))}catch{}
+}
 $script:guiLog=''
 $script:guiLogFailed=$false
 function Write-GuiLog([string]$Message) {
+    Write-GuiLogTemp $Message
     try {
         if([string]::IsNullOrWhiteSpace($script:guiLog)){$script:guiLog=Join-Path (Join-Path $PSScriptRoot '_state') 'gui\\startup.log'}
         [IO.Directory]::CreateDirectory((Split-Path -Parent $script:guiLog))|Out-Null
@@ -12,13 +18,33 @@ function Write-GuiLog([string]$Message) {
         try{Write-Host ('[AntiDPI GUI] '+$Message) -ForegroundColor Yellow}catch{}
     }
 }
+Write-GuiLogTemp '=== AntiDPI GUI starting ==='
+Write-GuiLogTemp ('PSScriptRoot='+$PSScriptRoot)
+Write-GuiLogTemp ('CommandLine='+$([Environment]::CommandLine))
+trap {
+    Write-GuiLogTemp ('FATAL TRAP: '+$_.Exception.Message)
+    try{Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue}catch{}
+    try{[System.Windows.Forms.MessageBox]::Show('AntiDPI GUI critical error:'+[Environment]::NewLine+$_.Exception.Message,'AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Stop)|Out-Null}catch{}
+    try{Write-GuiLog ('FATAL TRAP: '+$_.Exception.Message)}catch{}
+    exit 1
+}
 $AntiDPILibraryOnly=$true
-try{. (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')}catch{Write-GuiLog ('CRITICAL: failed to load AntiDPI_Launcher_Core: '+$_.Exception.Message);throw}
+try{
+    Write-GuiLogTemp 'About to dot-source AntiDPI_Launcher_Core'
+    . (Join-Path $PSScriptRoot 'AntiDPI_Launcher_Core_20261023_public_v1.ps1')
+    Write-GuiLogTemp 'AntiDPI_Launcher_Core loaded successfully'
+}catch{
+    Write-GuiLogTemp ('CRITICAL: failed to load AntiDPI_Launcher_Core: '+$_.Exception.Message)
+    Write-GuiLog ('CRITICAL: failed to load AntiDPI_Launcher_Core: '+$_.Exception.Message)
+    throw
+}
 $AntiDPILibraryOnly=$false
+Write-GuiLogTemp 'AntiDPI_Launcher_Core loaded; Action=GUI'
 $installRoot=Split-Path -Parent $PSScriptRoot
 $bundle=Join-Path $installRoot 'zapret-winws'
 $state=Join-Path $PSScriptRoot '_state'
 $catalogue=Join-Path $PSScriptRoot 'Zapret2_Golden_Silver_TLS_20261023_public_v1.ps1'
+Write-GuiLogTemp ('installRoot='+$installRoot+'; state='+$state+'; bundle='+$bundle)
 $script:analysisWorker=$null
 $script:worker=$null
 $script:analysisResultPath=''
