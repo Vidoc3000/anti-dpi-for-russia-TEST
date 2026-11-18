@@ -1028,11 +1028,11 @@ class ResourceTests(unittest.TestCase):
         linux_build=(REPO/'packaging/linux/build.sh').read_text()
         windows_manager=(REPO/'windows/AntiDPI_Manager.ps1').read_text(encoding='utf-8-sig')
         workflow=(REPO/'.github/workflows/build.yml').read_text()
-        self.assertEqual(release['version'],'1.30')
-        self.assertIn("parser.add_argument('--version', default='1.30')",linux_build)
-        self.assertIn("DisplayVersion='GUI + CLI Version 1.30'",windows_manager)
-        self.assertRegex(workflow,r"(?s)linux_version:\s*description:.*?default: '1.30'")
-        self.assertRegex(workflow,r"(?s)windows_version:\s*description:.*?default: '1.30'")
+        self.assertEqual(release['version'],'1.31')
+        self.assertIn("parser.add_argument('--version', default='1.31')",linux_build)
+        self.assertIn("DisplayVersion='GUI + CLI Version 1.31'",windows_manager)
+        self.assertRegex(workflow,r"(?s)linux_version:\s*description:.*?default: '1.31'")
+        self.assertRegex(workflow,r"(?s)windows_version:\s*description:.*?default: '1.31'")
 
     def test_release_workflow_attests_then_verifies_packages_before_publishing(self):
         workflow=(REPO/'.github/workflows/build.yml').read_text()
