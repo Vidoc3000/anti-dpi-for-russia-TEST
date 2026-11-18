@@ -23,8 +23,8 @@ Write-GuiLogTemp ('PSScriptRoot='+$PSScriptRoot)
 Write-GuiLogTemp ('CommandLine='+$([Environment]::CommandLine))
 trap {
     Write-GuiLogTemp ('FATAL TRAP: '+$_.Exception.Message)
-    try{Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue}
-    try{[System.Windows.Forms.MessageBox]::Show('AntiDPI GUI critical error:'+[Environment]::NewLine+$_.Exception.Message,'AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Stop)|Out-Null}
+    try{Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue}catch{}
+    try{[System.Windows.Forms.MessageBox]::Show('AntiDPI GUI critical error:'+[Environment]::NewLine+$_.Exception.Message,'AntiDPI',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Stop)|Out-Null}catch{}
     try{Write-GuiLog ('FATAL TRAP: '+$_.Exception.Message)}catch{}
     exit 1
 }
