@@ -165,7 +165,7 @@ def choose_ports(session,explicit=None):
     default='443' if session.protocol == 'udp-quic' else 'all'
     if explicit is not None:
         session.scope=parse_ports(explicit)
-        show_scope_guidance(session.scope,session.address_family,session.protocol)
+        show_scope_guidance(session.scope)
         return session.scope
     transport='UDP' if session.protocol == 'udp-quic' else 'TCP'
     print('\n----------------------\n')
@@ -179,7 +179,7 @@ def choose_ports(session,explicit=None):
         answer=input(f'Порты [Enter = {default}]: ').strip()
         try:
             session.scope=parse_ports(answer or default)
-            print();show_scope_guidance(session.scope,session.address_family,session.protocol)
+            print();show_scope_guidance(session.scope)
             return session.scope
         except ValueError as error:print(error)
 
